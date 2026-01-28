@@ -406,11 +406,15 @@ export class TerminalWebSocketServer {
 
     ptyManager.write(terminalId, data);
 
-    // Update last active
-    await prisma.terminal.update({
-      where: { id: terminalId },
-      data: { lastActiveAt: new Date() },
-    });
+    // Update last active (ignore if terminal was deleted)
+    try {
+      await prisma.terminal.update({
+        where: { id: terminalId },
+        data: { lastActiveAt: new Date() },
+      });
+    } catch (error) {
+      // Terminal might have been deleted, ignore
+    }
   }
 
   /**
@@ -432,10 +436,15 @@ export class TerminalWebSocketServer {
 
     ptyManager.resize(terminalId, cols, rows);
 
-    await prisma.terminal.update({
-      where: { id: terminalId },
-      data: { cols, rows },
-    });
+    // Update dimensions (ignore if terminal was deleted)
+    try {
+      await prisma.terminal.update({
+        where: { id: terminalId },
+        data: { cols, rows },
+      });
+    } catch (error) {
+      // Terminal might have been deleted, ignore
+    }
   }
 
   /**
@@ -462,12 +471,17 @@ export class TerminalWebSocketServer {
       const status =
         exitCode === 0 ? TerminalStatus.STOPPED : TerminalStatus.CRASHED;
 
-      await prisma.terminal.update({
-        where: { id: terminalId },
-        data: { status },
-      });
-
-      this.broadcastStatus(terminalId, status);
+      try {
+        // Try to update, but the terminal might have been deleted
+        await prisma.terminal.update({
+          where: { id: terminalId },
+          data: { status },
+        });
+        this.broadcastStatus(terminalId, status);
+      } catch (error) {
+        // Terminal was likely deleted, ignore the error
+        console.log(`[WS] Terminal ${terminalId} no longer exists, skipping status update`);
+      }
     });
   }
 

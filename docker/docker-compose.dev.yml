@@ -1,0 +1,89 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: claude-terminal-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: claude_terminal
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - claude-terminal-network
+
+  # Backend Server (Development with hot reload)
+  server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server.dev
+    container_name: claude-terminal-server
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/claude_terminal?schema=public
+      JWT_SECRET: dev-secret-change-in-production
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      CORS_ORIGINS: http://localhost:3000
+      PTY_MAX_INSTANCES: 10
+      PTY_SHELL: /bin/sh
+    volumes:
+      # Mount source code for hot reload
+      - ../apps/server/src:/app/apps/server/src:ro
+      - ../packages/shared/src:/app/packages/shared/src:ro
+      - ../prisma:/app/prisma:ro
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - claude-terminal-network
+    tty: true
+    stdin_open: true
+
+  # Frontend (Next.js Development with hot reload)
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web.dev
+    container_name: claude-terminal-web
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NEXT_PUBLIC_WS_URL: ws://localhost:3001
+      AUTH_SECRET: dev-auth-secret-change-in-production
+      AUTH_URL: http://localhost:3000
+      AUTH_TRUST_HOST: "true"
+      # Add your OAuth credentials here or use .env file
+      AUTH_GITHUB_ID: ${AUTH_GITHUB_ID:-}
+      AUTH_GITHUB_SECRET: ${AUTH_GITHUB_SECRET:-}
+      AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID:-}
+      AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET:-}
+    volumes:
+      # Mount source code for hot reload
+      - ../apps/web/src:/app/apps/web/src:ro
+      - ../apps/web/public:/app/apps/web/public:ro
+      - ../packages/shared/src:/app/packages/shared/src:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - server
+    networks:
+      - claude-terminal-network
+
+volumes:
+  postgres_data:
+
+networks:
+  claude-terminal-network:
+    driver: bridge

@@ -1,0 +1,43 @@
+FROM node:20-slim
+
+WORKDIR /app
+
+# Install dependencies for node-pty and development
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy package files
+COPY package.json package-lock.json* turbo.json ./
+COPY apps/server/package.json ./apps/server/
+COPY packages/shared/package.json ./packages/shared/
+
+# Install all dependencies (including devDependencies)
+RUN npm ci
+
+# Rebuild native modules for the container architecture
+RUN npm rebuild
+
+# Copy source
+COPY apps/server ./apps/server
+COPY packages/shared ./packages/shared
+COPY prisma ./prisma
+COPY tsconfig.json ./
+
+# Generate Prisma client for the container
+RUN npx prisma generate
+
+# Build shared package initially
+RUN npm run build --workspace=@claude-terminal/shared
+
+ENV NODE_ENV=development
+ENV PORT=3001
+
+EXPOSE 3001
+
+# Run with tsx watch for hot reload
+CMD ["npm", "run", "dev", "--workspace=@claude-terminal/server"]

@@ -12,6 +12,11 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  useDroppable,
+  pointerWithin,
+  rectIntersection,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -33,6 +38,7 @@ import {
   X,
   Pencil,
   Check,
+  Copy,
 } from 'lucide-react';
 import { TerminalStatus } from '@claude-terminal/shared';
 import { terminalsApi, categoriesApi } from '@/lib/api';
@@ -191,18 +197,21 @@ function SortableTerminalCard({
           </div>
         </div>
 
-        {terminal.category && (
-          <div
-            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium mb-3"
-            style={{
-              backgroundColor: `${terminal.category.color}20`,
-              color: terminal.category.color,
-            }}
-          >
-            <Folder size={12} />
-            {terminal.category.name}
-          </div>
-        )}
+        {/* Category badge - fixed height to keep cards uniform */}
+        <div className="h-7 mb-3">
+          {terminal.category && (
+            <div
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium"
+              style={{
+                backgroundColor: `${terminal.category.color}20`,
+                color: terminal.category.color,
+              }}
+            >
+              <Folder size={12} />
+              {terminal.category.name}
+            </div>
+          )}
+        </div>
 
         <div className="flex items-center justify-between text-xs text-muted-foreground mb-4">
           <span>
@@ -246,7 +255,14 @@ function DeleteConfirmModal({
   isDark: boolean;
 }) {
   const [confirmText, setConfirmText] = useState('');
+  const [copied, setCopied] = useState(false);
   const canDelete = confirmText === terminal.name;
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(terminal.name);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
@@ -291,11 +307,32 @@ function DeleteConfirmModal({
 
           {/* Content */}
           <p
-            className="text-sm mb-4"
+            className="text-sm mb-3"
             style={{ color: isDark ? '#ccc' : '#444' }}
           >
-            To confirm deletion, type <strong>{terminal.name}</strong> below:
+            To confirm deletion, type the terminal name below:
           </p>
+
+          {/* Terminal name with copy button */}
+          <div
+            className="flex items-center justify-between px-3 py-2 rounded-lg mb-4"
+            style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)' }}
+          >
+            <span className="font-mono font-semibold text-red-500">
+              {terminal.name}
+            </span>
+            <button
+              onClick={handleCopy}
+              className="p-1.5 rounded hover:bg-red-500/20 transition-colors"
+              title="Copy name"
+            >
+              {copied ? (
+                <Check size={16} className="text-green-500" />
+              ) : (
+                <Copy size={16} className="text-red-500" />
+              )}
+            </button>
+          </div>
 
           <input
             type="text"
@@ -341,6 +378,30 @@ function DeleteConfirmModal({
   );
 }
 
+// Droppable Category Component
+function DroppableCategory({
+  id,
+  children,
+  isOver,
+}: {
+  id: string;
+  children: React.ReactNode;
+  isOver: boolean;
+}) {
+  const { setNodeRef } = useDroppable({ id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`transition-all duration-200 ${
+        isOver ? 'scale-110 ring-2 ring-primary ring-offset-2 rounded-full' : ''
+      }`}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function TerminalsPage() {
   const router = useRouter();
   const { data: session } = useSession();
@@ -354,6 +415,8 @@ export default function TerminalsPage() {
   const [showCategoryInput, setShowCategoryInput] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [terminalToDelete, setTerminalToDelete] = useState<TerminalData | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -404,18 +467,11 @@ export default function TerminalsPage() {
       );
 
       if (response.success && response.data) {
-        // Add with animation class
-        const newTerminal = { ...response.data, isNew: true };
-        setTerminals([newTerminal, ...terminals]);
-
-        // Navigate to the new terminal after animation
-        setTimeout(() => {
-          router.push(`/terminals/${response.data.id}`);
-        }, 500);
+        // Redirect immediately to terminal page (spinner will show there)
+        router.push(`/terminals/${response.data.id}`);
       }
     } catch (error) {
       console.error('Failed to create terminal:', error);
-    } finally {
       setCreating(false);
     }
   };
@@ -496,25 +552,83 @@ export default function TerminalsPage() {
     }
   };
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
+  const handleDragOver = (event: DragEndEvent) => {
+    const { over } = event;
+    setOverId(over?.id as string | null);
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
+    setActiveId(null);
+    setOverId(null);
 
-    if (over && active.id !== over.id) {
+    if (!over) return;
+
+    const activeTerminal = terminals.find((t) => t.id === active.id);
+    if (!activeTerminal) return;
+
+    // Check if dropped on a category
+    const droppedOnCategory = over.id.toString().startsWith('category-');
+    const droppedOnAll = over.id === 'category-all';
+
+    if (droppedOnCategory || droppedOnAll) {
+      const newCategoryId = droppedOnAll ? null : over.id.toString().replace('category-', '');
+
+      // Only update if category changed
+      if (activeTerminal.categoryId !== newCategoryId) {
+        // Update locally first for instant feedback
+        setTerminals((prev) =>
+          prev.map((t) =>
+            t.id === active.id
+              ? {
+                  ...t,
+                  categoryId: newCategoryId,
+                  category: newCategoryId
+                    ? categories.find((c) => c.id === newCategoryId) || null
+                    : null,
+                }
+              : t
+          )
+        );
+
+        // Save to backend
+        if (session?.accessToken) {
+          try {
+            await terminalsApi.update(
+              active.id as string,
+              { categoryId: newCategoryId },
+              session.accessToken
+            );
+          } catch (error) {
+            console.error('Failed to update terminal category:', error);
+            // Revert on error
+            loadData();
+          }
+        }
+      }
+    } else if (active.id !== over.id) {
+      // Reordering terminals
       const oldIndex = terminals.findIndex((t) => t.id === active.id);
       const newIndex = terminals.findIndex((t) => t.id === over.id);
 
-      const newOrder = arrayMove(terminals, oldIndex, newIndex);
-      setTerminals(newOrder);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newOrder = arrayMove(terminals, oldIndex, newIndex);
+        setTerminals(newOrder);
 
-      // Save new order to backend
-      if (session?.accessToken) {
-        try {
-          await terminalsApi.reorder(
-            { terminalIds: newOrder.map((t) => t.id) },
-            session.accessToken
-          );
-        } catch (error) {
-          console.error('Failed to save order:', error);
+        // Save new order to backend
+        if (session?.accessToken) {
+          try {
+            await terminalsApi.reorder(
+              { terminalIds: newOrder.map((t) => t.id) },
+              session.accessToken
+            );
+          } catch (error) {
+            console.error('Failed to save order:', error);
+          }
         }
       }
     }
@@ -546,6 +660,13 @@ export default function TerminalsPage() {
   }
 
   return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={pointerWithin}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragEnd={handleDragEnd}
+    >
     <div className="p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -565,46 +686,54 @@ export default function TerminalsPage() {
         </button>
       </div>
 
-      {/* Categories */}
+      {/* Categories - Drop targets */}
       <div className="flex flex-wrap items-center gap-2 mb-6">
-        <button
-          onClick={() => setSelectedCategory(null)}
-          className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-            selectedCategory === null
-              ? 'bg-foreground text-background'
-              : 'bg-muted text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          All ({terminals.length})
-        </button>
+        <DroppableCategory id="category-all" isOver={overId === 'category-all'}>
+          <button
+            onClick={() => setSelectedCategory(null)}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+              selectedCategory === null
+                ? 'bg-foreground text-background'
+                : 'bg-muted text-muted-foreground hover:text-foreground'
+            } ${overId === 'category-all' ? 'ring-2 ring-primary' : ''}`}
+          >
+            All ({terminals.length})
+          </button>
+        </DroppableCategory>
 
         {categories.map((category) => (
-          <div key={category.id} className="relative group">
-            <button
-              onClick={() => setSelectedCategory(category.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                selectedCategory === category.id
-                  ? 'text-white'
-                  : 'bg-muted text-muted-foreground hover:text-foreground'
-              }`}
-              style={{
-                backgroundColor:
-                  selectedCategory === category.id ? category.color : undefined,
-              }}
-            >
-              <Folder size={14} />
-              {category.name}
-              <span className="opacity-60">
-                ({terminals.filter((t) => t.categoryId === category.id).length})
-              </span>
-            </button>
-            <button
-              onClick={() => handleDeleteCategory(category.id)}
-              className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <X size={12} />
-            </button>
-          </div>
+          <DroppableCategory
+            key={category.id}
+            id={`category-${category.id}`}
+            isOver={overId === `category-${category.id}`}
+          >
+            <div className="relative group">
+              <button
+                onClick={() => setSelectedCategory(category.id)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  selectedCategory === category.id
+                    ? 'text-white'
+                    : 'bg-muted text-muted-foreground hover:text-foreground'
+                } ${overId === `category-${category.id}` ? 'ring-2 ring-primary' : ''}`}
+                style={{
+                  backgroundColor:
+                    selectedCategory === category.id ? category.color : undefined,
+                }}
+              >
+                <Folder size={14} />
+                {category.name}
+                <span className="opacity-60">
+                  ({terminals.filter((t) => t.categoryId === category.id).length})
+                </span>
+              </button>
+              <button
+                onClick={() => handleDeleteCategory(category.id)}
+                className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          </DroppableCategory>
         ))}
 
         {showCategoryInput ? (
@@ -674,33 +803,27 @@ export default function TerminalsPage() {
           </button>
         </div>
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
+        <SortableContext
+          items={filteredTerminals.map((t) => t.id)}
+          strategy={rectSortingStrategy}
         >
-          <SortableContext
-            items={filteredTerminals.map((t) => t.id)}
-            strategy={rectSortingStrategy}
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredTerminals.map((terminal, index) => (
-                <div
-                  key={terminal.id}
-                  className="slide-up"
-                  style={{ animationDelay: `${index * 0.05}s` }}
-                >
-                  <SortableTerminalCard
-                    terminal={terminal}
-                    onDelete={handleDeleteTerminal}
-                    onRename={handleRenameTerminal}
-                    isDark={isDark}
-                  />
-                </div>
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredTerminals.map((terminal, index) => (
+              <div
+                key={terminal.id}
+                className="slide-up"
+                style={{ animationDelay: `${index * 0.05}s` }}
+              >
+                <SortableTerminalCard
+                  terminal={terminal}
+                  onDelete={handleDeleteTerminal}
+                  onRename={handleRenameTerminal}
+                  isDark={isDark}
+                />
+              </div>
+            ))}
+          </div>
+        </SortableContext>
       )}
 
       {/* Delete Confirmation Modal */}
@@ -713,5 +836,6 @@ export default function TerminalsPage() {
         />
       )}
     </div>
+    </DndContext>
   );
 }

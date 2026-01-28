@@ -1,0 +1,28 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* turbo.json ./
+COPY apps/web/package.json ./apps/web/
+COPY packages/shared/package.json ./packages/shared/
+
+# Install all dependencies (including devDependencies)
+RUN npm ci
+
+# Copy source
+COPY apps/web ./apps/web
+COPY packages/shared ./packages/shared
+COPY tsconfig.json ./
+
+# Build shared package initially
+RUN npm run build --workspace=@claude-terminal/shared
+
+ENV NODE_ENV=development
+ENV PORT=3000
+ENV NEXT_TELEMETRY_DISABLED=1
+
+EXPOSE 3000
+
+# Run Next.js in development mode
+CMD ["npm", "run", "dev", "--workspace=@claude-terminal/web"]
