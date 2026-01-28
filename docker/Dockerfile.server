@@ -1,0 +1,76 @@
+# Build stage
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies for node-pty
+RUN apk add --no-cache python3 make g++ linux-headers
+
+# Copy package files
+COPY package.json package-lock.json* turbo.json ./
+COPY apps/server/package.json ./apps/server/
+COPY packages/shared/package.json ./packages/shared/
+
+# Install dependencies
+RUN npm ci
+
+# Copy source
+COPY apps/server ./apps/server
+COPY packages/shared ./packages/shared
+COPY prisma ./prisma
+COPY tsconfig.json ./
+
+# Build shared package
+RUN npm run build --workspace=@claude-terminal/shared
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Build server
+RUN npm run build --workspace=@claude-terminal/server
+
+# Production stage
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# Install Claude Code CLI and dependencies
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    linux-headers \
+    curl \
+    git
+
+# Install Claude Code (you'll need to adjust this based on actual installation method)
+# RUN npm install -g @anthropic-ai/claude-code
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nodeuser
+
+# Copy built files
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/server/dist ./apps/server/dist
+COPY --from=builder /app/apps/server/package.json ./apps/server/
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/package.json ./
+
+# Set permissions
+RUN chown -R nodeuser:nodejs /app
+
+USER nodeuser
+
+ENV NODE_ENV=production
+ENV PORT=3001
+
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3001/health || exit 1
+
+CMD ["node", "apps/server/dist/index.js"]

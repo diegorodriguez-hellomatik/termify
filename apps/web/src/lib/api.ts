@@ -1,0 +1,127 @@
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+interface ApiOptions {
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  body?: unknown;
+  token?: string;
+}
+
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string | unknown[];
+}
+
+/**
+ * Make API request
+ */
+export async function api<T>(
+  endpoint: string,
+  options: ApiOptions = {}
+): Promise<ApiResponse<T>> {
+  const { method = 'GET', body, token } = options;
+
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  return response.json();
+}
+
+// Auth API
+export const authApi = {
+  register: (data: { email: string; password: string; name?: string }) =>
+    api<{ user: any; accessToken: string; refreshToken: string }>(
+      '/api/auth/register',
+      { method: 'POST', body: data }
+    ),
+
+  login: (data: { email: string; password: string }) =>
+    api<{ user: any; accessToken: string; refreshToken: string }>(
+      '/api/auth/login',
+      { method: 'POST', body: data }
+    ),
+
+  oauth: (data: {
+    email: string;
+    name?: string;
+    image?: string;
+    provider: string;
+    providerAccountId: string;
+  }) =>
+    api<{ user: any; accessToken: string; refreshToken: string }>(
+      '/api/auth/oauth',
+      { method: 'POST', body: data }
+    ),
+
+  refresh: (refreshToken: string) =>
+    api<{ accessToken: string }>('/api/auth/refresh', {
+      method: 'POST',
+      body: { refreshToken },
+    }),
+
+  me: (token: string) =>
+    api<{ id: string; email: string; name: string | null }>('/api/auth/me', {
+      token,
+    }),
+};
+
+// Terminals API
+export const terminalsApi = {
+  list: (token: string) =>
+    api<{ terminals: any[]; total: number }>('/api/terminals', { token }),
+
+  get: (id: string, token: string) =>
+    api<any>(`/api/terminals/${id}`, { token }),
+
+  create: (
+    data: { name?: string; cols?: number; rows?: number; cwd?: string; categoryId?: string },
+    token: string
+  ) =>
+    api<any>('/api/terminals', { method: 'POST', body: data, token }),
+
+  update: (
+    id: string,
+    data: { name?: string; cols?: number; rows?: number; categoryId?: string | null; position?: number },
+    token: string
+  ) =>
+    api<any>(`/api/terminals/${id}`, { method: 'PATCH', body: data, token }),
+
+  delete: (id: string, token: string) =>
+    api<void>(`/api/terminals/${id}`, { method: 'DELETE', token }),
+
+  reorder: (data: { terminalIds: string[] }, token: string) =>
+    api<void>('/api/terminals/reorder', { method: 'POST', body: data, token }),
+};
+
+// Categories API
+export const categoriesApi = {
+  list: (token: string) =>
+    api<{ categories: any[] }>('/api/categories', { token }),
+
+  create: (data: { name: string; color?: string; icon?: string }, token: string) =>
+    api<any>('/api/categories', { method: 'POST', body: data, token }),
+
+  update: (
+    id: string,
+    data: { name?: string; color?: string; icon?: string; position?: number },
+    token: string
+  ) =>
+    api<any>(`/api/categories/${id}`, { method: 'PATCH', body: data, token }),
+
+  delete: (id: string, token: string) =>
+    api<void>(`/api/categories/${id}`, { method: 'DELETE', token }),
+
+  reorder: (data: { categoryIds: string[] }, token: string) =>
+    api<void>('/api/categories/reorder', { method: 'POST', body: data, token }),
+};
