@@ -140,69 +140,90 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
 
   // Minimal sidebar for non-terminal views
   if (!isTerminalView) {
+    const isExpanded = !isHidden; // Reuse isHidden as "collapsed" state
+
     return (
-      <div className="hidden md:flex sticky top-0 h-screen relative">
-        {/* Activity Bar */}
+      <div className="hidden md:flex sticky top-0 h-screen">
+        {/* Sidebar */}
         <div
           className={cn(
-            'bg-card border-r border-border flex flex-col items-center py-2 transition-all duration-300 ease-in-out overflow-hidden',
-            isHidden ? 'w-0 border-r-0' : 'w-12'
+            'bg-card border-r border-border flex flex-col py-2 transition-all duration-300 ease-in-out overflow-hidden',
+            isExpanded ? 'w-48' : 'w-12'
           )}
         >
           {/* Logo */}
-          <Link href="/terminals" className="mb-4 p-2 hover:bg-muted rounded-md transition-colors">
-            <Terminal className="h-5 w-5 text-primary" />
+          <Link
+            href="/terminals"
+            className={cn(
+              'mb-4 p-2 hover:bg-muted rounded-md transition-colors flex items-center gap-3',
+              isExpanded ? 'mx-2' : 'mx-auto'
+            )}
+          >
+            <Terminal className="h-5 w-5 text-primary flex-shrink-0" />
+            {isExpanded && <span className="font-semibold text-sm">Termify</span>}
           </Link>
 
-          {/* Navigation Icons */}
-          <div className="flex-1 flex flex-col items-center gap-1">
+          {/* Navigation Items */}
+          <div className="flex-1 flex flex-col gap-1 px-2">
             {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'w-10 h-10 flex items-center justify-center rounded-md transition-colors relative',
+                  'flex items-center gap-3 rounded-md transition-colors',
+                  isExpanded ? 'px-3 py-2' : 'w-10 h-10 justify-center mx-auto',
                   isActive(item.href)
                     ? 'text-foreground bg-muted'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 )}
-                title={item.label}
+                title={!isExpanded ? item.label : undefined}
               >
-                <item.icon className="h-5 w-5" />
+                <item.icon className="h-5 w-5 flex-shrink-0" />
+                {isExpanded && <span className="text-sm">{item.label}</span>}
               </Link>
             ))}
           </div>
 
-          {/* Bottom icons */}
-          <div className="flex flex-col items-center gap-1">
-            <NotificationsDropdown />
+          {/* Bottom items */}
+          <div className="flex flex-col gap-1 px-2">
+            {/* Notifications */}
+            <div className={cn(isExpanded ? '' : 'mx-auto')}>
+              <NotificationsDropdown />
+            </div>
+
+            {/* Toggle button */}
             <button
-              onClick={() => setIsHidden(true)}
-              className="w-10 h-10 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              title="Hide sidebar"
+              onClick={() => setIsHidden(!isHidden)}
+              className={cn(
+                'flex items-center gap-3 rounded-md transition-colors text-muted-foreground hover:text-foreground hover:bg-muted',
+                isExpanded ? 'px-3 py-2' : 'w-10 h-10 justify-center mx-auto'
+              )}
+              title={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
             >
-              <PanelLeftClose className="h-5 w-5" />
+              {isExpanded ? (
+                <>
+                  <PanelLeftClose className="h-5 w-5 flex-shrink-0" />
+                  <span className="text-sm">Collapse</span>
+                </>
+              ) : (
+                <PanelLeft className="h-5 w-5" />
+              )}
             </button>
+
+            {/* Sign out */}
             <button
               onClick={onSignOut}
-              className="w-10 h-10 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              title="Sign out"
+              className={cn(
+                'flex items-center gap-3 rounded-md transition-colors text-muted-foreground hover:text-foreground hover:bg-muted',
+                isExpanded ? 'px-3 py-2' : 'w-10 h-10 justify-center mx-auto'
+              )}
+              title={!isExpanded ? 'Sign out' : undefined}
             >
-              <LogOut className="h-5 w-5" />
+              <LogOut className="h-5 w-5 flex-shrink-0" />
+              {isExpanded && <span className="text-sm">Sign out</span>}
             </button>
           </div>
         </div>
-
-        {/* Show sidebar button when hidden */}
-        {isHidden && (
-          <button
-            onClick={() => setIsHidden(false)}
-            className="absolute left-2 top-2 p-2 bg-card border border-border rounded-md hover:bg-muted transition-colors shadow-sm z-10"
-            title="Show sidebar"
-          >
-            <PanelLeft className="h-4 w-4 text-muted-foreground" />
-          </button>
-        )}
       </div>
     );
   }
