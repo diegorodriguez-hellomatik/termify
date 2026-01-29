@@ -1,5 +1,46 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
+// Users API (avatar upload, profile)
+export const usersApi = {
+  // Upload avatar (multipart/form-data)
+  uploadAvatar: async (file: File, token: string) => {
+    const formData = new FormData();
+    formData.append('avatar', file);
+
+    const response = await fetch(`${API_URL}/api/users/avatar`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    return response.json() as Promise<ApiResponse<{ image: string; user: any }>>;
+  },
+
+  // Delete avatar
+  deleteAvatar: (token: string) =>
+    api<{ message: string }>('/api/users/avatar', {
+      method: 'DELETE',
+      token,
+    }),
+
+  // Update profile
+  updateProfile: (data: { name?: string }, token: string) =>
+    api<{ user: any }>('/api/users/profile', {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
+
+  // Get current user
+  getMe: (token: string) =>
+    api<{ user: { id: string; email: string; name: string | null; image: string | null; createdAt: string } }>(
+      '/api/users/me',
+      { token }
+    ),
+};
+
 interface ApiOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';
   body?: unknown;
@@ -535,8 +576,332 @@ export const shareApi = {
     ),
 };
 
+// Workspace Types
+export interface WorkspaceSettings {
+  theme?: string;
+  defaultCols?: number;
+  defaultRows?: number;
+}
+
+export interface WorkspaceLayout {
+  id: string;
+  type: 'terminal' | 'file' | 'split';
+  terminalId?: string;
+  filePath?: string;
+  fileName?: string;
+  fileExtension?: string;
+  direction?: 'horizontal' | 'vertical';
+  children?: WorkspaceLayout[];
+  sizes?: number[];
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  description?: string | null;
+  color?: string | null;
+  icon?: string | null;
+  isDefault: boolean;
+  position: number;
+  layout?: WorkspaceLayout | null;
+  settings?: WorkspaceSettings | null;
+  terminalCount: number;
+  terminals?: WorkspaceTerminalItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceTerminalItem {
+  id: string;
+  name: string;
+  status: string;
+  type: string;
+  cols: number;
+  rows: number;
+  cwd: string | null;
+  isFavorite: boolean;
+  position: number;
+  lastActiveAt: string | null;
+  category: {
+    id: string;
+    name: string;
+    color: string;
+    icon: string | null;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Workspaces API
+export const workspacesApi = {
+  list: (token: string) =>
+    api<{ workspaces: Workspace[] }>('/api/workspaces', { token }),
+
+  get: (id: string, token: string) =>
+    api<Workspace>(`/api/workspaces/${id}`, { token }),
+
+  create: (
+    data: {
+      name: string;
+      description?: string;
+      color?: string;
+      icon?: string;
+      isDefault?: boolean;
+    },
+    token: string
+  ) =>
+    api<Workspace>('/api/workspaces', { method: 'POST', body: data, token }),
+
+  update: (
+    id: string,
+    data: {
+      name?: string;
+      description?: string | null;
+      color?: string | null;
+      icon?: string | null;
+      isDefault?: boolean;
+      position?: number;
+      layout?: WorkspaceLayout | null;
+      settings?: WorkspaceSettings | null;
+    },
+    token: string
+  ) =>
+    api<Workspace>(`/api/workspaces/${id}`, { method: 'PATCH', body: data, token }),
+
+  delete: (id: string, token: string) =>
+    api<void>(`/api/workspaces/${id}`, { method: 'DELETE', token }),
+
+  reorder: (data: { workspaceIds: string[] }, token: string) =>
+    api<void>('/api/workspaces/reorder', { method: 'POST', body: data, token }),
+
+  // Terminal management within workspace
+  addTerminal: (
+    workspaceId: string,
+    data: { terminalId: string; position?: number },
+    token: string
+  ) =>
+    api<void>(`/api/workspaces/${workspaceId}/terminals`, {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  removeTerminal: (workspaceId: string, terminalId: string, token: string) =>
+    api<void>(`/api/workspaces/${workspaceId}/terminals/${terminalId}`, {
+      method: 'DELETE',
+      token,
+    }),
+
+  reorderTerminals: (
+    workspaceId: string,
+    data: { terminalIds: string[] },
+    token: string
+  ) =>
+    api<void>(`/api/workspaces/${workspaceId}/terminals/reorder`, {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+};
+
+// Team Types
+export type TeamRole = 'OWNER' | 'ADMIN' | 'MEMBER';
+export type TaskStatus = 'BACKLOG' | 'TODO' | 'IN_PROGRESS' | 'IN_REVIEW' | 'DONE';
+export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+export interface Team {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  icon: string | null;
+  role: TeamRole;
+  memberCount: number;
+  taskCount: number;
+  members?: TeamMember[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamMember {
+  id: string;
+  userId: string;
+  role: TeamRole;
+  email: string;
+  name: string | null;
+  image: string | null;
+  createdAt: string;
+}
+
+export interface Task {
+  id: string;
+  teamId: string;
+  createdById: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  position: number;
+  dueDate: string | null;
+  createdBy?: {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+  };
+  assignees?: TaskAssignee[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskAssignee {
+  id: string;
+  taskId: string;
+  teamMemberId: string;
+  teamMember?: {
+    id: string;
+    userId: string;
+    role: TeamRole;
+    user?: {
+      id: string;
+      email: string;
+      name: string | null;
+      image: string | null;
+    };
+  };
+  createdAt: string;
+}
+
+// Teams API
+export const teamsApi = {
+  list: (token: string) =>
+    api<{ teams: Team[] }>('/api/teams', { token }),
+
+  get: (id: string, token: string) =>
+    api<Team>(`/api/teams/${id}`, { token }),
+
+  create: (
+    data: { name: string; description?: string; color?: string; icon?: string },
+    token: string
+  ) =>
+    api<Team>('/api/teams', { method: 'POST', body: data, token }),
+
+  update: (
+    id: string,
+    data: { name?: string; description?: string | null; color?: string; icon?: string | null },
+    token: string
+  ) =>
+    api<Team>(`/api/teams/${id}`, { method: 'PATCH', body: data, token }),
+
+  delete: (id: string, token: string) =>
+    api<void>(`/api/teams/${id}`, { method: 'DELETE', token }),
+
+  invite: (
+    id: string,
+    data: { email: string; role?: 'ADMIN' | 'MEMBER' },
+    token: string
+  ) =>
+    api<TeamMember>(`/api/teams/${id}/invite`, { method: 'POST', body: data, token }),
+
+  updateMemberRole: (
+    teamId: string,
+    memberId: string,
+    data: { role: 'ADMIN' | 'MEMBER' },
+    token: string
+  ) =>
+    api<TeamMember>(`/api/teams/${teamId}/members/${memberId}/role`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
+
+  removeMember: (teamId: string, memberId: string, token: string) =>
+    api<void>(`/api/teams/${teamId}/members/${memberId}`, {
+      method: 'DELETE',
+      token,
+    }),
+};
+
+// Tasks API
+export const tasksApi = {
+  list: (teamId: string, token: string) =>
+    api<{ tasks: Task[] }>(`/api/tasks?teamId=${teamId}`, { token }),
+
+  get: (id: string, token: string) =>
+    api<Task>(`/api/tasks/${id}`, { token }),
+
+  create: (
+    data: {
+      teamId: string;
+      title: string;
+      description?: string;
+      status?: TaskStatus;
+      priority?: TaskPriority;
+      dueDate?: string;
+      assigneeIds?: string[];
+    },
+    token: string
+  ) =>
+    api<Task>('/api/tasks', { method: 'POST', body: data, token }),
+
+  update: (
+    id: string,
+    data: {
+      title?: string;
+      description?: string | null;
+      status?: TaskStatus;
+      priority?: TaskPriority;
+      position?: number;
+      dueDate?: string | null;
+    },
+    token: string
+  ) =>
+    api<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: data, token }),
+
+  delete: (id: string, token: string) =>
+    api<void>(`/api/tasks/${id}`, { method: 'DELETE', token }),
+
+  assign: (taskId: string, teamMemberId: string, token: string) =>
+    api<TaskAssignee>(`/api/tasks/${taskId}/assign`, {
+      method: 'POST',
+      body: { teamMemberId },
+      token,
+    }),
+
+  unassign: (taskId: string, assigneeId: string, token: string) =>
+    api<void>(`/api/tasks/${taskId}/assign/${assigneeId}`, {
+      method: 'DELETE',
+      token,
+    }),
+
+  reorder: (
+    data: { taskIds: string[]; status: TaskStatus },
+    token: string
+  ) =>
+    api<void>('/api/tasks/reorder', { method: 'POST', body: data, token }),
+};
+
 // Notification Types
-export type NotificationType = 'TERMINAL_SHARED' | 'TERMINAL_SHARE_REVOKED' | 'TERMINAL_SHARE_UPDATED' | 'SYSTEM';
+export type NotificationType =
+  | 'TERMINAL_SHARED'
+  | 'TERMINAL_SHARE_REVOKED'
+  | 'TERMINAL_SHARE_UPDATED'
+  | 'SYSTEM'
+  | 'TEAM_INVITE'
+  | 'TEAM_MEMBER_JOINED'
+  | 'TEAM_MEMBER_LEFT'
+  | 'TEAM_ROLE_CHANGED'
+  | 'TASK_ASSIGNED'
+  | 'TASK_UNASSIGNED'
+  | 'TASK_STATUS_CHANGED'
+  | 'TASK_DUE_SOON'
+  | 'TASK_OVERDUE'
+  // Push notification events
+  | 'TERMINAL_CRASHED'
+  | 'SSH_CONNECTION_FAILED'
+  | 'VIEWER_JOINED'
+  | 'VIEWER_LEFT'
+  | 'COMMAND_COMPLETED';
 
 export interface Notification {
   id: string;
@@ -588,6 +953,712 @@ export const notificationsApi = {
   deleteAll: (token: string) =>
     api<void>('/api/notifications', {
       method: 'DELETE',
+      token,
+    }),
+};
+
+// Push Subscription Types
+export interface PushPreferences {
+  terminalCrashed: boolean;
+  sshConnectionFailed: boolean;
+  viewerActivity: boolean;
+  commandCompleted: boolean;
+  shareNotifications: boolean;
+}
+
+export interface PushSubscriptionInfo {
+  id: string;
+  endpoint: string;
+  userAgent: string | null;
+  preferences: PushPreferences;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Push Notifications API
+export const pushApi = {
+  // Get VAPID public key
+  getVapidPublicKey: () =>
+    api<{ publicKey: string }>('/api/push/vapid-public-key'),
+
+  // Subscribe to push notifications
+  subscribe: (
+    subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
+    token: string
+  ) =>
+    api<{ id: string; preferences: PushPreferences }>('/api/push/subscribe', {
+      method: 'POST',
+      body: subscription,
+      token,
+    }),
+
+  // Unsubscribe from push notifications
+  unsubscribe: (endpoint: string, token: string) =>
+    api<{ removed: boolean }>('/api/push/unsubscribe', {
+      method: 'DELETE',
+      body: { endpoint },
+      token,
+    }),
+
+  // Get all subscriptions for current user
+  getSubscriptions: (token: string) =>
+    api<{ subscriptions: PushSubscriptionInfo[] }>('/api/push/subscriptions', {
+      token,
+    }),
+
+  // Update notification preferences
+  updatePreferences: (
+    endpoint: string,
+    preferences: Partial<PushPreferences>,
+    token: string
+  ) =>
+    api<{ preferences: PushPreferences }>('/api/push/preferences', {
+      method: 'PATCH',
+      body: { endpoint, preferences },
+      token,
+    }),
+
+  // Send test notification
+  sendTest: (token: string) =>
+    api<{ sent: number; failed: number; message: string }>('/api/push/test', {
+      method: 'POST',
+      token,
+    }),
+};
+
+// ========================
+// Team Collaboration Types
+// ========================
+
+export type ServerAuthMethod = 'PASSWORD' | 'KEY' | 'AGENT';
+export type ServerStatus = 'ONLINE' | 'OFFLINE' | 'UNKNOWN';
+
+export interface TeamTerminalShare {
+  id: string;
+  terminalId: string;
+  permission: SharePermission;
+  terminal: {
+    id: string;
+    name: string;
+    status: string;
+    type: string;
+    cols: number;
+    rows: number;
+    cwd: string | null;
+    isFavorite: boolean;
+    lastActiveAt: string | null;
+    owner: {
+      id: string;
+      email: string;
+      name: string | null;
+      image: string | null;
+    };
+    category: {
+      id: string;
+      name: string;
+      color: string;
+      icon: string | null;
+    } | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  createdAt: string;
+}
+
+export interface TeamSnippet {
+  id: string;
+  name: string;
+  command: string;
+  description: string | null;
+  category: string | null;
+  tags: string[];
+  usageCount: number;
+  createdBy: {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamEnvVariable {
+  id: string;
+  name: string;
+  value: string;
+  isSecret: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamServer {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string | null;
+  authMethod: ServerAuthMethod;
+  description: string | null;
+  documentation: string | null;
+  tags: string[];
+  lastStatus: ServerStatus | null;
+  lastCheckedAt: string | null;
+  createdBy: {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamCommandHistory {
+  id: string;
+  command: string;
+  exitCode: number | null;
+  duration: number | null;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+  };
+  terminal: {
+    id: string;
+    name: string;
+    type: string;
+  };
+  createdAt: string;
+}
+
+export interface TeamAuditLog {
+  id: string;
+  action: string;
+  resource: string;
+  resourceId: string | null;
+  details: Record<string, unknown> | null;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+  };
+  createdAt: string;
+}
+
+export interface TeamPresence {
+  userId: string;
+  userName: string;
+  userImage: string | null;
+  status: 'online' | 'away' | 'busy';
+  activeTerminalId: string | null;
+  lastActivityAt: string;
+}
+
+export interface TeamNotificationPrefs {
+  terminalErrors: boolean;
+  longCommands: boolean;
+  longCommandThreshold: number;
+  taskMentions: boolean;
+  serverStatus: boolean;
+}
+
+export interface TaskCommand {
+  id: string;
+  command: string;
+  description: string | null;
+  position: number;
+  isCompleted: boolean;
+  completedAt: string | null;
+  exitCode: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ========================
+// Team Terminals API
+// ========================
+
+export const teamTerminalsApi = {
+  list: (teamId: string, token: string) =>
+    api<{ terminals: TeamTerminalShare[]; total: number }>(
+      `/api/teams/${teamId}/terminals`,
+      { token }
+    ),
+
+  share: (
+    teamId: string,
+    data: { terminalId: string; permission?: SharePermission },
+    token: string
+  ) =>
+    api<TeamTerminalShare>(`/api/teams/${teamId}/terminals`, {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  updatePermission: (
+    teamId: string,
+    terminalId: string,
+    data: { permission: SharePermission },
+    token: string
+  ) =>
+    api<TeamTerminalShare>(`/api/teams/${teamId}/terminals/${terminalId}`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
+
+  remove: (teamId: string, terminalId: string, token: string) =>
+    api<void>(`/api/teams/${teamId}/terminals/${terminalId}`, {
+      method: 'DELETE',
+      token,
+    }),
+};
+
+// ========================
+// Team Workspaces API
+// ========================
+
+export interface TeamWorkspace {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  icon: string | null;
+  isTeamDefault: boolean;
+  position: number;
+  layout: WorkspaceLayout | null;
+  settings: WorkspaceSettings | null;
+  owner: {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+  };
+  terminalCount: number;
+  terminals: {
+    id: string;
+    name: string;
+    status: string;
+    type: string;
+    position: number;
+  }[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const teamWorkspacesApi = {
+  list: (teamId: string, token: string) =>
+    api<{ workspaces: TeamWorkspace[]; total: number }>(
+      `/api/teams/${teamId}/workspaces`,
+      { token }
+    ),
+
+  share: (
+    teamId: string,
+    data: { workspaceId: string; isTeamDefault?: boolean },
+    token: string
+  ) =>
+    api<TeamWorkspace>(`/api/teams/${teamId}/workspaces`, {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  update: (
+    teamId: string,
+    workspaceId: string,
+    data: { layout?: WorkspaceLayout | null; isTeamDefault?: boolean },
+    token: string
+  ) =>
+    api<TeamWorkspace>(`/api/teams/${teamId}/workspaces/${workspaceId}`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
+
+  remove: (teamId: string, workspaceId: string, token: string) =>
+    api<void>(`/api/teams/${teamId}/workspaces/${workspaceId}`, {
+      method: 'DELETE',
+      token,
+    }),
+};
+
+// ========================
+// Team Snippets API
+// ========================
+
+export const teamSnippetsApi = {
+  list: (teamId: string, token: string, params?: { category?: string; search?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.category) searchParams.set('category', params.category);
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return api<{ snippets: TeamSnippet[]; categories: string[]; total: number }>(
+      `/api/teams/${teamId}/snippets${query ? `?${query}` : ''}`,
+      { token }
+    );
+  },
+
+  create: (
+    teamId: string,
+    data: {
+      name: string;
+      command: string;
+      description?: string;
+      category?: string;
+      tags?: string[];
+    },
+    token: string
+  ) =>
+    api<TeamSnippet>(`/api/teams/${teamId}/snippets`, {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  update: (
+    teamId: string,
+    snippetId: string,
+    data: {
+      name?: string;
+      command?: string;
+      description?: string | null;
+      category?: string | null;
+      tags?: string[];
+    },
+    token: string
+  ) =>
+    api<TeamSnippet>(`/api/teams/${teamId}/snippets/${snippetId}`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
+
+  delete: (teamId: string, snippetId: string, token: string) =>
+    api<void>(`/api/teams/${teamId}/snippets/${snippetId}`, {
+      method: 'DELETE',
+      token,
+    }),
+
+  use: (teamId: string, snippetId: string, token: string) =>
+    api<{ id: string; usageCount: number }>(`/api/teams/${teamId}/snippets/${snippetId}/use`, {
+      method: 'POST',
+      token,
+    }),
+};
+
+// ========================
+// Team Env Variables API
+// ========================
+
+export const teamEnvVariablesApi = {
+  list: (teamId: string, token: string) =>
+    api<{ envVariables: TeamEnvVariable[]; total: number }>(
+      `/api/teams/${teamId}/env-variables`,
+      { token }
+    ),
+
+  create: (
+    teamId: string,
+    data: { name: string; value: string; isSecret?: boolean },
+    token: string
+  ) =>
+    api<TeamEnvVariable>(`/api/teams/${teamId}/env-variables`, {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  update: (
+    teamId: string,
+    envVarId: string,
+    data: { value?: string; isSecret?: boolean },
+    token: string
+  ) =>
+    api<TeamEnvVariable>(`/api/teams/${teamId}/env-variables/${envVarId}`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
+
+  delete: (teamId: string, envVarId: string, token: string) =>
+    api<void>(`/api/teams/${teamId}/env-variables/${envVarId}`, {
+      method: 'DELETE',
+      token,
+    }),
+
+  getValue: (teamId: string, envVarId: string, token: string) =>
+    api<{ id: string; name: string; value: string }>(
+      `/api/teams/${teamId}/env-variables/${envVarId}/value`,
+      { token }
+    ),
+};
+
+// ========================
+// Team Servers API
+// ========================
+
+export const teamServersApi = {
+  list: (teamId: string, token: string) =>
+    api<{ servers: TeamServer[]; total: number }>(
+      `/api/teams/${teamId}/servers`,
+      { token }
+    ),
+
+  get: (teamId: string, serverId: string, token: string) =>
+    api<TeamServer>(`/api/teams/${teamId}/servers/${serverId}`, { token }),
+
+  create: (
+    teamId: string,
+    data: {
+      name: string;
+      host: string;
+      port?: number;
+      username?: string;
+      authMethod?: ServerAuthMethod;
+      description?: string;
+      documentation?: string;
+      tags?: string[];
+    },
+    token: string
+  ) =>
+    api<TeamServer>(`/api/teams/${teamId}/servers`, {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  update: (
+    teamId: string,
+    serverId: string,
+    data: {
+      name?: string;
+      host?: string;
+      port?: number;
+      username?: string;
+      authMethod?: ServerAuthMethod;
+      description?: string | null;
+      documentation?: string | null;
+      tags?: string[];
+    },
+    token: string
+  ) =>
+    api<TeamServer>(`/api/teams/${teamId}/servers/${serverId}`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
+
+  delete: (teamId: string, serverId: string, token: string) =>
+    api<void>(`/api/teams/${teamId}/servers/${serverId}`, {
+      method: 'DELETE',
+      token,
+    }),
+
+  check: (teamId: string, serverId: string, token: string) =>
+    api<{
+      connected: boolean;
+      serverInfo?: string;
+      error?: string;
+      status: ServerStatus;
+      checkedAt: string;
+    }>(`/api/teams/${teamId}/servers/${serverId}/check`, {
+      method: 'POST',
+      token,
+    }),
+
+  connect: (
+    teamId: string,
+    serverId: string,
+    data: { password?: string; privateKey?: string },
+    token: string
+  ) =>
+    api<{ terminalId: string; terminalName: string }>(
+      `/api/teams/${teamId}/servers/${serverId}/connect`,
+      { method: 'POST', body: data, token }
+    ),
+};
+
+// ========================
+// Team History API
+// ========================
+
+export const teamHistoryApi = {
+  list: (
+    teamId: string,
+    token: string,
+    params?: {
+      search?: string;
+      userId?: string;
+      terminalId?: string;
+      startDate?: string;
+      endDate?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ) => {
+    const searchParams = new URLSearchParams();
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.userId) searchParams.set('userId', params.userId);
+    if (params?.terminalId) searchParams.set('terminalId', params.terminalId);
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+    if (params?.limit) searchParams.set('limit', params.limit.toString());
+    if (params?.offset) searchParams.set('offset', params.offset.toString());
+    const query = searchParams.toString();
+    return api<{
+      history: TeamCommandHistory[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/api/teams/${teamId}/history${query ? `?${query}` : ''}`, { token });
+  },
+
+  stats: (teamId: string, token: string) =>
+    api<{
+      totalCommands: number;
+      commandsByUser: { user: any; count: number }[];
+      activityLast24h: number;
+    }>(`/api/teams/${teamId}/history/stats`, { token }),
+};
+
+// ========================
+// Team Audit Logs API
+// ========================
+
+export const teamAuditLogsApi = {
+  list: (
+    teamId: string,
+    token: string,
+    params?: {
+      action?: string;
+      resource?: string;
+      userId?: string;
+      startDate?: string;
+      endDate?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ) => {
+    const searchParams = new URLSearchParams();
+    if (params?.action) searchParams.set('action', params.action);
+    if (params?.resource) searchParams.set('resource', params.resource);
+    if (params?.userId) searchParams.set('userId', params.userId);
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+    if (params?.limit) searchParams.set('limit', params.limit.toString());
+    if (params?.offset) searchParams.set('offset', params.offset.toString());
+    const query = searchParams.toString();
+    return api<{
+      logs: TeamAuditLog[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/api/teams/${teamId}/audit-logs${query ? `?${query}` : ''}`, { token });
+  },
+
+  actions: (teamId: string, token: string) =>
+    api<{ actions: string[] }>(`/api/teams/${teamId}/audit-logs/actions`, { token }),
+};
+
+// ========================
+// Team Presence API
+// ========================
+
+export const teamPresenceApi = {
+  get: (teamId: string, token: string) =>
+    api<{
+      presence: TeamPresence[];
+      onlineCount: number;
+      stats: {
+        memberCount: number;
+        activeTasks: number;
+        activeTerminals: number;
+        commandsLast24h: number;
+      };
+    }>(`/api/teams/${teamId}/presence`, { token }),
+
+  getNotificationPrefs: (teamId: string, token: string) =>
+    api<TeamNotificationPrefs>(`/api/teams/${teamId}/notification-prefs`, { token }),
+
+  updateNotificationPrefs: (
+    teamId: string,
+    data: Partial<TeamNotificationPrefs>,
+    token: string
+  ) =>
+    api<TeamNotificationPrefs>(`/api/teams/${teamId}/notification-prefs`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
+
+  activity: (teamId: string, token: string, limit?: number) =>
+    api<{ activities: TeamAuditLog[] }>(
+      `/api/teams/${teamId}/activity${limit ? `?limit=${limit}` : ''}`,
+      { token }
+    ),
+};
+
+// ========================
+// Task Commands API
+// ========================
+
+export const taskCommandsApi = {
+  list: (taskId: string, token: string) =>
+    api<{ commands: TaskCommand[]; total: number }>(
+      `/api/tasks/${taskId}/commands`,
+      { token }
+    ),
+
+  create: (
+    taskId: string,
+    data: { command: string; description?: string; position?: number },
+    token: string
+  ) =>
+    api<TaskCommand>(`/api/tasks/${taskId}/commands`, {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  update: (
+    taskId: string,
+    commandId: string,
+    data: {
+      command?: string;
+      description?: string | null;
+      position?: number;
+      isCompleted?: boolean;
+    },
+    token: string
+  ) =>
+    api<TaskCommand>(`/api/tasks/${taskId}/commands/${commandId}`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
+
+  delete: (taskId: string, commandId: string, token: string) =>
+    api<void>(`/api/tasks/${taskId}/commands/${commandId}`, {
+      method: 'DELETE',
+      token,
+    }),
+
+  execute: (taskId: string, commandId: string, exitCode: number, token: string) =>
+    api<TaskCommand>(`/api/tasks/${taskId}/commands/${commandId}/execute`, {
+      method: 'POST',
+      body: { exitCode },
+      token,
+    }),
+
+  reorder: (taskId: string, commandIds: string[], token: string) =>
+    api<void>(`/api/tasks/${taskId}/commands/reorder`, {
+      method: 'POST',
+      body: { commandIds },
       token,
     }),
 };

@@ -14,6 +14,7 @@ import { ConnectionManager } from './ConnectionManager.js';
 import { getPTYManager } from '../pty/PTYManager.js';
 import { SSHManager } from '../ssh/SSHManager.js';
 import { prisma } from '../lib/prisma.js';
+import { NotificationService } from '../services/NotificationService.js';
 
 interface TokenPayload {
   userId: string;
@@ -27,12 +28,20 @@ interface UserInfo {
   image: string | null;
 }
 
+// Singleton instance
+let wsServerInstance: TerminalWebSocketServer | null = null;
+
+export function getWebSocketServer(): TerminalWebSocketServer | null {
+  return wsServerInstance;
+}
+
 export class TerminalWebSocketServer {
   private wss: WSServer;
   private connectionManager: ConnectionManager;
   private jwtSecret: string;
 
   constructor(options: { port?: number; server?: any }) {
+    wsServerInstance = this;
     this.jwtSecret = process.env.JWT_SECRET || 'development-secret';
     this.connectionManager = new ConnectionManager();
 
@@ -160,7 +169,11 @@ export class TerminalWebSocketServer {
 
         // Broadcast viewer left if was connected to a terminal
         if (terminalId && conn) {
-          this.broadcastViewerLeft(terminalId, conn.visitorId);
+          this.broadcastViewerLeft(terminalId, conn.visitorId, {
+            userId: conn.userId,
+            name: conn.name || undefined,
+            email: conn.email,
+          });
         }
       });
 
@@ -172,7 +185,11 @@ export class TerminalWebSocketServer {
 
         // Broadcast viewer left if was connected to a terminal
         if (terminalId && conn) {
-          this.broadcastViewerLeft(terminalId, conn.visitorId);
+          this.broadcastViewerLeft(terminalId, conn.visitorId, {
+            userId: conn.userId,
+            name: conn.name || undefined,
+            email: conn.email,
+          });
         }
       });
     });
@@ -217,6 +234,14 @@ export class TerminalWebSocketServer {
           message.cols,
           message.rows
         );
+        break;
+
+      case 'team.subscribe':
+        await this.handleTeamSubscribe(ws, userId, message.teamId);
+        break;
+
+      case 'team.unsubscribe':
+        await this.handleTeamUnsubscribe(ws, message.teamId);
         break;
 
       default:
@@ -868,11 +893,24 @@ export class TerminalWebSocketServer {
 
       try {
         // Try to update, but the terminal might have been deleted
-        await prisma.terminal.update({
+        const terminal = await prisma.terminal.update({
           where: { id: terminalId },
           data: { status },
         });
         this.broadcastStatus(terminalId, status);
+
+        // Send push notification if terminal crashed (non-zero exit code)
+        if (exitCode !== 0) {
+          const notificationService = NotificationService.getInstance();
+          notificationService.notifyTerminalCrashed({
+            userId: terminal.userId,
+            terminalId: terminal.id,
+            terminalName: terminal.name,
+            exitCode,
+          }).catch((err) => {
+            console.error('[WS] Failed to send terminal crashed notification:', err);
+          });
+        }
       } catch (error) {
         // Terminal was likely deleted, ignore the error
         console.log(`[WS] Terminal ${terminalId} no longer exists, skipping status update`);
@@ -916,7 +954,7 @@ export class TerminalWebSocketServer {
     sshManager.on('error', async (terminalId: string, error: Error) => {
       console.error(`[WS] SSH error for terminal ${terminalId}:`, error);
       try {
-        await prisma.terminal.update({
+        const terminal = await prisma.terminal.update({
           where: { id: terminalId },
           data: { status: TerminalStatus.CRASHED },
         });
@@ -932,6 +970,18 @@ export class TerminalWebSocketServer {
           terminalId,
           JSON.stringify(message)
         );
+
+        // Send push notification for SSH connection failure
+        const notificationService = NotificationService.getInstance();
+        notificationService.notifySSHConnectionFailed({
+          userId: terminal.userId,
+          terminalId: terminal.id,
+          terminalName: terminal.name,
+          host: terminal.sshHost || 'unknown',
+          error: error.message,
+        }).catch((err) => {
+          console.error('[WS] Failed to send SSH error notification:', err);
+        });
       } catch (err) {
         console.log(`[WS] SSH Terminal ${terminalId} no longer exists, skipping error update`);
       }
@@ -963,7 +1013,7 @@ export class TerminalWebSocketServer {
   /**
    * Broadcast viewer joined to all connections on a terminal
    */
-  private broadcastViewerJoined(ws: WebSocket, terminalId: string): void {
+  private async broadcastViewerJoined(ws: WebSocket, terminalId: string): Promise<void> {
     const connection = this.connectionManager.get(ws);
     if (!connection) return;
 
@@ -990,12 +1040,37 @@ export class TerminalWebSocketServer {
         socket.send(JSON.stringify(message));
       }
     }
+
+    // Send push notification to terminal owner (if viewer is not the owner)
+    if (!connection.isOwner && connection.email) {
+      try {
+        const terminal = await prisma.terminal.findUnique({
+          where: { id: terminalId },
+          select: { userId: true, name: true },
+        });
+
+        if (terminal && terminal.userId !== connection.userId) {
+          const notificationService = NotificationService.getInstance();
+          notificationService.notifyViewerJoined({
+            ownerId: terminal.userId,
+            terminalId,
+            terminalName: terminal.name,
+            viewerName: connection.name || '',
+            viewerEmail: connection.email,
+          }).catch((err) => {
+            console.error('[WS] Failed to send viewer joined notification:', err);
+          });
+        }
+      } catch (err) {
+        console.error('[WS] Failed to fetch terminal for viewer notification:', err);
+      }
+    }
   }
 
   /**
    * Broadcast viewer left to all connections on a terminal
    */
-  private broadcastViewerLeft(terminalId: string, visitorId: string): void {
+  private async broadcastViewerLeft(terminalId: string, visitorId: string, viewerInfo?: { userId?: string; name?: string; email?: string }): Promise<void> {
     const message: ServerMessage = {
       type: 'terminal.viewer.left',
       terminalId,
@@ -1003,6 +1078,31 @@ export class TerminalWebSocketServer {
     };
 
     this.connectionManager.broadcastToTerminal(terminalId, JSON.stringify(message));
+
+    // Send push notification to terminal owner (if we have viewer info and they're not the owner)
+    if (viewerInfo?.email) {
+      try {
+        const terminal = await prisma.terminal.findUnique({
+          where: { id: terminalId },
+          select: { userId: true, name: true },
+        });
+
+        if (terminal && terminal.userId !== viewerInfo.userId) {
+          const notificationService = NotificationService.getInstance();
+          notificationService.notifyViewerLeft({
+            ownerId: terminal.userId,
+            terminalId,
+            terminalName: terminal.name,
+            viewerName: viewerInfo.name || '',
+            viewerEmail: viewerInfo.email,
+          }).catch((err) => {
+            console.error('[WS] Failed to send viewer left notification:', err);
+          });
+        }
+      } catch (err) {
+        console.error('[WS] Failed to fetch terminal for viewer left notification:', err);
+      }
+    }
   }
 
   /**
@@ -1028,10 +1128,66 @@ export class TerminalWebSocketServer {
   }
 
   /**
+   * Handle team subscription request
+   */
+  private async handleTeamSubscribe(
+    ws: WebSocket,
+    userId: string,
+    teamId: string
+  ): Promise<void> {
+    // Verify membership
+    const membership = await prisma.teamMember.findUnique({
+      where: { teamId_userId: { teamId, userId } },
+    });
+
+    if (!membership) {
+      this.send(ws, {
+        type: 'error',
+        message: 'You are not a member of this team',
+      });
+      return;
+    }
+
+    // Subscribe to team
+    this.connectionManager.subscribeToTeam(ws, teamId);
+    this.send(ws, { type: 'team.subscribed', teamId });
+    console.log(`[WS] User ${userId} subscribed to team ${teamId}`);
+  }
+
+  /**
+   * Handle team unsubscription request
+   */
+  private async handleTeamUnsubscribe(
+    ws: WebSocket,
+    teamId: string
+  ): Promise<void> {
+    this.connectionManager.unsubscribeFromTeam(ws, teamId);
+    console.log(`[WS] Connection unsubscribed from team ${teamId}`);
+  }
+
+  /**
+   * Broadcast a message to all subscribers of a team
+   */
+  broadcastToTeam(teamId: string, message: ServerMessage): void {
+    this.connectionManager.broadcastToTeam(teamId, JSON.stringify(message));
+  }
+
+  /**
    * Get server stats
    */
   getStats() {
     return this.connectionManager.getStats();
+  }
+
+  /**
+   * Send a notification to a user via WebSocket
+   */
+  sendNotificationToUser(userId: string, notification: any): void {
+    const message: ServerMessage = {
+      type: 'notification',
+      notification,
+    };
+    this.connectionManager.sendToUser(userId, message);
   }
 
   /**

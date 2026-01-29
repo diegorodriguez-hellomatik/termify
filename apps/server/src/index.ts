@@ -14,6 +14,18 @@ import auditlogsRoutes from './api/auditlogs.js';
 import apikeysRoutes from './api/apikeys.js';
 import shareRoutes from './api/share.js';
 import notificationsRoutes from './api/notifications.js';
+import workspacesRoutes from './api/workspaces.js';
+import teamsRoutes from './api/teams.js';
+import tasksRoutes from './api/tasks.js';
+import pushRoutes from './api/push.js';
+import teamTerminalsRoutes from './api/team-terminals.js';
+import teamWorkspacesRoutes from './api/team-workspaces.js';
+import teamSnippetsRoutes from './api/team-snippets.js';
+import teamServersRoutes from './api/team-servers.js';
+import teamHistoryRoutes from './api/team-history.js';
+import teamPresenceRoutes from './api/team-presence.js';
+import taskCommandsRoutes from './api/task-commands.js';
+import usersRoutes from './api/users.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',');
@@ -47,6 +59,18 @@ app.use('/api/profiles', profilesRoutes);
 app.use('/api/auditlogs', auditlogsRoutes);
 app.use('/api/apikeys', apikeysRoutes);
 app.use('/api', notificationsRoutes);
+app.use('/api/workspaces', workspacesRoutes);
+app.use('/api/teams', teamsRoutes);
+app.use('/api/teams', teamTerminalsRoutes);
+app.use('/api/teams', teamWorkspacesRoutes);
+app.use('/api/teams', teamSnippetsRoutes);
+app.use('/api/teams', teamServersRoutes);
+app.use('/api/teams', teamHistoryRoutes);
+app.use('/api/teams', teamPresenceRoutes);
+app.use('/api/tasks', tasksRoutes);
+app.use('/api/tasks', taskCommandsRoutes);
+app.use('/api', pushRoutes);
+app.use('/api/users', usersRoutes);
 
 // Stats endpoint
 app.get('/api/stats', (req, res) => {
