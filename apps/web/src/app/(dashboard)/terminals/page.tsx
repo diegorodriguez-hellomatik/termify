@@ -207,38 +207,8 @@ function SortableTerminalCard({
         isDragging ? 'shadow-2xl scale-105' : ''
       }`}
     >
-      {/* Action buttons - top right */}
-      <div className="absolute top-3 right-3 flex items-center gap-1 z-10">
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onToggleFavorite(terminal.id, !terminal.isFavorite);
-          }}
-          className={cn(
-            'p-1.5 rounded-md transition-all',
-            terminal.isFavorite
-              ? 'text-yellow-500 bg-yellow-500/10'
-              : 'text-muted-foreground hover:text-yellow-500 hover:bg-muted'
-          )}
-          title={terminal.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-        >
-          {terminal.isFavorite ? <Star size={16} fill="currentColor" /> : <StarOff size={16} />}
-        </button>
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onDelete(terminal.id);
-          }}
-          className="p-1.5 hover:bg-destructive/10 rounded-md transition-all"
-          title="Delete terminal"
-        >
-          <Trash2 size={16} className="text-destructive" />
-        </button>
-      </div>
-
-      <div className="p-5 pt-12">
+      <div className="p-5">
+        {/* Header row with terminal info and action buttons */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3">
             <div
@@ -303,8 +273,36 @@ function SortableTerminalCard({
               </p>
             </div>
           </div>
+          {/* Status and action buttons */}
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${STATUS_COLORS[terminal.status]}`} />
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggleFavorite(terminal.id, !terminal.isFavorite);
+              }}
+              className={cn(
+                'p-1.5 rounded-md transition-all',
+                terminal.isFavorite
+                  ? 'text-yellow-500 bg-yellow-500/10'
+                  : 'text-muted-foreground hover:text-yellow-500 hover:bg-muted'
+              )}
+              title={terminal.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              {terminal.isFavorite ? <Star size={16} fill="currentColor" /> : <StarOff size={16} />}
+            </button>
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDelete(terminal.id);
+              }}
+              className="p-1.5 hover:bg-destructive/10 rounded-md transition-all"
+              title="Delete terminal"
+            >
+              <Trash2 size={16} className="text-destructive" />
+            </button>
           </div>
         </div>
 
