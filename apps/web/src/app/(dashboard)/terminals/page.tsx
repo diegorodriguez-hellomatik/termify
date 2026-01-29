@@ -299,10 +299,9 @@ function DraggableTerminalCard({
         }}
         className={cn(
           'group relative bg-card border border-border rounded-lg overflow-hidden cursor-grab active:cursor-grabbing',
-          'transition-all duration-200',
+          !dragging && 'transition-shadow transition-border duration-200 hover:border-primary/50 hover:shadow-md',
           dragging && !isOverlay && 'opacity-30',
-          isOverlay && 'shadow-2xl ring-2 ring-primary/50 scale-[1.02] rotate-1',
-          !dragging && 'hover:border-primary/50 hover:shadow-md'
+          isOverlay && 'shadow-2xl ring-2 ring-primary/50 scale-[1.02] rotate-1'
         )}
       >
         <div className="p-3">
@@ -393,10 +392,9 @@ function DraggableTerminalCard({
       }}
       className={cn(
         'group relative bg-card border border-border rounded-xl overflow-hidden cursor-grab active:cursor-grabbing',
-        'transition-all duration-200',
+        !dragging && 'transition-shadow transition-border duration-200 hover:border-primary/50 hover:shadow-md',
         dragging && !isOverlay && 'opacity-30',
-        isOverlay && 'shadow-2xl ring-2 ring-primary/50 scale-[1.02] rotate-1 bg-card/95 backdrop-blur-sm',
-        !dragging && 'hover:border-primary/50 hover:shadow-md'
+        isOverlay && 'shadow-2xl ring-2 ring-primary/50 scale-[1.02] rotate-1 bg-card/95 backdrop-blur-sm'
       )}
     >
       <div className="p-5">

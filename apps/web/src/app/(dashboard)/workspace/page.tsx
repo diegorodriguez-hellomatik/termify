@@ -235,7 +235,7 @@ function SortableWorkspaceCard({
         {...listeners}
         className={cn(
           'group relative rounded-lg border cursor-grab active:cursor-grabbing',
-          'hover:shadow-md transition-all duration-200',
+          !isDragging && 'hover:shadow-md transition-shadow transition-border duration-200',
           isDark
             ? 'bg-card border-border hover:border-muted-foreground/30'
             : 'bg-white border-gray-200 hover:border-gray-300',
@@ -327,7 +327,7 @@ function SortableWorkspaceCard({
         {...listeners}
         className={cn(
           'group relative rounded-lg border cursor-grab active:cursor-grabbing',
-          'hover:shadow-md transition-all duration-200',
+          !isDragging && 'hover:shadow-md transition-shadow transition-border duration-200',
           isDark
             ? 'bg-card border-border hover:border-muted-foreground/30'
             : 'bg-white border-gray-200 hover:border-gray-300',
@@ -400,8 +400,8 @@ function SortableWorkspaceCard({
       {...attributes}
       {...listeners}
       className={cn(
-        'group relative rounded-xl border cursor-grab active:cursor-grabbing',
-        'hover:shadow-lg transition-all duration-200 flex flex-col',
+        'group relative rounded-xl border cursor-grab active:cursor-grabbing flex flex-col',
+        !isDragging && 'hover:shadow-lg transition-shadow transition-border duration-200',
         isDark
           ? 'bg-card border-border hover:border-muted-foreground/30'
           : 'bg-white border-gray-200 hover:border-gray-300',
