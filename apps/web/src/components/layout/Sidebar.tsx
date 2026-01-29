@@ -19,7 +19,6 @@ import {
   MonitorCog,
   Files,
   PanelLeftClose,
-  PanelLeft,
   FolderTree,
   Search,
   GitBranch,
@@ -340,16 +339,6 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
         </div>
       </aside>
 
-      {/* Expand button when collapsed */}
-      {isCollapsed && (
-        <button
-          onClick={() => setIsCollapsed(false)}
-          className="absolute left-12 top-3 p-1.5 bg-card border border-border rounded-md hover:bg-muted transition-colors shadow-sm z-10"
-          title="Open panel"
-        >
-          <PanelLeft className="h-4 w-4 text-muted-foreground" />
-        </button>
-      )}
     </div>
   );
 }
