@@ -19,7 +19,9 @@ import {
   MonitorCog,
   Files,
   PanelLeftClose,
+  PanelLeft,
   FolderTree,
+  Menu,
   Search,
   GitBranch,
   ListTodo,
@@ -132,11 +134,29 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
   if (!isTerminalView) {
     return (
       <div className="hidden md:flex sticky top-0 h-screen">
+        {/* Activity Bar */}
         <div className="w-12 bg-card border-r border-border flex flex-col items-center py-2">
           {/* Logo */}
           <Link href="/terminals" className="mb-4 p-2 hover:bg-muted rounded-md transition-colors">
             <Terminal className="h-5 w-5 text-primary" />
           </Link>
+
+          {/* Menu toggle */}
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className={cn(
+              'w-10 h-10 flex items-center justify-center rounded-md transition-colors relative',
+              !isCollapsed
+                ? 'text-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            )}
+            title={isCollapsed ? 'Open menu' : 'Close menu'}
+          >
+            {isCollapsed ? <PanelLeft className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+            {!isCollapsed && (
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-primary rounded-r" />
+            )}
+          </button>
 
           <div className="flex-1" />
 
@@ -164,6 +184,108 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
             </button>
           </div>
         </div>
+
+        {/* Navigation Panel */}
+        <aside
+          className={cn(
+            'bg-card border-r border-border flex flex-col transition-all duration-300 ease-in-out overflow-hidden',
+            isCollapsed ? 'w-0' : 'w-56'
+          )}
+        >
+          {/* Panel Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border min-w-[224px]">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Menu
+            </span>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 p-2 min-w-[224px]">
+            <ul className="space-y-0.5">
+              {navItems.map((item) => (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-sm',
+                      isActive(item.href)
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    )}
+                  >
+                    <item.icon className="h-4 w-4 flex-shrink-0" />
+                    <span>{item.label}</span>
+                  </Link>
+                </li>
+              ))}
+
+              {/* Settings with expandable sub-items */}
+              <li>
+                <div
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2 rounded-md transition-colors cursor-pointer text-sm',
+                    isSettingsActive
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  )}
+                  onClick={() => setSettingsExpanded(!settingsExpanded)}
+                >
+                  <Settings className="h-4 w-4 flex-shrink-0" />
+                  <span className="flex-1">Settings</span>
+                  <ChevronDown
+                    className={cn(
+                      'h-4 w-4 transition-transform duration-200',
+                      settingsExpanded && 'rotate-180'
+                    )}
+                  />
+                </div>
+
+                {/* Settings Sub-items */}
+                {settingsExpanded && (
+                  <ul className="mt-1 ml-4 pl-3 border-l border-border space-y-0.5">
+                    {settingsSubItems.map((subItem) => (
+                      <li key={subItem.id}>
+                        <Link
+                          href={`/settings#${subItem.id}`}
+                          onClick={(e) => {
+                            if (pathname === '/settings') {
+                              e.preventDefault();
+                              scrollToSection(subItem.id);
+                            }
+                          }}
+                          className={cn(
+                            'flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors',
+                            'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                          )}
+                        >
+                          <subItem.icon className="h-3.5 w-3.5" />
+                          <span>{subItem.label}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            </ul>
+          </nav>
+
+          {/* User section */}
+          <div className="p-3 border-t border-border min-w-[224px]">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <User className="h-4 w-4 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {userName || userEmail}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {userEmail}
+                </p>
+              </div>
+            </div>
+          </div>
+        </aside>
       </div>
     );
   }
