@@ -8,8 +8,7 @@ import {
   DndContext,
   closestCenter,
   KeyboardSensor,
-  MouseSensor,
-  TouchSensor,
+  PointerSensor,
   useSensor,
   useSensors,
   DragEndEvent,
@@ -256,11 +255,10 @@ function DraggableTerminalCard({
     transform,
     transition,
     isDragging: isSortableDragging,
-    over,
   } = useSortable({
     id: terminal.id,
     transition: {
-      duration: 250,
+      duration: 200,
       easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
     },
   });
@@ -271,12 +269,11 @@ function DraggableTerminalCard({
   const baseTransition = 'border-color 200ms, box-shadow 200ms';
   const combinedTransition = dragging ? undefined : (transition ? `${transition}, ${baseTransition}` : baseTransition);
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
+  const style: React.CSSProperties = {
+    transform: transform ? `translate3d(${Math.round(transform.x)}px, ${Math.round(transform.y)}px, 0)` : undefined,
     transition: combinedTransition,
     opacity: dragging && !isOverlay ? 0.3 : 1,
     zIndex: dragging ? 1000 : 1,
-    scale: isOverlay ? 1.02 : 1,
   };
 
   if (isCompact) {
@@ -1006,17 +1003,11 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
 
   const { setShowHelp } = useKeyboardShortcuts();
 
-  // Smooth drag sensors with minimal activation distance
+  // DnD sensors - minimal distance for responsive drag (same as workspaces)
   const sensors = useSensors(
-    useSensor(MouseSensor, {
+    useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 5, // Start drag after 5px movement
-      },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 150, // Long press on mobile
-        tolerance: 5,
+        distance: 8,
       },
     }),
     useSensor(KeyboardSensor, {
