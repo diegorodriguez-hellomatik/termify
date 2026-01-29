@@ -28,6 +28,7 @@ import {
 import { cn } from '@/lib/utils';
 import { FileExplorer } from '@/components/files/FileExplorer';
 import { TasksPanel } from '@/components/tasks/TasksPanel';
+import { NotificationsDropdown } from '@/components/notifications/NotificationsDropdown';
 
 interface SidebarProps {
   userName?: string | null;
@@ -172,6 +173,7 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
 
         {/* Bottom icons */}
         <div className="flex flex-col items-center gap-1">
+          <NotificationsDropdown />
           <Link
             href="/settings"
             className={cn(

@@ -13,6 +13,7 @@ import profilesRoutes from './api/profiles.js';
 import auditlogsRoutes from './api/auditlogs.js';
 import apikeysRoutes from './api/apikeys.js';
 import shareRoutes from './api/share.js';
+import notificationsRoutes from './api/notifications.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',');
@@ -45,6 +46,7 @@ app.use('/api/snippets', snippetsRoutes);
 app.use('/api/profiles', profilesRoutes);
 app.use('/api/auditlogs', auditlogsRoutes);
 app.use('/api/apikeys', apikeysRoutes);
+app.use('/api', notificationsRoutes);
 
 // Stats endpoint
 app.get('/api/stats', (req, res) => {

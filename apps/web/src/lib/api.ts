@@ -534,3 +534,60 @@ export const shareApi = {
       { token }
     ),
 };
+
+// Notification Types
+export type NotificationType = 'TERMINAL_SHARED' | 'TERMINAL_SHARE_REVOKED' | 'TERMINAL_SHARE_UPDATED' | 'SYSTEM';
+
+export interface Notification {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  read: boolean;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+// Notifications API
+export const notificationsApi = {
+  // Get all notifications
+  list: (token: string, unreadOnly?: boolean) =>
+    api<{ notifications: Notification[]; unreadCount: number }>(
+      `/api/notifications${unreadOnly ? '?unread=true' : ''}`,
+      { token }
+    ),
+
+  // Get unread count only
+  getUnreadCount: (token: string) =>
+    api<{ unreadCount: number }>('/api/notifications/unread-count', { token }),
+
+  // Mark specific notifications as read
+  markAsRead: (notificationIds: string[], token: string) =>
+    api<void>('/api/notifications/mark-read', {
+      method: 'PATCH',
+      body: { notificationIds },
+      token,
+    }),
+
+  // Mark all notifications as read
+  markAllAsRead: (token: string) =>
+    api<void>('/api/notifications/mark-all-read', {
+      method: 'PATCH',
+      token,
+    }),
+
+  // Delete a notification
+  delete: (id: string, token: string) =>
+    api<void>(`/api/notifications/${id}`, {
+      method: 'DELETE',
+      token,
+    }),
+
+  // Delete all notifications
+  deleteAll: (token: string) =>
+    api<void>('/api/notifications', {
+      method: 'DELETE',
+      token,
+    }),
+};

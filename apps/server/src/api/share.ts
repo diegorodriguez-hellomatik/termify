@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware, optionalAuthMiddleware } from '../auth/middleware.js';
 import { ShareType, SharePermission } from '@termify/shared';
+import { NotificationService } from '../services/NotificationService.js';
 
 const router = Router();
 
@@ -256,6 +257,16 @@ router.post('/terminals/:terminalId/share/email', authMiddleware, async (req: Re
       },
     });
 
+    // Send notification to the recipient
+    await NotificationService.notifyTerminalShared({
+      recipientId: targetUser.id,
+      terminalName: terminal.name,
+      terminalId: terminal.id,
+      shareId: share.id,
+      sharedByName: currentUser?.name || currentUser?.email || 'Someone',
+      permission: data.permission,
+    });
+
     res.status(201).json({
       success: true,
       data: { share },
@@ -310,6 +321,19 @@ router.patch('/terminals/:terminalId/share/:shareId', authMiddleware, async (req
         },
       },
     });
+
+    // Send notification if it was an email share and permission changed
+    if (share.type === ShareType.EMAIL && share.sharedWithId && share.permission !== data.permission) {
+      const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+      await NotificationService.notifyShareUpdated({
+        recipientId: share.sharedWithId,
+        terminalName: terminal.name,
+        terminalId: terminal.id,
+        shareId: share.id,
+        updatedByName: currentUser?.name || currentUser?.email || 'Someone',
+        newPermission: data.permission,
+      });
+    }
 
     res.json({
       success: true,
@@ -371,6 +395,17 @@ router.delete('/terminals/:terminalId/share/:shareId', authMiddleware, async (re
         userAgent: req.headers['user-agent'],
       },
     });
+
+    // Send notification if it was an email share
+    if (share.type === ShareType.EMAIL && share.sharedWithId) {
+      const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+      await NotificationService.notifyShareRevoked({
+        recipientId: share.sharedWithId,
+        terminalName: terminal.name,
+        terminalId: terminal.id,
+        revokedByName: currentUser?.name || currentUser?.email || 'Someone',
+      });
+    }
 
     res.json({ success: true });
   } catch (error) {

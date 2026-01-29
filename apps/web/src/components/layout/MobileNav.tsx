@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { signOutAction } from '@/lib/actions/auth';
+import { NotificationsDropdown } from '@/components/notifications/NotificationsDropdown';
 
 interface MobileNavProps {
   userName?: string | null;
@@ -40,12 +41,15 @@ export function MobileNav({ userName, userEmail }: MobileNavProps) {
             <Terminal className="h-6 w-6 text-primary" />
             <span className="font-semibold">Termify</span>
           </Link>
-          <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="p-2 hover:bg-muted rounded-lg transition-colors"
-          >
-            {isOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
+          <div className="flex items-center gap-1">
+            <NotificationsDropdown />
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className="p-2 hover:bg-muted rounded-lg transition-colors"
+            >
+              {isOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+          </div>
         </div>
       </header>
 

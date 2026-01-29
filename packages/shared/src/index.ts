@@ -18,6 +18,26 @@ export enum SharePermission {
   CONTROL = 'CONTROL',
 }
 
+// Notification Types
+export enum NotificationType {
+  TERMINAL_SHARED = 'TERMINAL_SHARED',
+  TERMINAL_SHARE_REVOKED = 'TERMINAL_SHARE_REVOKED',
+  TERMINAL_SHARE_UPDATED = 'TERMINAL_SHARE_UPDATED',
+  SYSTEM = 'SYSTEM',
+}
+
+// Notification model
+export interface Notification {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  read: boolean;
+  metadata: Record<string, unknown> | null;
+  createdAt: Date;
+}
+
 // Terminal Share model
 export interface TerminalShare {
   id: string;
