@@ -14,6 +14,11 @@ enum TerminalStatus {
   CRASHED
 }
 
+enum TerminalType {
+  LOCAL
+  SSH
+}
+
 model User {
   id            String     @id @default(cuid())
   email         String     @unique
@@ -32,6 +37,7 @@ model User {
   auditLogs     AuditLog[]
   snippets      Snippet[]
   profiles      TerminalProfile[]
+  apiKeys       ApiKey[]
 
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
@@ -102,12 +108,20 @@ model Terminal {
   categoryId    String?        @map("category_id")
   name          String         @default("Terminal")
   status        TerminalStatus @default(STOPPED)
+  type          TerminalType   @default(LOCAL)
   cols          Int            @default(120)
   rows          Int            @default(30)
   cwd           String?
   outputBuffer  Bytes?         @map("output_buffer")
   position      Int            @default(0)
   isFavorite    Boolean        @default(false) @map("is_favorite")
+
+  // SSH connection fields
+  sshHost       String?        @map("ssh_host")
+  sshPort       Int?           @map("ssh_port") @default(22)
+  sshUsername   String?        @map("ssh_username")
+  sshPassword   String?        @map("ssh_password")
+  sshPrivateKey String?        @map("ssh_private_key") @db.Text
 
   // Metadata
   lastActiveAt  DateTime?      @map("last_active_at")
@@ -192,4 +206,33 @@ model TerminalProfile {
 
   @@index([userId])
   @@map("terminal_profiles")
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  name        String    // User-friendly name for the key
+  keyHash     String    @map("key_hash") // Hashed API key (we only store hash)
+  keyPrefix   String    @map("key_prefix") // First 8 chars for display "ct_abc12..."
+
+  // Permissions
+  permissions String[]  @default(["read", "write"]) // read, write, admin
+
+  // Usage tracking
+  lastUsedAt  DateTime? @map("last_used_at")
+  usageCount  Int       @default(0) @map("usage_count")
+
+  // Expiration
+  expiresAt   DateTime? @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([keyHash])
+  @@index([keyPrefix])
+  @@map("api_keys")
 }
