@@ -322,6 +322,35 @@ export const TERMINAL_THEMES: Record<string, TerminalTheme> = {
       brightWhite: '#8c959f',
     },
   },
+
+  ibm: {
+    id: 'ibm',
+    name: 'IBM',
+    isDark: true,
+    colors: {
+      background: '#1e1e1e',
+      foreground: '#d4d4d4',
+      cursor: '#ffffff',
+      cursorAccent: '#1e1e1e',
+      selectionBackground: '#3a3d41',
+      black: '#1e1e1e',
+      red: '#ee5396',         // Pink/magenta for keywords
+      green: '#42be65',       // Green
+      yellow: '#ffe97b',      // Yellow
+      blue: '#4589ff',        // IBM Blue
+      magenta: '#be95ff',     // Purple/violet
+      cyan: '#33b1ff',        // Cyan/teal
+      white: '#d4d4d4',       // Light gray
+      brightBlack: '#6f6f6f', // Gray
+      brightRed: '#ff7eb6',   // Bright pink
+      brightGreen: '#6fdc8c', // Bright green
+      brightYellow: '#f1c21b', // Bright yellow
+      brightBlue: '#78a9ff',  // Bright blue
+      brightMagenta: '#d4bbff', // Bright purple
+      brightCyan: '#82cfff',  // Bright cyan
+      brightWhite: '#ffffff', // White
+    },
+  },
 };
 
 export const THEME_IDS = Object.keys(TERMINAL_THEMES);

@@ -58,6 +58,37 @@
   }
 }
 
+/* Terminal Theme Applied to Panel */
+:root[data-terminal-theme] {
+  --background: var(--panel-background);
+  --foreground: var(--panel-foreground);
+  --card: var(--panel-card);
+  --card-foreground: var(--panel-card-foreground);
+  --popover: var(--panel-card);
+  --popover-foreground: var(--panel-card-foreground);
+  --border: var(--panel-border);
+  --input: var(--panel-border);
+  --muted: var(--panel-muted);
+  --muted-foreground: var(--panel-muted-foreground);
+  --accent: var(--panel-muted);
+  --accent-foreground: var(--panel-foreground);
+  --primary: var(--panel-primary);
+  --primary-foreground: var(--panel-background);
+  --secondary: var(--panel-muted);
+  --secondary-foreground: var(--panel-foreground);
+}
+
+/* Smooth transitions for panel theme changes */
+:root[data-terminal-theme] * {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease !important;
+}
+
+:root[data-terminal-theme] .no-transition,
+:root[data-terminal-theme] .xterm,
+:root[data-terminal-theme] .xterm * {
+  transition: none !important;
+}
+
 /* xterm.js core styles - required for terminal to render */
 .xterm {
   cursor: text;

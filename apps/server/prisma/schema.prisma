@@ -136,6 +136,9 @@ model Terminal {
   position      Int            @default(0)
   isFavorite    Boolean        @default(false) @map("is_favorite")
 
+  // Claude Code session (for resuming)
+  claudeSessionId String?      @map("claude_session_id")
+
   // SSH connection fields
   sshHost       String?        @map("ssh_host")
   sshPort       Int?           @map("ssh_port") @default(22)

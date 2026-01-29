@@ -8,14 +8,14 @@ import { FileViewer } from '@/components/files/FileViewer';
 import { DroppablePane } from './DroppablePane';
 import { cn } from '@/lib/utils';
 
-// Dynamic import to avoid SSR issues with xterm
+// Dynamic import to avoid SSR issues with xterm.js
 const Terminal = dynamic(
   () => import('@/components/terminal/Terminal').then((mod) => mod.Terminal),
   {
     ssr: false,
     loading: () => (
-      <div className="h-full flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="h-full w-full flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     ),
   }

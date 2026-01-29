@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Palette, Check } from 'lucide-react';
-import { useTheme } from '@/context/ThemeContext';
+import { ChevronDown, Palette, Check, Monitor, ToggleLeft, ToggleRight } from 'lucide-react';
+import { useTheme, PanelThemeMode } from '@/context/ThemeContext';
 import { TERMINAL_THEMES, THEME_IDS, getTerminalTheme } from '@/lib/terminal-themes';
 import { cn } from '@/lib/utils';
 
@@ -12,7 +12,7 @@ interface TerminalThemeSelectorProps {
 }
 
 export function TerminalThemeSelector({ className, showLabel = true }: TerminalThemeSelectorProps) {
-  const { terminalTheme, setTerminalTheme, isDark } = useTheme();
+  const { terminalTheme, setTerminalTheme, isDark, panelThemeMode, setPanelThemeMode } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -78,7 +78,26 @@ export function TerminalThemeSelector({ className, showLabel = true }: TerminalT
           style={{ right: 0 }}
         >
           <div className="p-2">
-            <div className="flex items-center gap-2 px-2 py-1.5 mb-2 border-b border-border">
+            {/* Apply to Panel Toggle */}
+            <button
+              onClick={() => setPanelThemeMode(panelThemeMode === 'terminal' ? 'default' : 'terminal')}
+              className={cn(
+                'w-full flex items-center justify-between px-2 py-2 rounded-md transition-colors mb-2',
+                'hover:bg-muted text-foreground'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <Monitor size={14} className="text-muted-foreground" />
+                <span className="text-sm">Apply to panel</span>
+              </div>
+              {panelThemeMode === 'terminal' ? (
+                <ToggleRight size={20} className="text-primary" />
+              ) : (
+                <ToggleLeft size={20} className="text-muted-foreground" />
+              )}
+            </button>
+
+            <div className="flex items-center gap-2 px-2 py-1.5 mb-2 border-t border-b border-border">
               <Palette size={14} className="text-muted-foreground" />
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Terminal Theme

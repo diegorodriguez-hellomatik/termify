@@ -14,6 +14,7 @@ import auditlogsRoutes from './api/auditlogs.js';
 import apikeysRoutes from './api/apikeys.js';
 import shareRoutes from './api/share.js';
 import notificationsRoutes from './api/notifications.js';
+import claudeSessionsRoutes from './api/claude-sessions.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',');
@@ -47,6 +48,7 @@ app.use('/api/profiles', profilesRoutes);
 app.use('/api/auditlogs', auditlogsRoutes);
 app.use('/api/apikeys', apikeysRoutes);
 app.use('/api', notificationsRoutes);
+app.use('/api/claude-sessions', claudeSessionsRoutes);
 
 // Stats endpoint
 app.get('/api/stats', (req, res) => {

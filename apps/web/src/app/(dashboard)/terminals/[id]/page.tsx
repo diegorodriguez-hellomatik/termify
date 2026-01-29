@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useSession } from 'next-auth/react';
 import {
   ArrowLeft,
@@ -17,16 +18,31 @@ import {
   ChevronDown,
   Share2,
   Users,
+  Loader2,
 } from 'lucide-react';
 import { TerminalStatus } from '@termify/shared';
 import { terminalsApi } from '@/lib/api';
-import { Terminal } from '@/components/terminal/Terminal';
 import { FileViewer } from '@/components/files/FileViewer';
 import { ShareTerminalModal } from '@/components/terminals/ShareTerminalModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useTheme } from '@/context/ThemeContext';
+import { CreateTerminalModal, SSHConfig } from '@/components/terminals/CreateTerminalModal';
+import { ClaudeSessionsModal } from '@/components/terminals/ClaudeSessionsModal';
 import { cn } from '@/lib/utils';
+
+// Dynamic import to avoid SSR issues with xterm.js
+const Terminal = dynamic(
+  () => import('@/components/terminal/Terminal').then((mod) => mod.Terminal),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full w-full flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    ),
+  }
+);
 
 interface TerminalData {
   id: string;
@@ -125,6 +141,8 @@ export default function TerminalPage() {
   const [readyTerminals, setReadyTerminals] = useState<Set<string>>(new Set());
   const [createError, setCreateError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showClaudeModal, setShowClaudeModal] = useState(false);
 
   // Tab management
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -359,6 +377,49 @@ export default function TerminalPage() {
       setIsCreating(false);
     }
   }, [session?.accessToken, allTerminals.length, addTerminalTab]);
+
+  // Handle SSH terminal creation (from CreateTerminalModal)
+  const handleCreateSSHTerminal = useCallback(async (config: SSHConfig) => {
+    if (!session?.accessToken) return;
+
+    try {
+      const response = await terminalsApi.createSSH(
+        {
+          name: config.name || `${config.username}@${config.host}`,
+          host: config.host,
+          port: config.port,
+          username: config.username,
+          password: config.password,
+          privateKey: config.privateKey,
+        },
+        session.accessToken
+      );
+
+      if (response.success && response.data) {
+        setAllTerminals(prev => [...prev, response.data]);
+        addTerminalTab(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to create SSH terminal:', error);
+    }
+  }, [session?.accessToken, addTerminalTab]);
+
+  // Handle Claude session import
+  const handleClaudeSessionImported = useCallback((terminalId: string) => {
+    const loadNewTerminal = async () => {
+      if (!session?.accessToken) return;
+      try {
+        const response = await terminalsApi.get(terminalId, session.accessToken);
+        if (response.success && response.data) {
+          setAllTerminals(prev => [...prev, response.data]);
+          addTerminalTab(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to load imported terminal:', error);
+      }
+    };
+    loadNewTerminal();
+  }, [session?.accessToken, addTerminalTab]);
 
   const handleTerminalReady = useCallback((termId: string) => {
     setReadyTerminals(prev => new Set(prev).add(termId));
@@ -611,18 +672,13 @@ export default function TerminalPage() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    console.log('New Terminal button clicked');
-                    createNewTerminal();
+                    setShowTerminalPicker(false);
+                    setShowCreateModal(true);
                   }}
-                  disabled={isCreating}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-all duration-75 hover:bg-muted hover:pl-4 disabled:opacity-50"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-all duration-75 hover:bg-muted hover:pl-4"
                 >
-                  {isCreating ? (
-                    <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Plus size={14} className="text-primary" />
-                  )}
-                  <span>{isCreating ? 'Creating...' : 'New Terminal'}</span>
+                  <Plus size={14} className="text-primary" />
+                  <span>New Terminal</span>
                 </button>
 
                 {availableTerminals.length > 0 && (
@@ -797,6 +853,29 @@ export default function TerminalPage() {
         onClose={() => setShowShareModal(false)}
         terminalId={terminal.id}
         terminalName={terminal.name}
+        isDark={isDark}
+        token={session?.accessToken}
+      />
+
+      {/* Create terminal modal */}
+      <CreateTerminalModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreateLocal={createNewTerminal}
+        onCreateSSH={handleCreateSSHTerminal}
+        onImportClaude={() => {
+          setShowCreateModal(false);
+          setShowClaudeModal(true);
+        }}
+        isDark={isDark}
+        token={session?.accessToken}
+      />
+
+      {/* Claude sessions modal */}
+      <ClaudeSessionsModal
+        isOpen={showClaudeModal}
+        onClose={() => setShowClaudeModal(false)}
+        onSessionImported={handleClaudeSessionImported}
         isDark={isDark}
         token={session?.accessToken}
       />

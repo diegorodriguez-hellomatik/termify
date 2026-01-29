@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Terminal, Server, Eye, EyeOff, Key, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, Terminal, Server, Eye, EyeOff, Key, Loader2, CheckCircle, AlertCircle, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { terminalsApi } from '@/lib/api';
 
@@ -11,6 +11,7 @@ interface CreateTerminalModalProps {
   onClose: () => void;
   onCreateLocal: () => void;
   onCreateSSH: (config: SSHConfig) => void;
+  onImportClaude?: () => void;
   isDark: boolean;
   token?: string;
 }
@@ -33,6 +34,7 @@ export function CreateTerminalModal({
   onClose,
   onCreateLocal,
   onCreateSSH,
+  onImportClaude,
   isDark,
   token,
 }: CreateTerminalModalProps) {
@@ -272,6 +274,42 @@ export function CreateTerminalModal({
                   </p>
                 </div>
               </button>
+
+              {/* Import Claude Session */}
+              {onImportClaude && (
+                <button
+                  onClick={() => {
+                    handleClose();
+                    onImportClaude();
+                  }}
+                  className={cn(
+                    'w-full flex items-center gap-4 p-4 rounded-lg border-2 transition-all duration-75 text-left',
+                    'hover:border-purple-500 hover:bg-purple-500/5',
+                    isDark ? 'border-gray-700' : 'border-gray-200'
+                  )}
+                >
+                  <div
+                    className="w-12 h-12 rounded-lg flex items-center justify-center"
+                    style={{ backgroundColor: isDark ? '#333' : '#f0f0f0' }}
+                  >
+                    <Sparkles size={24} className="text-purple-500" />
+                  </div>
+                  <div>
+                    <h3
+                      className="font-medium"
+                      style={{ color: isDark ? '#fff' : '#1a1a1a' }}
+                    >
+                      Import Claude Session
+                    </h3>
+                    <p
+                      className="text-sm"
+                      style={{ color: isDark ? '#888' : '#666' }}
+                    >
+                      Create terminal from existing Claude Code session
+                    </p>
+                  </div>
+                </button>
+              )}
             </div>
           ) : (
             /* SSH form */

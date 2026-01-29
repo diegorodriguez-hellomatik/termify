@@ -44,6 +44,7 @@ export class PTYManager extends EventEmitter {
       cols?: number;
       rows?: number;
       cwd?: string;
+      claudeSessionId?: string;
     } = {}
   ): Promise<PTYInstance> {
     // Check if already exists
@@ -60,13 +61,26 @@ export class PTYManager extends EventEmitter {
     const rows = options.rows || 30;
     const cwd = options.cwd || process.env.HOME || '/';
 
-    const shell = this.options.shell;
+    // Determine what to spawn: Claude Code with resume or regular shell
+    let command: string;
+    let args: string[];
 
-    console.log(`[PTY] Spawning shell: ${shell}`);
+    if (options.claudeSessionId) {
+      // Resume a Claude Code session
+      command = 'claude';
+      args = ['--resume', options.claudeSessionId];
+      console.log(`[PTY] Resuming Claude session: ${options.claudeSessionId}`);
+    } else {
+      // Regular shell
+      command = this.options.shell;
+      args = [];
+      console.log(`[PTY] Spawning shell: ${command}`);
+    }
+
     console.log(`[PTY] Working directory: ${cwd}`);
 
-    // Spawn a normal shell (bash/zsh)
-    const ptyProcess = pty.spawn(shell, [], {
+    // Spawn the process
+    const ptyProcess = pty.spawn(command, args, {
       name: 'xterm-256color',
       cols,
       rows,
@@ -76,7 +90,7 @@ export class PTYManager extends EventEmitter {
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
         HOME: process.env.HOME,
-        SHELL: shell,
+        SHELL: this.options.shell,
       },
     });
 

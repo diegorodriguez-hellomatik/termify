@@ -13,6 +13,8 @@ import { QuickSwitcher } from '@/components/workspace/QuickSwitcher';
 import { QuickActionsToolbar } from '@/components/workspace/QuickActionsToolbar';
 import { TerminalThemeSelector } from '@/components/settings/TerminalThemeSelector';
 import { ShortcutsHelpModal } from '@/components/ui/ShortcutsHelpModal';
+import { CreateTerminalModal, SSHConfig } from '@/components/terminals/CreateTerminalModal';
+import { ClaudeSessionsModal } from '@/components/terminals/ClaudeSessionsModal';
 import { cn } from '@/lib/utils';
 
 interface TerminalData {
@@ -46,6 +48,8 @@ function WorkspaceContent() {
   const [loading, setLoading] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showThemeSelector, setShowThemeSelector] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showClaudeModal, setShowClaudeModal] = useState(false);
   const [pendingSplit, setPendingSplit] = useState<{
     direction: 'horizontal' | 'vertical';
     sourceTerminalId: string;
@@ -150,6 +154,50 @@ function WorkspaceContent() {
     } catch (error) {
       console.error('Failed to create terminal with profile:', error);
     }
+  };
+
+  // Handle SSH terminal creation (from CreateTerminalModal)
+  const handleCreateSSHTerminal = async (config: SSHConfig) => {
+    if (!session?.accessToken) return;
+
+    try {
+      const response = await terminalsApi.createSSH(
+        {
+          name: config.name || `${config.username}@${config.host}`,
+          host: config.host,
+          port: config.port,
+          username: config.username,
+          password: config.password,
+          privateKey: config.privateKey,
+        },
+        session.accessToken
+      );
+
+      if (response.success && response.data) {
+        setTerminals((prev) => [...prev, response.data]);
+        openTab(response.data.id, response.data.name);
+      }
+    } catch (error) {
+      console.error('Failed to create SSH terminal:', error);
+    }
+  };
+
+  // Handle Claude session import
+  const handleClaudeSessionImported = (terminalId: string) => {
+    // Find the terminal info to get its name
+    const loadNewTerminal = async () => {
+      if (!session?.accessToken) return;
+      try {
+        const response = await terminalsApi.get(terminalId, session.accessToken);
+        if (response.success && response.data) {
+          setTerminals((prev) => [...prev, response.data]);
+          openTab(terminalId, response.data.name);
+        }
+      } catch (error) {
+        console.error('Failed to load imported terminal:', error);
+      }
+    };
+    loadNewTerminal();
   };
 
   // Handle snippet use (send to active terminal)
@@ -261,7 +309,7 @@ function WorkspaceContent() {
           {session?.accessToken && (
             <QuickActionsToolbar
               token={session.accessToken}
-              onNewTerminal={handleCreateTerminal}
+              onNewTerminal={() => setShowCreateModal(true)}
               onNewTerminalWithProfile={handleCreateTerminalWithProfile}
               onUseSnippet={handleUseSnippet}
               onOpenQuickSwitcher={() => setShowQuickSwitcher(true)}
@@ -337,7 +385,7 @@ function WorkspaceContent() {
               </button>
 
               <button
-                onClick={handleCreateTerminal}
+                onClick={() => setShowCreateModal(true)}
                 className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-all"
               >
                 <Plus size={16} />
@@ -386,6 +434,29 @@ function WorkspaceContent() {
       <ShortcutsHelpModal
         isOpen={showShortcuts}
         onClose={() => setShowShortcuts(false)}
+      />
+
+      {/* Create terminal modal */}
+      <CreateTerminalModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreateLocal={handleCreateTerminal}
+        onCreateSSH={handleCreateSSHTerminal}
+        onImportClaude={() => {
+          setShowCreateModal(false);
+          setShowClaudeModal(true);
+        }}
+        isDark={isDark}
+        token={session?.accessToken}
+      />
+
+      {/* Claude sessions modal */}
+      <ClaudeSessionsModal
+        isOpen={showClaudeModal}
+        onClose={() => setShowClaudeModal(false)}
+        onSessionImported={handleClaudeSessionImported}
+        isDark={isDark}
+        token={session?.accessToken}
       />
     </div>
   );

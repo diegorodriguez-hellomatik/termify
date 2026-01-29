@@ -101,7 +101,21 @@ export const terminalsApi = {
     api<any>(`/api/terminals/${id}`, { token }),
 
   create: (
-    data: { name?: string; cols?: number; rows?: number; cwd?: string; categoryId?: string },
+    data: {
+      name?: string;
+      cols?: number;
+      rows?: number;
+      cwd?: string;
+      categoryId?: string;
+      claudeSessionId?: string;
+      sshConfig?: {
+        host: string;
+        port?: number;
+        username: string;
+        password?: string;
+        privateKey?: string;
+      };
+    },
     token: string
   ) =>
     api<any>('/api/terminals', { method: 'POST', body: data, token }),
@@ -590,4 +604,70 @@ export const notificationsApi = {
       method: 'DELETE',
       token,
     }),
+};
+
+// Claude Sessions API
+export interface ClaudeSession {
+  id: string;
+  projectPath: string;
+  projectName: string;
+  lastModified: string;
+  messageCount: number;
+  firstMessage?: string;
+  cwd?: string;
+}
+
+export interface ClaudeProject {
+  path: string;
+  name: string;
+  sessions: ClaudeSession[];
+}
+
+export interface ClaudeSessionsResponse {
+  projects: ClaudeProject[];
+  totalProjects: number;
+  totalSessions: number;
+  message?: string;
+}
+
+export interface ClaudeSessionDetail {
+  id: string;
+  projectPath: string;
+  projectName: string;
+  cwd?: string;
+  lastModified: string;
+  fileSize: number;
+  messageCount: number;
+  messages: Array<{
+    type: string;
+    content: any;
+    timestamp: string;
+  }>;
+}
+
+export const claudeSessionsApi = {
+  list: (token: string) =>
+    api<ClaudeSessionsResponse>('/api/claude-sessions', { token }),
+
+  listRemote: (
+    sshConfig: {
+      host: string;
+      port?: number;
+      username: string;
+      password?: string;
+      privateKey?: string;
+    },
+    token: string
+  ) =>
+    api<ClaudeSessionsResponse>('/api/claude-sessions/remote', {
+      method: 'POST',
+      body: sshConfig,
+      token,
+    }),
+
+  get: (projectPath: string, sessionId: string, token: string) =>
+    api<ClaudeSessionDetail>(`/api/claude-sessions/${encodeURIComponent(projectPath)}/${sessionId}`, { token }),
+
+  getCurrent: (token: string) =>
+    api<ClaudeSession | null>('/api/claude-sessions/current', { token }),
 };
