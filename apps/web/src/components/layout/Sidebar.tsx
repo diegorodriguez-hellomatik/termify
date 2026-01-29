@@ -128,6 +128,11 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
     { id: 'git', icon: GitBranch, label: 'Source Control', disabled: true },
   ];
 
+  // Only show sidebar when in terminal view
+  if (!isTerminalView) {
+    return null;
+  }
+
   return (
     <div className="hidden md:flex sticky top-0 h-screen">
       {/* Activity Bar (VS Code style) */}
