@@ -231,7 +231,7 @@ export function FileExplorer({ terminalId, onFileSelect, onDirectoryChange, clas
   const fetchFiles = useCallback(async (dirPath: string = '.') => {
     if (!session?.accessToken) return null;
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
     const response = await fetch(
       `${apiUrl}/api/terminals/${terminalId}/files?path=${encodeURIComponent(dirPath)}`,
       {
@@ -386,7 +386,7 @@ export function FileExplorer({ terminalId, onFileSelect, onDirectoryChange, clas
     setContextMenu({ visible: false, x: 0, y: 0, entry: null });
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
       const response = await fetch(
         `${apiUrl}/api/terminals/${terminalId}/files/download?path=${encodeURIComponent(entry.path)}`,
         {
@@ -427,7 +427,7 @@ export function FileExplorer({ terminalId, onFileSelect, onDirectoryChange, clas
     if (!confirmed) return;
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
       const response = await fetch(
         `${apiUrl}/api/terminals/${terminalId}/files?path=${encodeURIComponent(entry.path)}`,
         {
@@ -464,7 +464,7 @@ export function FileExplorer({ terminalId, onFileSelect, onDirectoryChange, clas
     }
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
       const response = await fetch(
         `${apiUrl}/api/terminals/${terminalId}/files/rename`,
         {
