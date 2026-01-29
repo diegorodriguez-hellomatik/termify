@@ -16,6 +16,7 @@ interface UseTerminalSocketOptions {
   onStatusChange: (status: TerminalStatus) => void;
   onConnected: (bufferedOutput?: string) => void;
   onError: (error: string) => void;
+  onFilesChanged?: () => void;
 }
 
 interface UseTerminalSocketReturn {
@@ -35,6 +36,7 @@ export function useTerminalSocket({
   onStatusChange,
   onConnected,
   onError,
+  onFilesChanged,
 }: UseTerminalSocketOptions): UseTerminalSocketReturn {
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -48,11 +50,13 @@ export function useTerminalSocket({
     onStatusChange,
     onConnected,
     onError,
+    onFilesChanged,
   } as {
     onOutput: (data: string) => void;
     onStatusChange: (status: TerminalStatus) => void;
     onConnected: (bufferedOutput?: string) => void;
     onError: (error: string) => void;
+    onFilesChanged?: () => void;
   });
 
   // Update refs whenever callbacks change
@@ -62,8 +66,9 @@ export function useTerminalSocket({
       onStatusChange,
       onConnected,
       onError,
+      onFilesChanged,
     };
-  }, [onOutput, onStatusChange, onConnected, onError]);
+  }, [onOutput, onStatusChange, onConnected, onError, onFilesChanged]);
 
   const sendMessage = useCallback((message: ClientMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -73,7 +78,7 @@ export function useTerminalSocket({
 
   const handleMessage = useCallback(
     (message: ServerMessage) => {
-      const { onOutput, onStatusChange, onConnected, onError } = callbacksRef.current;
+      const { onOutput, onStatusChange, onConnected, onError, onFilesChanged } = callbacksRef.current;
 
       switch (message.type) {
         case 'pong':
@@ -104,6 +109,27 @@ export function useTerminalSocket({
         case 'terminal.error':
           if (message.terminalId === terminalId) {
             onError(message.error);
+          }
+          break;
+
+        case 'files.changed':
+          if (message.terminalId === terminalId) {
+            console.log('[WS] Files changed');
+            // Dispatch custom event so FileExplorer can listen
+            window.dispatchEvent(new CustomEvent('terminal-files-changed', {
+              detail: { terminalId }
+            }));
+            onFilesChanged?.();
+          }
+          break;
+
+        case 'terminal.cwd':
+          if (message.terminalId === terminalId) {
+            console.log('[WS] CWD changed:', message.cwd);
+            // Dispatch custom event so FileExplorer can sync to the new directory
+            window.dispatchEvent(new CustomEvent('terminal-cwd-changed', {
+              detail: { terminalId, cwd: message.cwd }
+            }));
           }
           break;
 

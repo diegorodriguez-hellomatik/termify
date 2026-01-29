@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -120,6 +120,8 @@ export default function TerminalPage() {
   const [editingName, setEditingName] = useState(false);
   const [newName, setNewName] = useState('');
   const [readyTerminals, setReadyTerminals] = useState<Set<string>>(new Set());
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
 
   // Tab management
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -127,6 +129,8 @@ export default function TerminalPage() {
 
   // Terminal picker dropdown
   const [showTerminalPicker, setShowTerminalPicker] = useState(false);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
+  const addButtonRef = useRef<HTMLButtonElement>(null);
 
   const terminalId = params.id as string;
 
@@ -313,22 +317,40 @@ export default function TerminalPage() {
   }, [tabs]);
 
   const createNewTerminal = useCallback(async () => {
-    if (!session?.accessToken) return;
+    if (!session?.accessToken) {
+      setCreateError('No access token');
+      return;
+    }
+
+    setIsCreating(true);
+    setCreateError(null);
+    setShowTerminalPicker(false);
 
     try {
+      console.log('Creating new terminal...');
       const response = await terminalsApi.create(
         { name: `Terminal ${allTerminals.length + 1}` },
         session.accessToken
       );
+
+      console.log('Create terminal response:', response);
 
       if (response.success && response.data) {
         // Add to all terminals list
         setAllTerminals(prev => [...prev, response.data]);
         // Add as a new tab
         addTerminalTab(response.data);
+      } else {
+        const errorMsg = Array.isArray(response.error)
+          ? response.error.join(', ')
+          : (response.error || 'Failed to create terminal');
+        setCreateError(errorMsg);
       }
     } catch (err) {
       console.error('Failed to create terminal:', err);
+      setCreateError(err instanceof Error ? err.message : 'Failed to create terminal');
+    } finally {
+      setIsCreating(false);
     }
   }, [session?.accessToken, allTerminals.length, addTerminalTab]);
 
@@ -378,7 +400,7 @@ export default function TerminalPage() {
   );
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex-1 flex flex-col min-h-0">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-card border-b border-border">
         <div className="flex items-center gap-4">
@@ -418,11 +440,11 @@ export default function TerminalPage() {
               </Button>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-semibold">{terminal.name}</h1>
+            <div className="flex items-center gap-2 group">
+              <h1 className="text-lg font-semibold transition-colors duration-100">{terminal.name}</h1>
               <button
                 onClick={() => setEditingName(true)}
-                className="p-1 hover:bg-muted rounded"
+                className="p-1 rounded transition-all duration-75 opacity-0 group-hover:opacity-100 hover:bg-muted hover:scale-110 active:scale-95"
               >
                 <Edit2 className="h-3 w-3 text-muted-foreground" />
               </button>
@@ -472,9 +494,11 @@ export default function TerminalPage() {
             <div
               key={tab.id}
               className={cn(
-                'group flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-b-2 cursor-pointer transition-all min-w-[100px] max-w-[200px]',
+                'group flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-b-2 cursor-pointer min-w-[100px] max-w-[200px]',
+                'transition-all duration-100 ease-out',
+                'hover:scale-[1.02] active:scale-[0.98]',
                 isActive
-                  ? 'bg-background border-primary'
+                  ? 'bg-background border-primary shadow-sm'
                   : 'bg-muted/50 border-transparent hover:bg-muted'
               )}
               onClick={() => setActiveTabId(tab.id)}
@@ -490,13 +514,15 @@ export default function TerminalPage() {
                     closeTab(tab.id);
                   }}
                   className={cn(
-                    'p-0.5 rounded hover:bg-destructive/20 transition-colors flex-shrink-0',
+                    'p-0.5 rounded flex-shrink-0',
+                    'transition-all duration-75 ease-out',
+                    'hover:bg-destructive/20 hover:scale-110 active:scale-95',
                     isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                   )}
                 >
                   <X
                     size={12}
-                    className="text-muted-foreground hover:text-destructive"
+                    className="text-muted-foreground transition-colors duration-75 hover:text-destructive"
                   />
                 </button>
               )}
@@ -505,34 +531,61 @@ export default function TerminalPage() {
         })}
 
         {/* Add tab dropdown */}
-        <div className="relative">
+        <div className="flex-shrink-0">
           <button
-            onClick={() => setShowTerminalPicker(!showTerminalPicker)}
-            className="p-1.5 rounded hover:bg-muted transition-colors flex-shrink-0 flex items-center gap-1"
+            ref={addButtonRef}
+            onClick={() => {
+              if (addButtonRef.current) {
+                const rect = addButtonRef.current.getBoundingClientRect();
+                setDropdownPosition({
+                  top: rect.bottom + 4,
+                  right: window.innerWidth - rect.right
+                });
+              }
+              setShowTerminalPicker(!showTerminalPicker);
+            }}
+            className="p-1.5 rounded flex items-center gap-1 transition-all duration-100 hover:bg-muted hover:scale-110 active:scale-95"
             title="Add terminal or file"
           >
             <Plus size={16} className="text-muted-foreground" />
             <ChevronDown size={12} className="text-muted-foreground" />
           </button>
+        </div>
+      </div>
 
-          {showTerminalPicker && (
-            <>
-              {/* Backdrop */}
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setShowTerminalPicker(false)}
-              />
+      {/* Dropdown Portal - outside tab bar to avoid overflow clipping */}
+      {showTerminalPicker && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setShowTerminalPicker(false)}
+          />
 
-              {/* Dropdown */}
-              <div
-                className="absolute top-full left-0 mt-1 z-50 min-w-[200px] bg-popover border border-border rounded-lg shadow-lg py-1"
-              >
+          {/* Dropdown */}
+          <div
+            className="fixed z-50 min-w-[200px] bg-popover border border-border rounded-lg shadow-lg py-1 animate-in fade-in duration-75"
+            style={{
+              top: dropdownPosition.top,
+              right: dropdownPosition.right,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
                 <button
-                  onClick={createNewTerminal}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    console.log('New Terminal button clicked');
+                    createNewTerminal();
+                  }}
+                  disabled={isCreating}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-all duration-75 hover:bg-muted hover:pl-4 disabled:opacity-50"
                 >
-                  <Plus size={14} className="text-primary" />
-                  <span>New Terminal</span>
+                  {isCreating ? (
+                    <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Plus size={14} className="text-primary" />
+                  )}
+                  <span>{isCreating ? 'Creating...' : 'New Terminal'}</span>
                 </button>
 
                 {availableTerminals.length > 0 && (
@@ -545,9 +598,9 @@ export default function TerminalPage() {
                       <button
                         key={t.id}
                         onClick={() => addTerminalTab(t)}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-all duration-75 hover:bg-muted hover:pl-4"
                       >
-                        <TerminalIcon size={14} className="text-muted-foreground" />
+                        <TerminalIcon size={14} className="text-muted-foreground transition-transform duration-75 group-hover:scale-110" />
                         <span className="truncate">{t.name}</span>
                       </button>
                     ))}
@@ -561,13 +614,27 @@ export default function TerminalPage() {
               </div>
             </>
           )}
-        </div>
-      </div>
 
-      {/* Main content area */}
+      {/* Error message */}
+      {createError && (
+        <div className="px-4 py-2 bg-destructive/10 text-destructive text-sm flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-100">
+          <span>Error: {createError}</span>
+          <button
+            onClick={() => setCreateError(null)}
+            className="text-destructive transition-all duration-75 hover:text-destructive/80 hover:scale-110 active:scale-95"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Main content area - header ~52px, tabs ~40px */}
       {session?.accessToken && (
-        <div className="flex-1 min-h-0 relative">
-          {/* Render all terminal tabs (hidden when not active) */}
+        <div
+          className="relative w-full"
+          style={{ height: 'calc(100vh - 52px - 40px)' }}
+        >
+          {/* Render all terminal tabs */}
           {tabs
             .filter(tab => tab.type === 'terminal' && tab.terminalId)
             .map(tab => {
@@ -577,7 +644,8 @@ export default function TerminalPage() {
               return (
                 <div
                   key={tab.id}
-                  className={cn('absolute inset-0', !isActive && 'hidden')}
+                  className="absolute inset-0"
+                  style={{ display: isActive ? 'block' : 'none' }}
                 >
                   {/* Loading Overlay */}
                   {!isReady && (
@@ -663,7 +731,8 @@ export default function TerminalPage() {
                   <Terminal
                     terminalId={tab.terminalId as string}
                     token={session.accessToken as string}
-                    className="h-full"
+                    className="absolute inset-0"
+                    isActive={isActive}
                     onReady={() => handleTerminalReady(tab.terminalId as string)}
                   />
                 </div>

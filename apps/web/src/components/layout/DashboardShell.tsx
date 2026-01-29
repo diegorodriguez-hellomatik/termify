@@ -3,6 +3,7 @@
 import { signOut } from 'next-auth/react';
 import { Sidebar } from './Sidebar';
 import { MobileNav } from './MobileNav';
+import { WorkspaceProvider } from '@/contexts/WorkspaceContext';
 
 interface DashboardShellProps {
   children: React.ReactNode;
@@ -16,21 +17,23 @@ export function DashboardShell({ children, userName, userEmail }: DashboardShell
   };
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row">
-      {/* Mobile Navigation */}
-      <MobileNav userName={userName} userEmail={userEmail} />
+    <WorkspaceProvider>
+      <div className="h-screen flex flex-col md:flex-row overflow-hidden">
+        {/* Mobile Navigation */}
+        <MobileNav userName={userName} userEmail={userEmail} />
 
-      {/* Desktop Sidebar */}
-      <Sidebar
-        userName={userName}
-        userEmail={userEmail}
-        onSignOut={handleSignOut}
-      />
+        {/* Desktop Sidebar - Sticky */}
+        <Sidebar
+          userName={userName}
+          userEmail={userEmail}
+          onSignOut={handleSignOut}
+        />
 
-      {/* Main content */}
-      <main className="flex-1 overflow-auto pt-14 pb-20 md:pt-0 md:pb-0">
-        {children}
-      </main>
-    </div>
+        {/* Main content */}
+        <main className="flex-1 flex flex-col pt-14 pb-20 md:pt-0 md:pb-0 md:h-screen">
+          {children}
+        </main>
+      </div>
+    </WorkspaceProvider>
   );
 }

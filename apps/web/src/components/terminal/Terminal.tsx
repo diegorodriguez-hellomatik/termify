@@ -20,6 +20,7 @@ interface TerminalProps {
   initialStatus?: TerminalStatus;
   className?: string;
   onReady?: () => void;
+  isActive?: boolean;
 }
 
 const STATUS_COLORS: Record<TerminalStatus, string> = {
@@ -42,6 +43,7 @@ export function Terminal({
   initialStatus = TerminalStatus.STOPPED,
   className,
   onReady,
+  isActive = true,
 }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<XTerm | null>(null);
@@ -121,6 +123,10 @@ export function Terminal({
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
+    // Fit again after container has final dimensions
+    setTimeout(() => fitAddon.fit(), 100);
+    setTimeout(() => fitAddon.fit(), 500);
+
     // Show initial message
     terminal.writeln('\x1b[32mTerminal initialized.\x1b[0m');
     terminal.writeln('Connecting...');
@@ -145,9 +151,19 @@ export function Terminal({
     };
     window.addEventListener('resize', handleResize);
 
+    // Use ResizeObserver for container size changes
+    const resizeObserver = new ResizeObserver(() => {
+      fitAddon.fit();
+      if (terminalRef.current) {
+        resize(terminalRef.current.cols, terminalRef.current.rows);
+      }
+    });
+    resizeObserver.observe(containerRef.current);
+
     // Cleanup only runs on unmount, not on StrictMode double-invoke
     return () => {
       window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       // Don't disconnect here - let the hook handle it on unmount
     };
   }, []); // Empty deps - run once on mount
@@ -200,6 +216,22 @@ export function Terminal({
     }
   }, [terminalTheme]);
 
+  // Refit when terminal becomes active (visible)
+  useEffect(() => {
+    if (isActive && fitAddonRef.current && terminalRef.current) {
+      // Small delay to ensure the container is visible and has dimensions
+      const timeoutId = setTimeout(() => {
+        fitAddonRef.current?.fit();
+        if (terminalRef.current) {
+          resize(terminalRef.current.cols, terminalRef.current.rows);
+        }
+        // Focus the terminal when it becomes active
+        terminalRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isActive, resize]);
+
   const handleStart = () => {
     terminalRef.current?.clear();
     terminalRef.current?.writeln('Starting Claude Code...');
@@ -223,7 +255,7 @@ export function Terminal({
   };
 
   return (
-    <div className={cn('flex flex-col', className)} style={{ height: '100%' }}>
+    <div className={cn('flex flex-col', className)}>
       {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-2 bg-card border-b border-border">
         <div className="flex items-center gap-3">
@@ -269,13 +301,13 @@ export function Terminal({
         </div>
       )}
 
-      {/* Terminal container - with explicit height like working test */}
+      {/* Terminal container */}
       <div
         ref={containerRef}
+        className="flex-1 overflow-hidden"
         style={{
-          flex: 1,
-          minHeight: '400px',
           backgroundColor: currentTheme.colors.background,
+          minHeight: 0,
         }}
       />
     </div>
