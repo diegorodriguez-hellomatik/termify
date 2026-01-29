@@ -102,12 +102,40 @@ export function useTeamTerminals(teamId: string) {
     [session?.accessToken, teamId]
   );
 
+  const createTerminal = useCallback(
+    async (data: {
+      name: string;
+      type?: 'LOCAL' | 'SSH';
+      cols?: number;
+      rows?: number;
+      cwd?: string;
+      categoryId?: string;
+      sshHost?: string;
+      sshPort?: number;
+      sshUsername?: string;
+    }) => {
+      if (!session?.accessToken) return { success: false, error: 'Not authenticated' };
+
+      try {
+        const response = await teamTerminalsApi.create(teamId, data, session.accessToken);
+        if (response.success && response.data) {
+          setTerminals((prev) => [response.data!, ...prev]);
+        }
+        return response;
+      } catch (err) {
+        return { success: false, error: 'Failed to create terminal' };
+      }
+    },
+    [session?.accessToken, teamId]
+  );
+
   return {
     terminals,
     loading,
     error,
     refetch: fetchTerminals,
     shareTerminal,
+    createTerminal,
     updatePermission,
     removeTerminal,
   };

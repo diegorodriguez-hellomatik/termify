@@ -82,7 +82,7 @@ export async function api<T>(
 // Auth API
 export const authApi = {
   register: (data: { email: string; password: string; name?: string }) =>
-    api<{ user: any; accessToken: string; refreshToken: string }>(
+    api<{ user: any; accessToken: string; refreshToken: string; message?: string }>(
       '/api/auth/register',
       { method: 'POST', body: data }
     ),
@@ -112,8 +112,32 @@ export const authApi = {
     }),
 
   me: (token: string) =>
-    api<{ id: string; email: string; name: string | null }>('/api/auth/me', {
+    api<{ id: string; email: string; name: string | null; emailVerified: string | null }>('/api/auth/me', {
       token,
+    }),
+
+  forgotPassword: (email: string) =>
+    api<{ message: string }>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: { email },
+    }),
+
+  resetPassword: (token: string, password: string) =>
+    api<{ message: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: { token, password },
+    }),
+
+  verifyEmail: (token: string) =>
+    api<{ message: string; alreadyVerified?: boolean }>('/api/auth/verify-email', {
+      method: 'POST',
+      body: { token },
+    }),
+
+  resendVerification: (email: string) =>
+    api<{ message: string; alreadyVerified?: boolean }>('/api/auth/resend-verification', {
+      method: 'POST',
+      body: { email },
     }),
 };
 
@@ -1214,6 +1238,27 @@ export const teamTerminalsApi = {
   remove: (teamId: string, terminalId: string, token: string) =>
     api<void>(`/api/teams/${teamId}/terminals/${terminalId}`, {
       method: 'DELETE',
+      token,
+    }),
+
+  create: (
+    teamId: string,
+    data: {
+      name: string;
+      type?: 'LOCAL' | 'SSH';
+      cols?: number;
+      rows?: number;
+      cwd?: string;
+      categoryId?: string;
+      sshHost?: string;
+      sshPort?: number;
+      sshUsername?: string;
+    },
+    token: string
+  ) =>
+    api<TeamTerminalShare>(`/api/teams/${teamId}/terminals/create`, {
+      method: 'POST',
+      body: data,
       token,
     }),
 };
