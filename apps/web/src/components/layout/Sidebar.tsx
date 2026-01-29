@@ -38,6 +38,7 @@ interface SidebarProps {
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar-collapsed';
+const SIDEBAR_HIDDEN_KEY = 'sidebar-hidden';
 const ACTIVE_PANEL_KEY = 'sidebar-active-panel';
 
 // Settings sub-sections for anchor navigation
@@ -55,6 +56,7 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
   const pathname = usePathname();
   const params = useParams();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [activePanel, setActivePanel] = useState<string>('explorer');
@@ -81,9 +83,13 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
   // Load state from localStorage
   useEffect(() => {
     const savedCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+    const savedHidden = localStorage.getItem(SIDEBAR_HIDDEN_KEY);
     const savedPanel = localStorage.getItem(ACTIVE_PANEL_KEY);
     if (savedCollapsed !== null) {
       setIsCollapsed(savedCollapsed === 'true');
+    }
+    if (savedHidden !== null) {
+      setIsHidden(savedHidden === 'true');
     }
     if (savedPanel !== null && !isTerminalView) {
       setActivePanel(savedPanel);
@@ -95,9 +101,10 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
   useEffect(() => {
     if (mounted) {
       localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(isCollapsed));
+      localStorage.setItem(SIDEBAR_HIDDEN_KEY, String(isHidden));
       localStorage.setItem(ACTIVE_PANEL_KEY, activePanel);
     }
-  }, [isCollapsed, activePanel, mounted]);
+  }, [isCollapsed, isHidden, activePanel, mounted]);
 
   const toggleSidebar = () => {
     setIsCollapsed(!isCollapsed);
@@ -134,9 +141,14 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
   // Minimal sidebar for non-terminal views
   if (!isTerminalView) {
     return (
-      <div className="hidden md:flex sticky top-0 h-screen">
+      <div className="hidden md:flex sticky top-0 h-screen relative">
         {/* Activity Bar */}
-        <div className="w-12 bg-card border-r border-border flex flex-col items-center py-2">
+        <div
+          className={cn(
+            'bg-card border-r border-border flex flex-col items-center py-2 transition-all duration-300 ease-in-out overflow-hidden',
+            isHidden ? 'w-0 border-r-0' : 'w-12'
+          )}
+        >
           {/* Logo */}
           <Link href="/terminals" className="mb-4 p-2 hover:bg-muted rounded-md transition-colors">
             <Terminal className="h-5 w-5 text-primary" />
@@ -165,6 +177,13 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
           <div className="flex flex-col items-center gap-1">
             <NotificationsDropdown />
             <button
+              onClick={() => setIsHidden(true)}
+              className="w-10 h-10 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Hide sidebar"
+            >
+              <PanelLeftClose className="h-5 w-5" />
+            </button>
+            <button
               onClick={onSignOut}
               className="w-10 h-10 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               title="Sign out"
@@ -173,6 +192,17 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
             </button>
           </div>
         </div>
+
+        {/* Show sidebar button when hidden */}
+        {isHidden && (
+          <button
+            onClick={() => setIsHidden(false)}
+            className="absolute left-2 top-2 p-2 bg-card border border-border rounded-md hover:bg-muted transition-colors shadow-sm z-10"
+            title="Show sidebar"
+          >
+            <PanelLeft className="h-4 w-4 text-muted-foreground" />
+          </button>
+        )}
       </div>
     );
   }
