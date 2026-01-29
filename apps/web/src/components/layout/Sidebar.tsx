@@ -128,9 +128,44 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
     { id: 'git', icon: GitBranch, label: 'Source Control', disabled: true },
   ];
 
-  // Only show sidebar when in terminal view
+  // Minimal sidebar for non-terminal views
   if (!isTerminalView) {
-    return null;
+    return (
+      <div className="hidden md:flex sticky top-0 h-screen">
+        <div className="w-12 bg-card border-r border-border flex flex-col items-center py-2">
+          {/* Logo */}
+          <Link href="/terminals" className="mb-4 p-2 hover:bg-muted rounded-md transition-colors">
+            <Terminal className="h-5 w-5 text-primary" />
+          </Link>
+
+          <div className="flex-1" />
+
+          {/* Bottom icons */}
+          <div className="flex flex-col items-center gap-1">
+            <NotificationsDropdown />
+            <Link
+              href="/settings"
+              className={cn(
+                'w-10 h-10 flex items-center justify-center rounded-md transition-colors',
+                isSettingsActive
+                  ? 'text-foreground bg-muted'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+              )}
+              title="Settings"
+            >
+              <Settings className="h-5 w-5" />
+            </Link>
+            <button
+              onClick={onSignOut}
+              className="w-10 h-10 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Sign out"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
