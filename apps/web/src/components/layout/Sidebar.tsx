@@ -141,24 +141,42 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
             <Terminal className="h-5 w-5 text-primary" />
           </Link>
 
-          {/* Menu toggle */}
-          <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className={cn(
-              'w-10 h-10 flex items-center justify-center rounded-md transition-colors relative',
-              !isCollapsed
-                ? 'text-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-            )}
-            title={isCollapsed ? 'Open menu' : 'Close menu'}
-          >
-            {isCollapsed ? <PanelLeft className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
-            {!isCollapsed && (
-              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-primary rounded-r" />
-            )}
-          </button>
+          {/* Navigation Icons */}
+          <div className="flex-1 flex flex-col items-center gap-1">
+            {/* Menu toggle */}
+            <button
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className={cn(
+                'w-10 h-10 flex items-center justify-center rounded-md transition-colors relative',
+                !isCollapsed
+                  ? 'text-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+              )}
+              title={isCollapsed ? 'Open menu' : 'Close menu'}
+            >
+              {isCollapsed ? <PanelLeft className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+              {!isCollapsed && (
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-primary rounded-r" />
+              )}
+            </button>
 
-          <div className="flex-1" />
+            {/* Nav items as icons */}
+            {navItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'w-10 h-10 flex items-center justify-center rounded-md transition-colors relative',
+                  isActive(item.href)
+                    ? 'text-foreground bg-muted'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title={item.label}
+              >
+                <item.icon className="h-5 w-5" />
+              </Link>
+            ))}
+          </div>
 
           {/* Bottom icons */}
           <div className="flex flex-col items-center gap-1">
