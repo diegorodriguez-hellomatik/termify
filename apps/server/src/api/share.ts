@@ -181,8 +181,8 @@ router.post('/terminals/:terminalId/share/email', authMiddleware, async (req: Re
 
     // Can't share with yourself
     const currentUser = await prisma.user.findUnique({ where: { id: userId } });
-    if (currentUser?.email === data.email) {
-      res.status(400).json({ success: false, error: 'Cannot share with yourself' });
+    if (currentUser?.email.toLowerCase() === data.email.toLowerCase()) {
+      res.status(400).json({ success: false, error: 'You cannot share a terminal with yourself' });
       return;
     }
 
@@ -191,15 +191,17 @@ router.post('/terminals/:terminalId/share/email', authMiddleware, async (req: Re
       where: { email: data.email },
     });
 
+    if (!targetUser) {
+      res.status(404).json({ success: false, error: 'User not found. They must have an account to receive shared terminals.' });
+      return;
+    }
+
     // Check if share already exists
     const existingShare = await prisma.terminalShare.findFirst({
       where: {
         terminalId,
         type: ShareType.EMAIL,
-        OR: [
-          { sharedEmail: data.email },
-          { sharedWithId: targetUser?.id },
-        ],
+        sharedWithId: targetUser.id,
       },
     });
 
@@ -209,7 +211,6 @@ router.post('/terminals/:terminalId/share/email', authMiddleware, async (req: Re
         where: { id: existingShare.id },
         data: {
           permission: data.permission,
-          sharedWithId: targetUser?.id || null,
         },
         include: {
           sharedWith: {
@@ -230,8 +231,8 @@ router.post('/terminals/:terminalId/share/email', authMiddleware, async (req: Re
       data: {
         terminalId,
         type: ShareType.EMAIL,
-        sharedEmail: data.email,
-        sharedWithId: targetUser?.id || null,
+        sharedEmail: targetUser.email,
+        sharedWithId: targetUser.id,
         permission: data.permission,
         createdById: userId,
       },
