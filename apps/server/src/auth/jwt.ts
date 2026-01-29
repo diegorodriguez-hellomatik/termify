@@ -20,7 +20,7 @@ export interface RefreshTokenPayload {
 export function generateAccessToken(payload: TokenPayload): string {
   return jwt.sign(payload, JWT_SECRET, {
     expiresIn: JWT_EXPIRES_IN,
-  });
+  } as jwt.SignOptions);
 }
 
 /**
@@ -29,7 +29,7 @@ export function generateAccessToken(payload: TokenPayload): string {
 export function generateRefreshToken(payload: RefreshTokenPayload): string {
   return jwt.sign(payload, JWT_SECRET, {
     expiresIn: JWT_REFRESH_EXPIRES_IN,
-  });
+  } as jwt.SignOptions);
 }
 
 /**

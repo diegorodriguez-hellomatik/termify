@@ -1,14 +1,20 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME } from '@/lib/terminal-themes';
 
 type Theme = 'light' | 'dark';
+export type ViewMode = 'grid' | 'compact' | 'list';
 
 interface ThemeContextType {
   theme: Theme;
   isDark: boolean;
   toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
+  terminalTheme: string;
+  setTerminalTheme: (themeId: string) => void;
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -40,14 +46,43 @@ function getInitialTheme(): Theme {
   return 'dark'; // default to dark
 }
 
+// Get initial terminal theme (SSR-safe)
+function getInitialTerminalTheme(isDark: boolean): string {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('terminalTheme');
+    if (saved) {
+      return saved;
+    }
+  }
+  return isDark ? DEFAULT_DARK_THEME : DEFAULT_LIGHT_THEME;
+}
+
+// Get initial view mode (SSR-safe)
+function getInitialViewMode(): ViewMode {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('viewMode') as ViewMode;
+    if (saved === 'grid' || saved === 'compact' || saved === 'list') {
+      return saved;
+    }
+  }
+  return 'grid';
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>('dark');
+  const [terminalTheme, setTerminalThemeState] = useState<string>(DEFAULT_DARK_THEME);
+  const [viewMode, setViewModeState] = useState<ViewMode>('grid');
   const [mounted, setMounted] = useState(false);
 
   // Load theme from localStorage on mount
   useEffect(() => {
     const initialTheme = getInitialTheme();
+    const initialTerminalTheme = getInitialTerminalTheme(initialTheme === 'dark');
+    const initialViewMode = getInitialViewMode();
+
     setThemeState(initialTheme);
+    setTerminalThemeState(initialTerminalTheme);
+    setViewModeState(initialViewMode);
     applyTheme(initialTheme);
     setMounted(true);
   }, []);
@@ -60,6 +95,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [theme, mounted]);
 
+  // Save terminal theme to localStorage when it changes (after mount)
+  useEffect(() => {
+    if (mounted) {
+      localStorage.setItem('terminalTheme', terminalTheme);
+    }
+  }, [terminalTheme, mounted]);
+
+  // Save view mode to localStorage when it changes (after mount)
+  useEffect(() => {
+    if (mounted) {
+      localStorage.setItem('viewMode', viewMode);
+    }
+  }, [viewMode, mounted]);
+
   const toggleTheme = () => {
     setThemeState(theme === 'light' ? 'dark' : 'light');
   };
@@ -68,8 +117,27 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeState(newTheme);
   };
 
+  const setTerminalTheme = (themeId: string) => {
+    setTerminalThemeState(themeId);
+  };
+
+  const setViewMode = (mode: ViewMode) => {
+    setViewModeState(mode);
+  };
+
   return (
-    <ThemeContext.Provider value={{ theme, isDark: theme === 'dark', toggleTheme, setTheme }}>
+    <ThemeContext.Provider
+      value={{
+        theme,
+        isDark: theme === 'dark',
+        toggleTheme,
+        setTheme,
+        terminalTheme,
+        setTerminalTheme,
+        viewMode,
+        setViewMode,
+      }}
+    >
       {children}
     </ThemeContext.Provider>
   );

@@ -30,6 +30,8 @@ model User {
   terminals     Terminal[]
   categories    Category[]
   auditLogs     AuditLog[]
+  snippets      Snippet[]
+  profiles      TerminalProfile[]
 
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
@@ -105,6 +107,7 @@ model Terminal {
   cwd           String?
   outputBuffer  Bytes?         @map("output_buffer")
   position      Int            @default(0)
+  isFavorite    Boolean        @default(false) @map("is_favorite")
 
   // Metadata
   lastActiveAt  DateTime?      @map("last_active_at")
@@ -139,4 +142,54 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model Snippet {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  name        String
+  command     String   @db.Text
+  description String?
+  category    String?
+  tags        String[] @default([])
+  isFavorite  Boolean  @default(false) @map("is_favorite")
+  usageCount  Int      @default(0) @map("usage_count")
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([category])
+  @@map("snippets")
+}
+
+model TerminalProfile {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  name        String
+  icon        String?
+  color       String   @default("#6366f1")
+  description String?
+
+  // Terminal settings
+  cols        Int      @default(120)
+  rows        Int      @default(30)
+  cwd         String?
+  shell       String?
+  env         Json?    // Environment variables
+
+  // Startup commands
+  initCommands String[] @default([]) @map("init_commands")
+
+  isDefault   Boolean  @default(false) @map("is_default")
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("terminal_profiles")
 }

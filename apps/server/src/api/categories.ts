@@ -121,7 +121,7 @@ router.post('/', async (req: Request, res: Response) => {
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const { id } = req.params;
+    const id = req.params.id as string;
     const data = updateCategorySchema.parse(req.body);
 
     // Verify ownership
@@ -157,7 +157,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
         color: category.color,
         icon: category.icon,
         position: category.position,
-        terminalCount: category._count.terminals,
+        terminalCount: (category as any)._count.terminals,
         createdAt: category.createdAt,
         updatedAt: category.updatedAt,
       },
@@ -179,7 +179,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     // Verify ownership
     const existing = await prisma.category.findFirst({

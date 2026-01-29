@@ -102,6 +102,13 @@ export const terminalsApi = {
 
   reorder: (data: { terminalIds: string[] }, token: string) =>
     api<void>('/api/terminals/reorder', { method: 'POST', body: data, token }),
+
+  toggleFavorite: (id: string, isFavorite: boolean, token: string) =>
+    api<any>(`/api/terminals/${id}/favorite`, {
+      method: 'PATCH',
+      body: { isFavorite },
+      token,
+    }),
 };
 
 // Categories API
@@ -124,4 +131,155 @@ export const categoriesApi = {
 
   reorder: (data: { categoryIds: string[] }, token: string) =>
     api<void>('/api/categories/reorder', { method: 'POST', body: data, token }),
+};
+
+// Snippets API
+export interface Snippet {
+  id: string;
+  name: string;
+  command: string;
+  description?: string | null;
+  category?: string | null;
+  tags: string[];
+  isFavorite: boolean;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const snippetsApi = {
+  list: (token: string, params?: { category?: string; search?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.category) searchParams.set('category', params.category);
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return api<{ snippets: Snippet[]; categories: string[]; total: number }>(
+      `/api/snippets${query ? `?${query}` : ''}`,
+      { token }
+    );
+  },
+
+  get: (id: string, token: string) =>
+    api<Snippet>(`/api/snippets/${id}`, { token }),
+
+  create: (
+    data: { name: string; command: string; description?: string; category?: string; tags?: string[] },
+    token: string
+  ) =>
+    api<Snippet>('/api/snippets', { method: 'POST', body: data, token }),
+
+  update: (
+    id: string,
+    data: { name?: string; command?: string; description?: string | null; category?: string | null; tags?: string[]; isFavorite?: boolean },
+    token: string
+  ) =>
+    api<Snippet>(`/api/snippets/${id}`, { method: 'PATCH', body: data, token }),
+
+  use: (id: string, token: string) =>
+    api<Snippet>(`/api/snippets/${id}/use`, { method: 'POST', token }),
+
+  delete: (id: string, token: string) =>
+    api<void>(`/api/snippets/${id}`, { method: 'DELETE', token }),
+};
+
+// Profiles API
+export interface TerminalProfile {
+  id: string;
+  name: string;
+  icon?: string | null;
+  color: string;
+  description?: string | null;
+  cols: number;
+  rows: number;
+  cwd?: string | null;
+  shell?: string | null;
+  env?: Record<string, string> | null;
+  initCommands: string[];
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const profilesApi = {
+  list: (token: string) =>
+    api<{ profiles: TerminalProfile[]; total: number }>('/api/profiles', { token }),
+
+  get: (id: string, token: string) =>
+    api<TerminalProfile>(`/api/profiles/${id}`, { token }),
+
+  create: (
+    data: {
+      name: string;
+      icon?: string;
+      color?: string;
+      description?: string;
+      cols?: number;
+      rows?: number;
+      cwd?: string;
+      shell?: string;
+      env?: Record<string, string>;
+      initCommands?: string[];
+      isDefault?: boolean;
+    },
+    token: string
+  ) =>
+    api<TerminalProfile>('/api/profiles', { method: 'POST', body: data, token }),
+
+  update: (
+    id: string,
+    data: {
+      name?: string;
+      icon?: string | null;
+      color?: string;
+      description?: string | null;
+      cols?: number;
+      rows?: number;
+      cwd?: string | null;
+      shell?: string | null;
+      env?: Record<string, string> | null;
+      initCommands?: string[];
+      isDefault?: boolean;
+    },
+    token: string
+  ) =>
+    api<TerminalProfile>(`/api/profiles/${id}`, { method: 'PATCH', body: data, token }),
+
+  delete: (id: string, token: string) =>
+    api<void>(`/api/profiles/${id}`, { method: 'DELETE', token }),
+};
+
+// Audit Logs API
+export interface AuditLog {
+  id: string;
+  action: string;
+  resource: string;
+  resourceId?: string | null;
+  details?: Record<string, any> | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  createdAt: string;
+}
+
+export const auditlogsApi = {
+  list: (token: string, params?: { limit?: number; offset?: number; action?: string; resource?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set('limit', params.limit.toString());
+    if (params?.offset) searchParams.set('offset', params.offset.toString());
+    if (params?.action) searchParams.set('action', params.action);
+    if (params?.resource) searchParams.set('resource', params.resource);
+    const query = searchParams.toString();
+    return api<{ logs: AuditLog[]; total: number; limit: number; offset: number }>(
+      `/api/auditlogs${query ? `?${query}` : ''}`,
+      { token }
+    );
+  },
+
+  create: (
+    data: { action: string; resource: string; resourceId?: string; details?: Record<string, any> },
+    token: string
+  ) =>
+    api<AuditLog>('/api/auditlogs', { method: 'POST', body: data, token }),
+
+  clear: (token: string) =>
+    api<void>('/api/auditlogs', { method: 'DELETE', token }),
 };

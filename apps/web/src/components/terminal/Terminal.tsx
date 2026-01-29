@@ -6,8 +6,11 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { TerminalStatus } from '@claude-terminal/shared';
 import { useTerminalSocket } from '@/hooks/useTerminalSocket';
+import { useTheme } from '@/context/ThemeContext';
+import { getXtermTheme, getTerminalTheme } from '@/lib/terminal-themes';
 import { Play, Square, RefreshCw, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { TerminalThemeSelector } from '@/components/settings/TerminalThemeSelector';
 import { cn } from '@/lib/utils';
 import '@xterm/xterm/css/xterm.css';
 
@@ -16,57 +19,8 @@ interface TerminalProps {
   token: string;
   initialStatus?: TerminalStatus;
   className?: string;
-  defaultTheme?: 'light' | 'dark';
   onReady?: () => void;
 }
-
-const DARK_THEME = {
-  background: '#1a1b26',
-  foreground: '#a9b1d6',
-  cursor: '#c0caf5',
-  cursorAccent: '#1a1b26',
-  selectionBackground: '#33467c',
-  black: '#32344a',
-  red: '#f7768e',
-  green: '#9ece6a',
-  yellow: '#e0af68',
-  blue: '#7aa2f7',
-  magenta: '#ad8ee6',
-  cyan: '#449dab',
-  white: '#787c99',
-  brightBlack: '#444b6a',
-  brightRed: '#ff7a93',
-  brightGreen: '#b9f27c',
-  brightYellow: '#ff9e64',
-  brightBlue: '#7da6ff',
-  brightMagenta: '#bb9af7',
-  brightCyan: '#0db9d7',
-  brightWhite: '#acb0d0',
-};
-
-const LIGHT_THEME = {
-  background: '#ffffff',
-  foreground: '#1e1e1e',
-  cursor: '#1e1e1e',
-  cursorAccent: '#ffffff',
-  selectionBackground: '#add6ff',
-  black: '#1e1e1e',
-  red: '#cd3131',
-  green: '#14ce14',
-  yellow: '#b5ba00',
-  blue: '#0451a5',
-  magenta: '#bc05bc',
-  cyan: '#0598bc',
-  white: '#555555',
-  brightBlack: '#666666',
-  brightRed: '#f14c4c',
-  brightGreen: '#23d18b',
-  brightYellow: '#f5f543',
-  brightBlue: '#3b8eea',
-  brightMagenta: '#d670d6',
-  brightCyan: '#29b8db',
-  brightWhite: '#e5e5e5',
-};
 
 const STATUS_COLORS: Record<TerminalStatus, string> = {
   [TerminalStatus.STOPPED]: 'bg-gray-500',
@@ -87,7 +41,6 @@ export function Terminal({
   token,
   initialStatus = TerminalStatus.STOPPED,
   className,
-  defaultTheme = 'light',
   onReady,
 }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -96,7 +49,10 @@ export function Terminal({
   const [status, setStatus] = useState<TerminalStatus>(initialStatus);
   const [error, setError] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>(defaultTheme);
+
+  // Get theme from context
+  const { terminalTheme } = useTheme();
+  const currentTheme = getTerminalTheme(terminalTheme);
 
   // Callbacks that write directly to terminal
   const handleOutput = useCallback((data: string) => {
@@ -140,13 +96,13 @@ export function Terminal({
     if (initializedRef.current) return; // Prevent double-init in StrictMode
     initializedRef.current = true;
 
-    const currentTheme = theme === 'light' ? LIGHT_THEME : DARK_THEME;
+    const xtermTheme = getXtermTheme(terminalTheme);
 
     const terminal = new XTerm({
       cursorBlink: true,
       fontSize: 14,
       fontFamily: 'JetBrains Mono, Fira Code, monospace',
-      theme: currentTheme,
+      theme: xtermTheme,
       scrollback: 10000,
       convertEol: true,
     });
@@ -236,13 +192,13 @@ export function Terminal({
     }
   }, [status, resize, onReady]);
 
-  // Sync theme when defaultTheme prop changes
+  // Update theme when terminalTheme changes
   useEffect(() => {
-    if (terminalRef.current && defaultTheme !== theme) {
-      setTheme(defaultTheme);
-      terminalRef.current.options.theme = defaultTheme === 'light' ? LIGHT_THEME : DARK_THEME;
+    if (terminalRef.current) {
+      const xtermTheme = getXtermTheme(terminalTheme);
+      terminalRef.current.options.theme = xtermTheme;
     }
-  }, [defaultTheme]);
+  }, [terminalTheme]);
 
   const handleStart = () => {
     terminalRef.current?.clear();
@@ -283,6 +239,8 @@ export function Terminal({
         </div>
 
         <div className="flex items-center gap-2">
+          <TerminalThemeSelector showLabel={false} />
+
           {status === TerminalStatus.STOPPED || status === TerminalStatus.CRASHED ? (
             <Button size="sm" variant="outline" onClick={handleStart}>
               <Play className="h-4 w-4 mr-1" />
@@ -317,7 +275,7 @@ export function Terminal({
         style={{
           flex: 1,
           minHeight: '400px',
-          backgroundColor: theme === 'light' ? '#ffffff' : '#1a1b26',
+          backgroundColor: currentTheme.colors.background,
         }}
       />
     </div>

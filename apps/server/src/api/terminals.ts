@@ -80,7 +80,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     const terminal = await prisma.terminal.findFirst({
       where: { id, userId },
@@ -188,7 +188,7 @@ router.post('/', async (req: Request, res: Response) => {
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const { id } = req.params;
+    const id = req.params.id as string;
     const data = updateTerminalSchema.parse(req.body);
 
     // Verify ownership
@@ -235,7 +235,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     // Verify ownership
     const existing = await prisma.terminal.findFirst({
@@ -271,6 +271,46 @@ router.delete('/:id', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[API] Error deleting terminal:', error);
     res.status(500).json({ success: false, error: 'Failed to delete terminal' });
+  }
+});
+
+/**
+ * PATCH /api/terminals/:id/favorite
+ * Toggle favorite status
+ */
+router.patch('/:id/favorite', async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const id = req.params.id as string;
+    const { isFavorite } = req.body;
+
+    if (typeof isFavorite !== 'boolean') {
+      res.status(400).json({ success: false, error: 'isFavorite must be a boolean' });
+      return;
+    }
+
+    // Verify ownership
+    const existing = await prisma.terminal.findFirst({
+      where: { id, userId },
+    });
+
+    if (!existing) {
+      res.status(404).json({ success: false, error: 'Terminal not found' });
+      return;
+    }
+
+    const terminal = await prisma.terminal.update({
+      where: { id },
+      data: { isFavorite },
+    });
+
+    res.json({
+      success: true,
+      data: terminal,
+    });
+  } catch (error) {
+    console.error('[API] Error toggling favorite:', error);
+    res.status(500).json({ success: false, error: 'Failed to toggle favorite' });
   }
 });
 

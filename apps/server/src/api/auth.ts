@@ -274,6 +274,7 @@ router.post('/oauth', async (req: Request, res: Response) => {
             name: data.name || user.name,
             image: data.image || user.image,
           },
+          include: { accounts: true },
         });
       }
     } else {
@@ -291,7 +292,14 @@ router.post('/oauth', async (req: Request, res: Response) => {
             },
           },
         },
+        include: { accounts: true },
       });
+    }
+
+    // At this point user is always defined
+    if (!user) {
+      res.status(500).json({ success: false, error: 'Failed to create or update user' });
+      return;
     }
 
     // Generate tokens

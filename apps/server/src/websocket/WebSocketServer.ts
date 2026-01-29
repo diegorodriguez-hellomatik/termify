@@ -229,7 +229,7 @@ export class TerminalWebSocketServer {
     this.send(ws, {
       type: 'terminal.status',
       terminalId,
-      status: instance?.status || terminal.status,
+      status: (instance?.status || terminal.status) as TerminalStatus,
     });
   }
 
@@ -357,9 +357,10 @@ export class TerminalWebSocketServer {
     // Save output buffer before killing
     const instance = ptyManager.get(terminalId);
     if (instance) {
+      const buffer = instance.outputBuffer.getBytes();
       await prisma.terminal.update({
         where: { id: terminalId },
-        data: { outputBuffer: instance.outputBuffer.getBytes() },
+        data: { outputBuffer: new Uint8Array(buffer) },
       });
     }
 

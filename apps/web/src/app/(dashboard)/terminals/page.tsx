@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -39,11 +39,24 @@ import {
   Pencil,
   Check,
   Copy,
+  Star,
+  StarOff,
+  LayoutGrid,
+  Grid3x3,
+  List,
+  Search,
+  Keyboard,
 } from 'lucide-react';
 import { TerminalStatus } from '@claude-terminal/shared';
 import { terminalsApi, categoriesApi } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/utils';
 import { useTheme } from '@/context/ThemeContext';
+import { TerminalListView } from '@/components/terminals/TerminalListView';
+import { TerminalThemeSelector } from '@/components/settings/TerminalThemeSelector';
+import { KeyboardShortcutsProvider, useKeyboardShortcuts } from '@/contexts/KeyboardShortcutsContext';
+import { ShortcutsHelpModalWithContext } from '@/components/ui/ShortcutsHelpModal';
+import { CreateTerminalModal, SSHConfig } from '@/components/terminals/CreateTerminalModal';
+import { cn } from '@/lib/utils';
 
 interface TerminalData {
   id: string;
@@ -55,6 +68,7 @@ interface TerminalData {
   lastActiveAt: string | null;
   categoryId: string | null;
   position: number;
+  isFavorite?: boolean;
   category?: { id: string; name: string; color: string; icon?: string } | null;
 }
 
@@ -79,12 +93,16 @@ function SortableTerminalCard({
   terminal,
   onDelete,
   onRename,
+  onToggleFavorite,
   isDark,
+  isCompact,
 }: {
   terminal: TerminalData;
   onDelete: (id: string) => void;
   onRename: (id: string, newName: string) => void;
+  onToggleFavorite: (id: string, isFavorite: boolean) => void;
   isDark: boolean;
+  isCompact?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(terminal.name);
@@ -104,26 +122,125 @@ function SortableTerminalCard({
     zIndex: isDragging ? 1000 : 1,
   };
 
+  if (isCompact) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        {...attributes}
+        {...listeners}
+        className={`group relative bg-card border border-border rounded-lg overflow-hidden transition-all duration-300 hover:shadow-md cursor-grab active:cursor-grabbing ${
+          isDragging ? 'shadow-xl scale-105' : ''
+        }`}
+      >
+        <div className="p-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div
+                className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0"
+                style={{
+                  backgroundColor: terminal.category?.color
+                    ? `${terminal.category.color}20`
+                    : isDark
+                    ? '#333'
+                    : '#f0f0f0',
+                }}
+              >
+                <TerminalIcon
+                  size={14}
+                  style={{ color: terminal.category?.color || (isDark ? '#888' : '#666') }}
+                />
+              </div>
+
+              <span className="font-medium text-sm truncate max-w-[120px]">{terminal.name}</span>
+              <div className={cn('w-2 h-2 rounded-full', STATUS_COLORS[terminal.status])} />
+            </div>
+
+            <div className="flex items-center gap-1">
+              {/* Favorite button */}
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onToggleFavorite(terminal.id, !terminal.isFavorite);
+                }}
+                className={cn(
+                  'p-1 rounded transition-all',
+                  terminal.isFavorite
+                    ? 'text-yellow-500'
+                    : 'text-muted-foreground hover:text-yellow-500'
+                )}
+              >
+                {terminal.isFavorite ? <Star size={14} fill="currentColor" /> : <StarOff size={14} />}
+              </button>
+
+              <Link href={`/terminals/${terminal.id}`}>
+                <button className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
+                  <Play size={14} />
+                </button>
+              </Link>
+
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDelete(terminal.id);
+                }}
+                className="p-1 hover:bg-destructive/10 rounded transition-all"
+              >
+                <Trash2 size={12} className="text-destructive" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`group relative bg-card border border-border rounded-xl overflow-hidden transition-all duration-300 hover:shadow-lg ${
+      {...attributes}
+      {...listeners}
+      className={`group relative bg-card border border-border rounded-xl overflow-hidden transition-all duration-300 hover:shadow-lg cursor-grab active:cursor-grabbing ${
         isDragging ? 'shadow-2xl scale-105' : ''
       }`}
     >
-      {/* Drag Handle */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="absolute top-3 left-3 cursor-grab active:cursor-grabbing p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-muted"
-      >
-        <GripVertical size={16} className="text-muted-foreground" />
+      {/* Action buttons - top right */}
+      <div className="absolute top-3 right-3 flex items-center gap-1 z-10">
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onToggleFavorite(terminal.id, !terminal.isFavorite);
+          }}
+          className={cn(
+            'p-1.5 rounded-md transition-all',
+            terminal.isFavorite
+              ? 'text-yellow-500 bg-yellow-500/10'
+              : 'text-muted-foreground hover:text-yellow-500 hover:bg-muted'
+          )}
+          title={terminal.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        >
+          {terminal.isFavorite ? <Star size={16} fill="currentColor" /> : <StarOff size={16} />}
+        </button>
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onDelete(terminal.id);
+          }}
+          className="p-1.5 hover:bg-destructive/10 rounded-md transition-all"
+          title="Delete terminal"
+        >
+          <Trash2 size={16} className="text-destructive" />
+        </button>
       </div>
 
-      <div className="p-5 pt-4">
+      <div className="p-5 pt-12">
         <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3 ml-6">
+          <div className="flex items-center gap-3">
             <div
               className="w-10 h-10 rounded-lg flex items-center justify-center"
               style={{
@@ -188,12 +305,6 @@ function SortableTerminalCard({
           </div>
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${STATUS_COLORS[terminal.status]}`} />
-            <button
-              onClick={() => onDelete(terminal.id)}
-              className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-destructive/10 rounded-md transition-all"
-            >
-              <Trash2 size={14} className="text-destructive" />
-            </button>
           </div>
         </div>
 
@@ -402,10 +513,67 @@ function DroppableCategory({
   );
 }
 
-export default function TerminalsPage() {
+// View Mode Toggle
+function ViewModeToggle({
+  viewMode,
+  onChange,
+  isDark,
+}: {
+  viewMode: 'grid' | 'compact' | 'list';
+  onChange: (mode: 'grid' | 'compact' | 'list') => void;
+  isDark: boolean;
+}) {
+  return (
+    <div
+      className="flex items-center gap-1 p-1 rounded-lg border border-border"
+      style={{ backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5' }}
+    >
+      <button
+        onClick={() => onChange('grid')}
+        className={cn(
+          'p-1.5 rounded transition-all',
+          viewMode === 'grid'
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+        )}
+        title="Grid view"
+      >
+        <LayoutGrid size={16} />
+      </button>
+      <button
+        onClick={() => onChange('compact')}
+        className={cn(
+          'p-1.5 rounded transition-all',
+          viewMode === 'compact'
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+        )}
+        title="Compact view"
+      >
+        <Grid3x3 size={16} />
+      </button>
+      <button
+        onClick={() => onChange('list')}
+        className={cn(
+          'p-1.5 rounded transition-all',
+          viewMode === 'list'
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+        )}
+        title="List view"
+      >
+        <List size={16} />
+      </button>
+    </div>
+  );
+}
+
+// Inner component that uses keyboard shortcuts
+function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
   const router = useRouter();
   const { data: session } = useSession();
-  const { isDark } = useTheme();
+  const { isDark, viewMode, setViewMode } = useTheme();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [terminals, setTerminals] = useState<TerminalData[]>([]);
   const [categories, setCategories] = useState<CategoryData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -414,9 +582,14 @@ export default function TerminalsPage() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [showCategoryInput, setShowCategoryInput] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [terminalToDelete, setTerminalToDelete] = useState<TerminalData | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  const { setShowHelp } = useKeyboardShortcuts();
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -453,9 +626,21 @@ export default function TerminalsPage() {
     loadData();
   }, [loadData]);
 
-  const handleCreateTerminal = async () => {
+  // Open modal when triggered by keyboard shortcut
+  useEffect(() => {
+    if (triggerCreate) {
+      setShowCreateModal(true);
+    }
+  }, [triggerCreate]);
+
+  const handleOpenCreateModal = () => {
+    setShowCreateModal(true);
+  };
+
+  const handleCreateLocalTerminal = async () => {
     if (!session?.accessToken) return;
 
+    setShowCreateModal(false);
     setCreating(true);
     try {
       const response = await terminalsApi.create(
@@ -472,6 +657,32 @@ export default function TerminalsPage() {
       }
     } catch (error) {
       console.error('Failed to create terminal:', error);
+      setCreating(false);
+    }
+  };
+
+  const handleCreateSSHTerminal = async (config: SSHConfig) => {
+    if (!session?.accessToken) return;
+
+    setShowCreateModal(false);
+    setCreating(true);
+    try {
+      // For now, create a terminal with SSH info in the name
+      // TODO: Implement proper SSH backend support
+      const response = await terminalsApi.create(
+        {
+          name: config.name || `SSH: ${config.username}@${config.host}`,
+          categoryId: selectedCategory || undefined,
+        },
+        session.accessToken
+      );
+
+      if (response.success && response.data) {
+        // TODO: Pass SSH config to terminal connection
+        router.push(`/terminals/${response.data.id}?ssh=${encodeURIComponent(JSON.stringify(config))}`);
+      }
+    } catch (error) {
+      console.error('Failed to create SSH terminal:', error);
       setCreating(false);
     }
   };
@@ -511,6 +722,31 @@ export default function TerminalsPage() {
       }
     } catch (error) {
       console.error('Failed to rename terminal:', error);
+    }
+  };
+
+  const handleToggleFavorite = async (id: string, isFavorite: boolean) => {
+    if (!session?.accessToken) return;
+
+    // Optimistic update
+    setTerminals((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, isFavorite } : t))
+    );
+
+    try {
+      const response = await terminalsApi.toggleFavorite(id, isFavorite, session.accessToken);
+      if (!response.success) {
+        // Revert on error
+        setTerminals((prev) =>
+          prev.map((t) => (t.id === id ? { ...t, isFavorite: !isFavorite } : t))
+        );
+      }
+    } catch (error) {
+      console.error('Failed to toggle favorite:', error);
+      // Revert on error
+      setTerminals((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, isFavorite: !isFavorite } : t))
+      );
     }
   };
 
@@ -634,10 +870,28 @@ export default function TerminalsPage() {
     }
   };
 
-  // Filter terminals by selected category
-  const filteredTerminals = selectedCategory
-    ? terminals.filter((t) => t.categoryId === selectedCategory)
-    : terminals;
+  // Filter terminals by selected category, favorites, and search
+  const filteredTerminals = terminals
+    .filter((t) => {
+      if (showFavoritesOnly && !t.isFavorite) return false;
+      if (selectedCategory && t.categoryId !== selectedCategory) return false;
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        return (
+          t.name.toLowerCase().includes(query) ||
+          t.category?.name.toLowerCase().includes(query)
+        );
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      // Sort favorites to top
+      if (a.isFavorite && !b.isFavorite) return -1;
+      if (!a.isFavorite && b.isFavorite) return 1;
+      return 0;
+    });
+
+  const favoritesCount = terminals.filter((t) => t.isFavorite).length;
 
   if (loading) {
     return (
@@ -667,175 +921,313 @@ export default function TerminalsPage() {
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
-    <div className="p-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Terminals</h1>
-          <p className="text-muted-foreground mt-1">
-            Manage your Claude Code terminal sessions
-          </p>
-        </div>
-        <button
-          onClick={handleCreateTerminal}
-          disabled={creating}
-          className="flex items-center gap-2 px-4 py-2.5 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-all disabled:opacity-50"
-        >
-          <Plus size={18} />
-          {creating ? 'Creating...' : 'New Terminal'}
-        </button>
-      </div>
-
-      {/* Categories - Drop targets */}
-      <div className="flex flex-wrap items-center gap-2 mb-6">
-        <DroppableCategory id="category-all" isOver={overId === 'category-all'}>
-          <button
-            onClick={() => setSelectedCategory(null)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-              selectedCategory === null
-                ? 'bg-foreground text-background'
-                : 'bg-muted text-muted-foreground hover:text-foreground'
-            } ${overId === 'category-all' ? 'ring-2 ring-primary' : ''}`}
-          >
-            All ({terminals.length})
-          </button>
-        </DroppableCategory>
-
-        {categories.map((category) => (
-          <DroppableCategory
-            key={category.id}
-            id={`category-${category.id}`}
-            isOver={overId === `category-${category.id}`}
-          >
-            <div className="relative group">
-              <button
-                onClick={() => setSelectedCategory(category.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                  selectedCategory === category.id
-                    ? 'text-white'
-                    : 'bg-muted text-muted-foreground hover:text-foreground'
-                } ${overId === `category-${category.id}` ? 'ring-2 ring-primary' : ''}`}
-                style={{
-                  backgroundColor:
-                    selectedCategory === category.id ? category.color : undefined,
-                }}
-              >
-                <Folder size={14} />
-                {category.name}
-                <span className="opacity-60">
-                  ({terminals.filter((t) => t.categoryId === category.id).length})
-                </span>
-              </button>
-              <button
-                onClick={() => handleDeleteCategory(category.id)}
-                className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          </DroppableCategory>
-        ))}
-
-        {showCategoryInput ? (
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={newCategoryName}
-              onChange={(e) => setNewCategoryName(e.target.value)}
-              placeholder="Category name"
-              className="px-3 py-2 rounded-full text-sm border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreateCategory();
-                if (e.key === 'Escape') {
-                  setShowCategoryInput(false);
-                  setNewCategoryName('');
-                }
-              }}
-            />
+      <div className="p-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Terminals</h1>
+            <p className="text-muted-foreground mt-1">
+              Manage your Claude Code terminal sessions
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Help button */}
             <button
-              onClick={handleCreateCategory}
-              disabled={creatingCategory || !newCategoryName.trim()}
-              className="p-2 bg-primary text-primary-foreground rounded-full hover:opacity-90 disabled:opacity-50"
+              onClick={() => setShowHelp(true)}
+              className="p-2 rounded-lg border border-border hover:bg-muted transition-colors"
+              title="Keyboard shortcuts (?)"
             >
-              <Check size={16} />
+              <Keyboard size={18} className="text-muted-foreground" />
             </button>
+
+            {/* Terminal theme selector */}
+            <TerminalThemeSelector />
+
+            {/* View mode toggle */}
+            <ViewModeToggle viewMode={viewMode} onChange={setViewMode} isDark={isDark} />
+
+            <button
+              onClick={handleOpenCreateModal}
+              disabled={creating}
+              className="flex items-center gap-2 px-4 py-2.5 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-all disabled:opacity-50"
+            >
+              <Plus size={18} />
+              {creating ? 'Creating...' : 'New Terminal'}
+            </button>
+          </div>
+        </div>
+
+        {/* Search bar */}
+        <div className="mb-4">
+          <div className="relative max-w-md">
+            <Search
+              size={18}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search terminals... (Ctrl+F)"
+              className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Categories - Drop targets */}
+        <div className="flex flex-wrap items-center gap-2 mb-6">
+          <DroppableCategory id="category-all" isOver={overId === 'category-all'}>
             <button
               onClick={() => {
-                setShowCategoryInput(false);
-                setNewCategoryName('');
+                setSelectedCategory(null);
+                setShowFavoritesOnly(false);
               }}
-              className="p-2 bg-muted rounded-full hover:bg-muted/80"
+              className={cn(
+                'px-4 py-2 rounded-full text-sm font-medium transition-all',
+                !selectedCategory && !showFavoritesOnly
+                  ? 'bg-foreground text-background'
+                  : 'bg-muted text-muted-foreground hover:text-foreground',
+                overId === 'category-all' && 'ring-2 ring-primary'
+              )}
             >
-              <X size={16} />
+              All ({terminals.length})
             </button>
+          </DroppableCategory>
+
+          {/* Favorites filter */}
+          <button
+            onClick={() => {
+              setShowFavoritesOnly(!showFavoritesOnly);
+              setSelectedCategory(null);
+            }}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all',
+              showFavoritesOnly
+                ? 'bg-yellow-500 text-white'
+                : 'bg-muted text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Star size={14} fill={showFavoritesOnly ? 'currentColor' : 'none'} />
+            Favorites ({favoritesCount})
+          </button>
+
+          {categories.map((category) => (
+            <DroppableCategory
+              key={category.id}
+              id={`category-${category.id}`}
+              isOver={overId === `category-${category.id}`}
+            >
+              <div className="relative group">
+                <button
+                  onClick={() => {
+                    setSelectedCategory(category.id);
+                    setShowFavoritesOnly(false);
+                  }}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all',
+                    selectedCategory === category.id
+                      ? 'text-white'
+                      : 'bg-muted text-muted-foreground hover:text-foreground',
+                    overId === `category-${category.id}` && 'ring-2 ring-primary'
+                  )}
+                  style={{
+                    backgroundColor:
+                      selectedCategory === category.id ? category.color : undefined,
+                  }}
+                >
+                  <Folder size={14} />
+                  {category.name}
+                  <span className="opacity-60">
+                    ({terminals.filter((t) => t.categoryId === category.id).length})
+                  </span>
+                </button>
+                <button
+                  onClick={() => handleDeleteCategory(category.id)}
+                  className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            </DroppableCategory>
+          ))}
+
+          {showCategoryInput ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder="Category name"
+                className="px-3 py-2 rounded-full text-sm border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreateCategory();
+                  if (e.key === 'Escape') {
+                    setShowCategoryInput(false);
+                    setNewCategoryName('');
+                  }
+                }}
+              />
+              <button
+                onClick={handleCreateCategory}
+                disabled={creatingCategory || !newCategoryName.trim()}
+                className="p-2 bg-primary text-primary-foreground rounded-full hover:opacity-90 disabled:opacity-50"
+              >
+                <Check size={16} />
+              </button>
+              <button
+                onClick={() => {
+                  setShowCategoryInput(false);
+                  setNewCategoryName('');
+                }}
+                className="p-2 bg-muted rounded-full hover:bg-muted/80"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowCategoryInput(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-all border border-dashed border-border"
+            >
+              <FolderPlus size={14} />
+              Add Category
+            </button>
+          )}
+        </div>
+
+        {/* Terminal grid/list */}
+        {filteredTerminals.length === 0 ? (
+          <div className="text-center py-16 bg-card border border-border rounded-xl">
+            <TerminalIcon size={48} className="mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2 text-foreground">
+              {searchQuery
+                ? 'No terminals found'
+                : showFavoritesOnly
+                ? 'No favorite terminals'
+                : selectedCategory
+                ? 'No terminals in this category'
+                : 'No terminals yet'}
+            </h3>
+            <p className="text-muted-foreground mb-6">
+              {searchQuery
+                ? 'Try a different search term'
+                : showFavoritesOnly
+                ? 'Star a terminal to add it to favorites'
+                : selectedCategory
+                ? 'Create a terminal and assign it to this category'
+                : 'Create your first terminal to get started'}
+            </p>
+            {!searchQuery && !showFavoritesOnly && (
+              <button
+                onClick={handleOpenCreateModal}
+                disabled={creating}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-all disabled:opacity-50"
+              >
+                <Plus size={18} />
+                Create Terminal
+              </button>
+            )}
+          </div>
+        ) : viewMode === 'list' ? (
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <TerminalListView
+              terminals={filteredTerminals}
+              onDelete={handleDeleteTerminal}
+              onToggleFavorite={handleToggleFavorite}
+              isDark={isDark}
+            />
           </div>
         ) : (
-          <button
-            onClick={() => setShowCategoryInput(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-all border border-dashed border-border"
+          <SortableContext
+            items={filteredTerminals.map((t) => t.id)}
+            strategy={rectSortingStrategy}
           >
-            <FolderPlus size={14} />
-            Add Category
-          </button>
+            <div
+              className={cn(
+                'grid gap-4',
+                viewMode === 'compact'
+                  ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
+                  : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+              )}
+            >
+              {filteredTerminals.map((terminal, index) => (
+                <div
+                  key={terminal.id}
+                  className="slide-up"
+                  style={{ animationDelay: `${index * 0.05}s` }}
+                >
+                  <SortableTerminalCard
+                    terminal={terminal}
+                    onDelete={handleDeleteTerminal}
+                    onRename={handleRenameTerminal}
+                    onToggleFavorite={handleToggleFavorite}
+                    isDark={isDark}
+                    isCompact={viewMode === 'compact'}
+                  />
+                </div>
+              ))}
+            </div>
+          </SortableContext>
         )}
-      </div>
 
-      {/* Terminal grid */}
-      {filteredTerminals.length === 0 ? (
-        <div className="text-center py-16 bg-card border border-border rounded-xl">
-          <TerminalIcon size={48} className="mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-lg font-semibold mb-2 text-foreground">
-            {selectedCategory ? 'No terminals in this category' : 'No terminals yet'}
-          </h3>
-          <p className="text-muted-foreground mb-6">
-            {selectedCategory
-              ? 'Create a terminal and assign it to this category'
-              : 'Create your first terminal to get started'}
-          </p>
-          <button
-            onClick={handleCreateTerminal}
-            disabled={creating}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-all disabled:opacity-50"
-          >
-            <Plus size={18} />
-            Create Terminal
-          </button>
-        </div>
-      ) : (
-        <SortableContext
-          items={filteredTerminals.map((t) => t.id)}
-          strategy={rectSortingStrategy}
-        >
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredTerminals.map((terminal, index) => (
-              <div
-                key={terminal.id}
-                className="slide-up"
-                style={{ animationDelay: `${index * 0.05}s` }}
-              >
-                <SortableTerminalCard
-                  terminal={terminal}
-                  onDelete={handleDeleteTerminal}
-                  onRename={handleRenameTerminal}
-                  isDark={isDark}
-                />
-              </div>
-            ))}
-          </div>
-        </SortableContext>
-      )}
+        {/* Delete Confirmation Modal */}
+        {terminalToDelete && (
+          <DeleteConfirmModal
+            terminal={terminalToDelete}
+            onConfirm={confirmDeleteTerminal}
+            onCancel={() => setTerminalToDelete(null)}
+            isDark={isDark}
+          />
+        )}
 
-      {/* Delete Confirmation Modal */}
-      {terminalToDelete && (
-        <DeleteConfirmModal
-          terminal={terminalToDelete}
-          onConfirm={confirmDeleteTerminal}
-          onCancel={() => setTerminalToDelete(null)}
+        {/* Shortcuts Help Modal */}
+        <ShortcutsHelpModalWithContext isDark={isDark} />
+
+        {/* Create Terminal Modal */}
+        <CreateTerminalModal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onCreateLocal={handleCreateLocalTerminal}
+          onCreateSSH={handleCreateSSHTerminal}
           isDark={isDark}
         />
-      )}
-    </div>
+      </div>
     </DndContext>
+  );
+}
+
+// Main component with provider wrapper
+export default function TerminalsPage() {
+  const [triggerCreate, setTriggerCreate] = useState(false);
+
+  const handleCreateTerminal = useCallback(() => {
+    // Trigger the modal to open - will be handled in content component
+    setTriggerCreate(true);
+    setTimeout(() => setTriggerCreate(false), 100);
+  }, []);
+
+  const handleFocusSearch = useCallback(() => {
+    // Focus search input - handled internally in TerminalsPageContent
+    const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement;
+    searchInput?.focus();
+  }, []);
+
+  return (
+    <KeyboardShortcutsProvider
+      onCreateTerminal={handleCreateTerminal}
+      onFocusSearch={handleFocusSearch}
+    >
+      <TerminalsPageContent triggerCreate={triggerCreate} />
+    </KeyboardShortcutsProvider>
   );
 }

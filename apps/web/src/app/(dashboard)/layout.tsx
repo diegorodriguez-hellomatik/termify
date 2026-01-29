@@ -7,7 +7,9 @@ import {
   LogOut,
   User,
   LayoutDashboard,
+  LayoutGrid,
 } from 'lucide-react';
+import { MobileNav } from '@/components/layout/MobileNav';
 
 export default async function DashboardLayout({
   children,
@@ -21,9 +23,15 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen flex">
-      {/* Sidebar */}
-      <aside className="w-64 bg-card border-r border-border flex flex-col">
+    <div className="min-h-screen flex flex-col md:flex-row">
+      {/* Mobile Navigation */}
+      <MobileNav
+        userName={session.user?.name}
+        userEmail={session.user?.email}
+      />
+
+      {/* Desktop Sidebar - hidden on mobile */}
+      <aside className="hidden md:flex w-64 bg-card border-r border-border flex-col">
         {/* Logo */}
         <div className="p-4 border-b border-border">
           <Link href="/terminals" className="flex items-center gap-2">
@@ -42,6 +50,15 @@ export default async function DashboardLayout({
               >
                 <LayoutDashboard className="h-5 w-5" />
                 Dashboard
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/workspace"
+                className="flex items-center gap-3 px-3 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <LayoutGrid className="h-5 w-5" />
+                Workspace
               </Link>
             </li>
             <li>
@@ -90,7 +107,7 @@ export default async function DashboardLayout({
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-auto pt-14 pb-20 md:pt-0 md:pb-0">{children}</main>
     </div>
   );
 }

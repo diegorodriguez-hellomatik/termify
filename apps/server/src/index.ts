@@ -8,6 +8,9 @@ import { prisma } from './lib/prisma.js';
 import authRoutes from './api/auth.js';
 import terminalsRoutes from './api/terminals.js';
 import categoriesRoutes from './api/categories.js';
+import snippetsRoutes from './api/snippets.js';
+import profilesRoutes from './api/profiles.js';
+import auditlogsRoutes from './api/auditlogs.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',');
@@ -35,6 +38,9 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/terminals', terminalsRoutes);
 app.use('/api/categories', categoriesRoutes);
+app.use('/api/snippets', snippetsRoutes);
+app.use('/api/profiles', profilesRoutes);
+app.use('/api/auditlogs', auditlogsRoutes);
 
 // Stats endpoint
 app.get('/api/stats', (req, res) => {
