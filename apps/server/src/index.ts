@@ -24,6 +24,7 @@ import teamSnippetsRoutes from './api/team-snippets.js';
 import teamServersRoutes from './api/team-servers.js';
 import teamHistoryRoutes from './api/team-history.js';
 import teamPresenceRoutes from './api/team-presence.js';
+import teamRolesRoutes from './api/team-roles.js';
 import taskCommandsRoutes from './api/task-commands.js';
 import usersRoutes from './api/users.js';
 
@@ -67,6 +68,7 @@ app.use('/api/teams', teamSnippetsRoutes);
 app.use('/api/teams', teamServersRoutes);
 app.use('/api/teams', teamHistoryRoutes);
 app.use('/api/teams', teamPresenceRoutes);
+app.use('/api/teams', teamRolesRoutes);
 app.use('/api/tasks', tasksRoutes);
 app.use('/api/tasks', taskCommandsRoutes);
 app.use('/api', pushRoutes);

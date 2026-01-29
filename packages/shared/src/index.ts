@@ -37,12 +37,115 @@ export enum NotificationType {
   TASK_OVERDUE = 'TASK_OVERDUE',
 }
 
-// Team Role
+// Team Role (legacy - for backwards compatibility)
 export enum TeamRole {
   OWNER = 'OWNER',
   ADMIN = 'ADMIN',
   MEMBER = 'MEMBER',
 }
+
+// Team Permissions - Granular permissions for team resources
+export enum TeamPermission {
+  // Terminal permissions
+  CREATE_TERMINAL = 'create_terminal',
+  EDIT_TERMINAL = 'edit_terminal',
+  DELETE_TERMINAL = 'delete_terminal',
+  VIEW_TERMINAL = 'view_terminal',
+  CONTROL_TERMINAL = 'control_terminal',
+
+  // Workspace permissions
+  CREATE_WORKSPACE = 'create_workspace',
+  EDIT_WORKSPACE = 'edit_workspace',
+  DELETE_WORKSPACE = 'delete_workspace',
+  VIEW_WORKSPACE = 'view_workspace',
+
+  // Snippet permissions
+  CREATE_SNIPPET = 'create_snippet',
+  EDIT_SNIPPET = 'edit_snippet',
+  DELETE_SNIPPET = 'delete_snippet',
+  VIEW_SNIPPET = 'view_snippet',
+
+  // Server permissions
+  CREATE_SERVER = 'create_server',
+  EDIT_SERVER = 'edit_server',
+  DELETE_SERVER = 'delete_server',
+  VIEW_SERVER = 'view_server',
+  CONNECT_SERVER = 'connect_server',
+
+  // Task permissions
+  CREATE_TASK = 'create_task',
+  EDIT_TASK = 'edit_task',
+  DELETE_TASK = 'delete_task',
+  ASSIGN_TASK = 'assign_task',
+
+  // Member permissions
+  INVITE_MEMBER = 'invite_member',
+  KICK_MEMBER = 'kick_member',
+  CHANGE_MEMBER_ROLE = 'change_member_role',
+  VIEW_MEMBERS = 'view_members',
+
+  // Team management
+  EDIT_TEAM_SETTINGS = 'edit_team_settings',
+  DELETE_TEAM = 'delete_team',
+  MANAGE_ROLES = 'manage_roles',
+  VIEW_ACTIVITY = 'view_activity',
+  VIEW_AUDIT_LOGS = 'view_audit_logs',
+}
+
+// Default permission sets for built-in roles
+export const DEFAULT_OWNER_PERMISSIONS: TeamPermission[] = Object.values(TeamPermission);
+
+export const DEFAULT_ADMIN_PERMISSIONS: TeamPermission[] = [
+  // All terminal permissions
+  TeamPermission.CREATE_TERMINAL,
+  TeamPermission.EDIT_TERMINAL,
+  TeamPermission.DELETE_TERMINAL,
+  TeamPermission.VIEW_TERMINAL,
+  TeamPermission.CONTROL_TERMINAL,
+  // All workspace permissions
+  TeamPermission.CREATE_WORKSPACE,
+  TeamPermission.EDIT_WORKSPACE,
+  TeamPermission.DELETE_WORKSPACE,
+  TeamPermission.VIEW_WORKSPACE,
+  // All snippet permissions
+  TeamPermission.CREATE_SNIPPET,
+  TeamPermission.EDIT_SNIPPET,
+  TeamPermission.DELETE_SNIPPET,
+  TeamPermission.VIEW_SNIPPET,
+  // All server permissions
+  TeamPermission.CREATE_SERVER,
+  TeamPermission.EDIT_SERVER,
+  TeamPermission.DELETE_SERVER,
+  TeamPermission.VIEW_SERVER,
+  TeamPermission.CONNECT_SERVER,
+  // All task permissions
+  TeamPermission.CREATE_TASK,
+  TeamPermission.EDIT_TASK,
+  TeamPermission.DELETE_TASK,
+  TeamPermission.ASSIGN_TASK,
+  // Member management (except delete team)
+  TeamPermission.INVITE_MEMBER,
+  TeamPermission.KICK_MEMBER,
+  TeamPermission.CHANGE_MEMBER_ROLE,
+  TeamPermission.VIEW_MEMBERS,
+  // Team settings
+  TeamPermission.EDIT_TEAM_SETTINGS,
+  TeamPermission.VIEW_ACTIVITY,
+  TeamPermission.VIEW_AUDIT_LOGS,
+];
+
+export const DEFAULT_MEMBER_PERMISSIONS: TeamPermission[] = [
+  TeamPermission.VIEW_TERMINAL,
+  TeamPermission.CONTROL_TERMINAL,
+  TeamPermission.VIEW_WORKSPACE,
+  TeamPermission.VIEW_SNIPPET,
+  TeamPermission.VIEW_SERVER,
+  TeamPermission.CONNECT_SERVER,
+  TeamPermission.CREATE_TASK,
+  TeamPermission.EDIT_TASK,
+  TeamPermission.VIEW_MEMBERS,
+  TeamPermission.VIEW_ACTIVITY,
+];
 
 // Task Status
 export enum TaskStatus {
@@ -147,6 +250,21 @@ export interface Team {
   memberCount?: number;
   taskCount?: number;
   members?: TeamMember[];
+  roles?: TeamCustomRole[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// TeamCustomRole model
+export interface TeamCustomRole {
+  id: string;
+  teamId: string;
+  name: string;
+  description: string | null;
+  color: string;
+  permissions: TeamPermission[];
+  position: number;
+  isSystem: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -156,7 +274,9 @@ export interface TeamMember {
   id: string;
   teamId: string;
   userId: string;
-  role: TeamRole;
+  role: TeamRole; // Legacy field
+  customRoleId: string | null;
+  customRole?: TeamCustomRole;
   user?: User;
   createdAt: Date;
   updatedAt: Date;
@@ -379,7 +499,11 @@ export type ServerMessage =
   | { type: 'team.subscribed'; teamId: string }
   | { type: 'team.member.joined'; teamId: string; member: TeamMember }
   | { type: 'team.member.left'; teamId: string; memberId: string }
-  | { type: 'team.member.role.changed'; teamId: string; memberId: string; role: TeamRole }
+  | { type: 'team.member.role.changed'; teamId: string; memberId: string; role: TeamRole; customRole?: TeamCustomRole }
+  // Team role events
+  | { type: 'team.role.created'; teamId: string; role: TeamCustomRole }
+  | { type: 'team.role.updated'; teamId: string; role: TeamCustomRole }
+  | { type: 'team.role.deleted'; teamId: string; roleId: string }
   // Task events
   | { type: 'task.created'; teamId: string; task: Task }
   | { type: 'task.updated'; teamId: string; task: Task }
@@ -471,7 +595,25 @@ export interface InviteTeamMemberRequest {
 }
 
 export interface UpdateTeamMemberRoleRequest {
-  role: TeamRole;
+  role?: TeamRole; // Legacy
+  customRoleId?: string; // New: assign custom role
+}
+
+// Team Custom Role API Request types
+export interface CreateTeamRoleRequest {
+  name: string;
+  description?: string;
+  color?: string;
+  permissions: TeamPermission[];
+  position?: number;
+}
+
+export interface UpdateTeamRoleRequest {
+  name?: string;
+  description?: string | null;
+  color?: string;
+  permissions?: TeamPermission[];
+  position?: number;
 }
 
 // Tasks API Request/Response types

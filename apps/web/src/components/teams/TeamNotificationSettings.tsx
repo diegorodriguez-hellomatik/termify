@@ -1,7 +1,6 @@
 'use client';
 
-import { Bell, Loader2 } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useTeamNotificationPrefs } from '@/hooks/useTeamPresence';
 
@@ -14,158 +13,120 @@ export function TeamNotificationSettings({ teamId }: TeamNotificationSettingsPro
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="text-center py-12">
-        <p className="text-destructive">{error}</p>
+      <div className="text-center py-8">
+        <p className="text-sm text-destructive">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bell className="h-5 w-5" />
-            Terminal Notifications
-          </CardTitle>
-          <CardDescription>
-            Configure notifications for terminal events in this team.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <label className="text-sm font-medium">Terminal Errors</label>
-              <p className="text-sm text-muted-foreground">
-                Get notified when a command fails with an error.
-              </p>
-            </div>
-            <button
-              onClick={() => updatePrefs({ terminalErrors: !prefs?.terminalErrors })}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                prefs?.terminalErrors ? 'bg-primary' : 'bg-muted'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  prefs?.terminalErrors ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
+    <div className="space-y-4">
+      {/* Terminal Errors */}
+      <div className="flex items-center justify-between py-2">
+        <div className="space-y-0.5">
+          <label className="text-sm font-medium">Terminal Errors</label>
+          <p className="text-xs text-muted-foreground">
+            Notify when a command fails with an error.
+          </p>
+        </div>
+        <Toggle
+          checked={prefs?.terminalErrors ?? true}
+          onChange={() => updatePrefs({ terminalErrors: !prefs?.terminalErrors })}
+        />
+      </div>
 
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <label className="text-sm font-medium">Long Running Commands</label>
-              <p className="text-sm text-muted-foreground">
-                Get notified when a command takes longer than expected.
-              </p>
-            </div>
-            <button
-              onClick={() => updatePrefs({ longCommands: !prefs?.longCommands })}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                prefs?.longCommands ? 'bg-primary' : 'bg-muted'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  prefs?.longCommands ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
+      {/* Long Running Commands */}
+      <div className="flex items-center justify-between py-2">
+        <div className="space-y-0.5">
+          <label className="text-sm font-medium">Long Running Commands</label>
+          <p className="text-xs text-muted-foreground">
+            Notify when a command exceeds threshold.
+          </p>
+        </div>
+        <Toggle
+          checked={prefs?.longCommands ?? true}
+          onChange={() => updatePrefs({ longCommands: !prefs?.longCommands })}
+        />
+      </div>
 
-          {prefs?.longCommands && (
-            <div className="ml-4 pl-4 border-l">
-              <div className="flex items-center gap-4">
-                <label className="text-sm font-medium whitespace-nowrap">
-                  Threshold (seconds)
-                </label>
-                <Input
-                  type="number"
-                  min={10}
-                  max={3600}
-                  value={prefs?.longCommandThreshold ?? 300}
-                  onChange={(e) =>
-                    updatePrefs({ longCommandThreshold: parseInt(e.target.value, 10) })
-                  }
-                  className="w-24"
-                />
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {prefs?.longCommands && (
+        <div className="flex items-center gap-3 pl-4 border-l ml-2">
+          <label className="text-sm text-muted-foreground whitespace-nowrap">
+            Threshold
+          </label>
+          <Input
+            type="number"
+            min={10}
+            max={3600}
+            value={prefs?.longCommandThreshold ?? 300}
+            onChange={(e) =>
+              updatePrefs({ longCommandThreshold: parseInt(e.target.value, 10) })
+            }
+            className="w-20 h-8"
+          />
+          <span className="text-xs text-muted-foreground">seconds</span>
+        </div>
+      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Task Notifications</CardTitle>
-          <CardDescription>
-            Configure notifications for task-related events.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <label className="text-sm font-medium">Task Mentions</label>
-              <p className="text-sm text-muted-foreground">
-                Get notified when you are mentioned in a task.
-              </p>
-            </div>
-            <button
-              onClick={() => updatePrefs({ taskMentions: !prefs?.taskMentions })}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                prefs?.taskMentions ? 'bg-primary' : 'bg-muted'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  prefs?.taskMentions ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Task Mentions */}
+      <div className="flex items-center justify-between py-2">
+        <div className="space-y-0.5">
+          <label className="text-sm font-medium">Task Mentions</label>
+          <p className="text-xs text-muted-foreground">
+            Notify when mentioned in a task.
+          </p>
+        </div>
+        <Toggle
+          checked={prefs?.taskMentions ?? true}
+          onChange={() => updatePrefs({ taskMentions: !prefs?.taskMentions })}
+        />
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Server Notifications</CardTitle>
-          <CardDescription>
-            Configure notifications for server status changes.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <label className="text-sm font-medium">Server Status Changes</label>
-              <p className="text-sm text-muted-foreground">
-                Get notified when a team server goes online or offline.
-              </p>
-            </div>
-            <button
-              onClick={() => updatePrefs({ serverStatus: !prefs?.serverStatus })}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                prefs?.serverStatus ? 'bg-primary' : 'bg-muted'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  prefs?.serverStatus ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Server Status */}
+      <div className="flex items-center justify-between py-2">
+        <div className="space-y-0.5">
+          <label className="text-sm font-medium">Server Status</label>
+          <p className="text-xs text-muted-foreground">
+            Notify when servers go online/offline.
+          </p>
+        </div>
+        <Toggle
+          checked={prefs?.serverStatus ?? true}
+          onChange={() => updatePrefs({ serverStatus: !prefs?.serverStatus })}
+        />
+      </div>
     </div>
+  );
+}
+
+// Simple Toggle Component
+interface ToggleProps {
+  checked: boolean;
+  onChange: () => void;
+}
+
+function Toggle({ checked, onChange }: ToggleProps) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+        checked ? 'bg-primary' : 'bg-muted'
+      }`}
+    >
+      <span
+        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+          checked ? 'translate-x-5' : 'translate-x-1'
+        }`}
+      />
+    </button>
   );
 }

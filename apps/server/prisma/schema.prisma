@@ -200,6 +200,9 @@ model Terminal {
   position      Int            @default(0)
   isFavorite    Boolean        @default(false) @map("is_favorite")
 
+  // Team ownership - if set, terminal belongs to the team
+  teamId        String?        @map("team_id")
+
   // SSH connection fields
   sshHost       String?        @map("ssh_host")
   sshPort       Int?           @map("ssh_port") @default(22)
@@ -212,6 +215,7 @@ model Terminal {
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   category      Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  team          Team?          @relation("TeamTerminals", fields: [teamId], references: [id], onDelete: Cascade)
   shares        TerminalShare[]
   workspaces    WorkspaceTerminal[]
 
@@ -235,6 +239,7 @@ model Terminal {
   @@index([categoryId])
   @@index([status])
   @@index([activeTaskId])
+  @@index([teamId])
   @@map("terminals")
 }
 
@@ -453,9 +458,13 @@ model Team {
   icon        String?
 
   members     TeamMember[]
+  roles       TeamCustomRole[]
   tasks       Task[]
 
-  // Team collaboration
+  // Team-owned resources
+  terminals           Terminal[]  @relation("TeamTerminals")
+
+  // Team collaboration (shared resources)
   terminalShares      TeamTerminalShare[]
   workspaces          Workspace[]
   snippets            TeamSnippet[]
@@ -471,22 +480,53 @@ model Team {
   @@map("teams")
 }
 
-model TeamMember {
-  id          String     @id @default(cuid())
-  teamId      String     @map("team_id")
-  userId      String     @map("user_id")
-  role        TeamRole   @default(MEMBER)
+// Custom roles for granular permissions
+model TeamCustomRole {
+  id          String   @id @default(cuid())
+  teamId      String   @map("team_id")
+  name        String
+  description String?
+  color       String   @default("#6366f1")
 
-  team        Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Permissions as array of permission keys
+  permissions String[] @default([])
+
+  // Role ordering (lower = more important)
+  position    Int      @default(0)
+
+  // System roles cannot be deleted
+  isSystem    Boolean  @default(false) @map("is_system")
+
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  members     TeamMember[]
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([teamId, name])
+  @@index([teamId])
+  @@map("team_custom_roles")
+}
+
+model TeamMember {
+  id           String          @id @default(cuid())
+  teamId       String          @map("team_id")
+  userId       String          @map("user_id")
+  role         TeamRole        @default(MEMBER) // Legacy field for backwards compatibility
+  customRoleId String?         @map("custom_role_id") // New: reference to custom role
+
+  team         Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customRole   TeamCustomRole? @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
   taskAssignments TaskAssignee[]
 
-  createdAt   DateTime   @default(now()) @map("created_at")
-  updatedAt   DateTime   @updatedAt @map("updated_at")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
 
   @@unique([teamId, userId])
   @@index([teamId])
   @@index([userId])
+  @@index([customRoleId])
   @@map("team_members")
 }
 

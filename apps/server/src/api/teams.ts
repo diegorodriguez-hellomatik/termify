@@ -391,6 +391,7 @@ router.post('/:id/invite', async (req: Request, res: Response) => {
           teamId: newMember.teamId,
           userId: newMember.userId,
           role: newMember.role as TeamRole,
+          customRoleId: newMember.customRoleId,
           user: newMember.user as any,
           createdAt: newMember.createdAt,
           updatedAt: newMember.updatedAt,
