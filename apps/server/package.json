@@ -1,5 +1,5 @@
 {
-  "name": "@claude-terminal/server",
+  "name": "@termify/server",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "db:migrate": "prisma migrate dev"
   },
   "dependencies": {
-    "@claude-terminal/shared": "*",
+    "@termify/shared": "*",
     "@lydell/node-pty": "^1.0.0",
     "@prisma/client": "^6.2.1",
     "cors": "^2.8.5",

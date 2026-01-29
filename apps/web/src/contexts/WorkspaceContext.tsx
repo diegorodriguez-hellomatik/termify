@@ -9,22 +9,35 @@ import {
   ReactNode,
 } from 'react';
 
-// Tab represents an open terminal
+// Tab represents an open terminal or file
+export type TabType = 'terminal' | 'file';
+
 export interface Tab {
   id: string;
-  terminalId: string;
+  type: TabType;
   name: string;
   status?: string;
+  // For terminal tabs
+  terminalId?: string;
+  // For file tabs
+  filePath?: string;
+  fileExtension?: string;
 }
 
 // Split pane configuration
 export type SplitDirection = 'horizontal' | 'vertical';
 
+export type PaneType = 'terminal' | 'file' | 'split';
+
 export interface PaneNode {
   id: string;
-  type: 'terminal' | 'split';
+  type: PaneType;
   // For terminal type
   terminalId?: string;
+  // For file type
+  filePath?: string;
+  fileName?: string;
+  fileExtension?: string;
   // For split type
   direction?: SplitDirection;
   children?: PaneNode[];
@@ -43,6 +56,7 @@ interface WorkspaceContextType {
   activeTabId: string | null;
   activeTab: Tab | null;
   openTab: (terminalId: string, name: string) => void;
+  openFileTab: (filePath: string, fileName: string, extension?: string) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
@@ -119,11 +133,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Get active tab object
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
 
-  // Open a new tab
+  // Open a new terminal tab
   const openTab = useCallback((terminalId: string, name: string) => {
     // Check if terminal is already open
     setTabs((prev) => {
-      const existing = prev.find((t) => t.terminalId === terminalId);
+      const existing = prev.find((t) => t.type === 'terminal' && t.terminalId === terminalId);
       if (existing) {
         setActiveTabId(existing.id);
         return prev;
@@ -131,6 +145,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
       const newTab: Tab = {
         id: generateId(),
+        type: 'terminal',
         terminalId,
         name,
       };
@@ -152,6 +167,46 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Open a new file tab
+  const openFileTab = useCallback((filePath: string, fileName: string, extension?: string) => {
+    setTabs((prev) => {
+      // Check if file is already open
+      const existing = prev.find((t) => t.type === 'file' && t.filePath === filePath);
+      if (existing) {
+        setActiveTabId(existing.id);
+        // Update layout to show this file
+        setLayout({
+          id: generateId(),
+          type: 'file',
+          filePath,
+          fileName,
+          fileExtension: extension,
+        });
+        return prev;
+      }
+
+      const newTab: Tab = {
+        id: generateId(),
+        type: 'file',
+        name: fileName,
+        filePath,
+        fileExtension: extension,
+      };
+      setActiveTabId(newTab.id);
+
+      // Set layout to show this file
+      setLayout({
+        id: generateId(),
+        type: 'file',
+        filePath,
+        fileName,
+        fileExtension: extension,
+      });
+
+      return [...prev, newTab];
+    });
+  }, []);
+
   // Close a tab
   const closeTab = useCallback((tabId: string) => {
     setTabs((prev) => {
@@ -163,14 +218,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       // If closing active tab, activate adjacent tab
       if (activeTabId === tabId && newTabs.length > 0) {
         const newActiveIndex = Math.min(index, newTabs.length - 1);
-        setActiveTabId(newTabs[newActiveIndex].id);
+        const newActiveTab = newTabs[newActiveIndex];
+        setActiveTabId(newActiveTab.id);
 
-        // Update layout to show the new active terminal
-        setLayout({
-          id: generateId(),
-          type: 'terminal',
-          terminalId: newTabs[newActiveIndex].terminalId,
-        });
+        // Update layout based on tab type
+        if (newActiveTab.type === 'file') {
+          setLayout({
+            id: generateId(),
+            type: 'file',
+            filePath: newActiveTab.filePath,
+            fileName: newActiveTab.name,
+            fileExtension: newActiveTab.fileExtension,
+          });
+        } else {
+          setLayout({
+            id: generateId(),
+            type: 'terminal',
+            terminalId: newActiveTab.terminalId,
+          });
+        }
       } else if (newTabs.length === 0) {
         setActiveTabId(null);
         setLayout(null);
@@ -184,15 +250,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const handleSetActiveTab = useCallback((tabId: string) => {
     setActiveTabId(tabId);
 
-    // Update layout to show this terminal
+    // Update layout based on tab type
     setTabs((prev) => {
       const tab = prev.find((t) => t.id === tabId);
       if (tab) {
-        setLayout({
-          id: generateId(),
-          type: 'terminal',
-          terminalId: tab.terminalId,
-        });
+        if (tab.type === 'file') {
+          setLayout({
+            id: generateId(),
+            type: 'file',
+            filePath: tab.filePath,
+            fileName: tab.name,
+            fileExtension: tab.fileExtension,
+          });
+        } else {
+          setLayout({
+            id: generateId(),
+            type: 'terminal',
+            terminalId: tab.terminalId,
+          });
+        }
       }
       return prev;
     });
@@ -347,6 +423,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         activeTabId,
         activeTab,
         openTab,
+        openFileTab,
         closeTab,
         setActiveTab: handleSetActiveTab,
         reorderTabs,

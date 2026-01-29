@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Terminal as TerminalIcon, Star, StarOff, Trash2, Play, Folder } from 'lucide-react';
-import { TerminalStatus } from '@claude-terminal/shared';
+import { TerminalStatus } from '@termify/shared';
 import { formatRelativeTime } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 

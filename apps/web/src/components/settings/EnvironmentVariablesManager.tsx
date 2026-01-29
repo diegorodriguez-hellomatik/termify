@@ -13,7 +13,7 @@ interface EnvVariable {
   isSecret: boolean;
 }
 
-const STORAGE_KEY = 'claude-terminal-env-vars';
+const STORAGE_KEY = 'termify-env-vars';
 
 export function EnvironmentVariablesManager() {
   const [variables, setVariables] = useState<EnvVariable[]>([]);

@@ -88,7 +88,7 @@ export default function RegisterPage() {
           </div>
           <CardTitle className="text-2xl">Create an account</CardTitle>
           <CardDescription>
-            Get started with Claude Terminal Platform
+            Get started with Termify
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

@@ -1,17 +1,34 @@
 'use client';
 
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { X, SplitSquareHorizontal, SplitSquareVertical, Maximize2 } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { X, SplitSquareHorizontal, SplitSquareVertical, Maximize2, Loader2 } from 'lucide-react';
 import { PaneNode, useWorkspace } from '@/contexts/WorkspaceContext';
-import { Terminal } from '@/components/terminal/Terminal';
+import { FileViewer } from '@/components/files/FileViewer';
+import { DroppablePane } from './DroppablePane';
 import { cn } from '@/lib/utils';
+
+// Dynamic import to avoid SSR issues with xterm
+const Terminal = dynamic(
+  () => import('@/components/terminal/Terminal').then((mod) => mod.Terminal),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    ),
+  }
+);
 
 interface SplitPaneProps {
   node: PaneNode;
   token: string;
   isDark: boolean;
+  activeTerminalId?: string; // For file viewer context
   onSplitHorizontal?: (terminalId: string) => void;
   onSplitVertical?: (terminalId: string) => void;
+  onTabDrop?: (paneId: string, terminalId: string, position: 'left' | 'right' | 'top' | 'bottom' | 'center') => void;
   depth?: number;
 }
 
@@ -19,6 +36,7 @@ export function SplitPane({
   node,
   token,
   isDark,
+  activeTerminalId,
   onSplitHorizontal,
   onSplitVertical,
   depth = 0,
@@ -143,6 +161,50 @@ export function SplitPane({
     );
   }
 
+  // Render file pane
+  if (node.type === 'file' && node.filePath) {
+    // Use the activeTerminalId to fetch file content
+    const terminalId = activeTerminalId || node.terminalId;
+    if (!terminalId) {
+      return (
+        <div className="h-full w-full flex items-center justify-center text-muted-foreground">
+          No terminal context available
+        </div>
+      );
+    }
+
+    return (
+      <div className="h-full w-full relative group">
+        {/* Pane toolbar */}
+        <div
+          className={cn(
+            'absolute top-0 right-0 z-20 flex items-center gap-1 p-1 rounded-bl-lg transition-opacity',
+            'opacity-0 group-hover:opacity-100',
+            isDark ? 'bg-black/50' : 'bg-white/50'
+          )}
+        >
+          {depth > 0 && (
+            <button
+              onClick={() => closePane(node.id)}
+              className="p-1 rounded hover:bg-destructive/20 transition-colors"
+              title="Close pane"
+            >
+              <X size={14} className="text-muted-foreground hover:text-destructive" />
+            </button>
+          )}
+        </div>
+
+        <FileViewer
+          terminalId={terminalId}
+          filePath={node.filePath}
+          fileName={node.fileName || node.filePath.split('/').pop() || 'file'}
+          extension={node.fileExtension}
+          className="h-full"
+        />
+      </div>
+    );
+  }
+
   // Render split pane
   if (node.type === 'split' && node.children && node.children.length > 0) {
     const isHorizontal = node.direction === 'horizontal';
@@ -164,6 +226,7 @@ export function SplitPane({
                 node={child}
                 token={token}
                 isDark={isDark}
+                activeTerminalId={activeTerminalId}
                 onSplitHorizontal={onSplitHorizontal}
                 onSplitVertical={onSplitVertical}
                 depth={depth + 1}

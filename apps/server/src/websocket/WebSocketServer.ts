@@ -6,7 +6,10 @@ import {
   ClientMessage,
   ServerMessage,
   TerminalStatus,
-} from '@claude-terminal/shared';
+  SharePermission,
+  ShareType,
+  TerminalViewer,
+} from '@termify/shared';
 import { ConnectionManager } from './ConnectionManager.js';
 import { getPTYManager } from '../pty/PTYManager.js';
 import { SSHManager } from '../ssh/SSHManager.js';
@@ -15,6 +18,13 @@ import { prisma } from '../lib/prisma.js';
 interface TokenPayload {
   userId: string;
   email: string;
+}
+
+interface UserInfo {
+  id: string;
+  email: string;
+  name: string | null;
+  image: string | null;
 }
 
 export class TerminalWebSocketServer {
@@ -49,12 +59,26 @@ export class TerminalWebSocketServer {
     try {
       const url = parseUrl(info.req.url || '', true);
       const token = url.query.token as string;
+      const shareToken = url.query.shareToken as string;
       const isDev = process.env.NODE_ENV === 'development';
+
+      // Store shareToken for later use
+      if (shareToken) {
+        (info.req as any).shareToken = shareToken;
+      }
 
       // In development, allow connections without token or with dev token
       if (isDev && (!token || token === 'dev')) {
         (info.req as any).userId = 'dev-user';
         console.log('[WS] Development mode: allowing connection without auth');
+        callback(true);
+        return;
+      }
+
+      // Allow connection with shareToken only (for public link shares)
+      if (!token && shareToken) {
+        (info.req as any).userId = null; // Anonymous user with share token
+        console.log('[WS] Allowing connection with share token only');
         callback(true);
         return;
       }
@@ -84,11 +108,29 @@ export class TerminalWebSocketServer {
    * Set up WebSocket event handlers
    */
   private setupEventHandlers(): void {
-    this.wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    this.wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
       const userId = (req as any).userId;
-      console.log(`[WS] New connection from user ${userId}`);
+      const shareToken = (req as any).shareToken;
+      console.log(`[WS] New connection from user ${userId || 'anonymous'}`);
 
-      const connection = this.connectionManager.add(ws, userId);
+      // Get user info if authenticated
+      let userInfo: { email: string; name: string | null; image: string | null } | undefined;
+      if (userId && userId !== 'dev-user') {
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { email: true, name: true, image: true },
+        });
+        if (user) {
+          userInfo = user;
+        }
+      } else if (userId === 'dev-user') {
+        userInfo = { email: 'dev@localhost', name: 'Dev User', image: null };
+      }
+
+      const connection = this.connectionManager.add(ws, userId || 'anonymous', userInfo);
+
+      // Store share token in connection for later use
+      (ws as any).shareToken = shareToken;
 
       ws.on('message', async (data: Buffer) => {
         try {
@@ -111,13 +153,27 @@ export class TerminalWebSocketServer {
       });
 
       ws.on('close', () => {
-        console.log(`[WS] Connection closed for user ${userId}`);
+        console.log(`[WS] Connection closed for user ${userId || 'anonymous'}`);
+        const conn = this.connectionManager.get(ws);
+        const terminalId = conn?.terminalId;
         this.connectionManager.remove(ws);
+
+        // Broadcast viewer left if was connected to a terminal
+        if (terminalId && conn) {
+          this.broadcastViewerLeft(terminalId, conn.visitorId);
+        }
       });
 
       ws.on('error', (error) => {
-        console.error(`[WS] Error for user ${userId}:`, error);
+        console.error(`[WS] Error for user ${userId || 'anonymous'}:`, error);
+        const conn = this.connectionManager.get(ws);
+        const terminalId = conn?.terminalId;
         this.connectionManager.remove(ws);
+
+        // Broadcast viewer left if was connected to a terminal
+        if (terminalId && conn) {
+          this.broadcastViewerLeft(terminalId, conn.visitorId);
+        }
       });
     });
   }
@@ -177,16 +233,19 @@ export class TerminalWebSocketServer {
     terminalId: string
   ): Promise<void> {
     const isDev = process.env.NODE_ENV === 'development';
+    const shareToken = (ws as any).shareToken as string | undefined;
 
-    // Verify ownership
-    let terminal = await prisma.terminal.findFirst({
-      where: isDev ? { id: terminalId } : { id: terminalId, userId },
+    // Check access: owner, email share, or link share
+    let terminal = await prisma.terminal.findUnique({
+      where: { id: terminalId },
+      include: {
+        user: { select: { id: true, email: true } },
+      },
     });
 
     // In development, create terminal if it doesn't exist
     if (!terminal && isDev) {
       console.log(`[WS] Dev mode: auto-creating terminal ${terminalId}`);
-      // Ensure dev user exists
       let devUser = await prisma.user.findFirst({ where: { email: 'dev@localhost' } });
       if (!devUser) {
         devUser = await prisma.user.create({
@@ -201,6 +260,9 @@ export class TerminalWebSocketServer {
           cols: 120,
           rows: 30,
         },
+        include: {
+          user: { select: { id: true, email: true } },
+        },
       });
     }
 
@@ -208,13 +270,98 @@ export class TerminalWebSocketServer {
       this.send(ws, {
         type: 'terminal.error',
         terminalId,
-        error: 'Terminal not found or access denied',
+        error: 'Terminal not found',
       });
       return;
     }
 
-    // Associate connection with terminal
-    this.connectionManager.associateTerminal(ws, terminalId);
+    // Determine access level
+    let permission: SharePermission | null = null;
+    let isOwner = false;
+
+    // Check if user is owner
+    if (userId && terminal.userId === userId) {
+      isOwner = true;
+      permission = SharePermission.CONTROL;
+    }
+    // Check if user is owner in dev mode
+    else if (isDev && userId === 'dev-user') {
+      isOwner = true;
+      permission = SharePermission.CONTROL;
+    }
+    // Check link share
+    else if (shareToken) {
+      const linkShare = await prisma.terminalShare.findUnique({
+        where: { shareToken },
+      });
+      if (linkShare && linkShare.terminalId === terminalId) {
+        // Check expiration
+        if (linkShare.expiresAt && linkShare.expiresAt < new Date()) {
+          this.send(ws, {
+            type: 'terminal.error',
+            terminalId,
+            error: 'Share link has expired',
+          });
+          return;
+        }
+        permission = linkShare.permission as SharePermission;
+        // Update access stats
+        await prisma.terminalShare.update({
+          where: { id: linkShare.id },
+          data: {
+            lastAccessedAt: new Date(),
+            accessCount: { increment: 1 },
+          },
+        });
+      }
+    }
+    // Check email share
+    else if (userId) {
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (user) {
+        const emailShare = await prisma.terminalShare.findFirst({
+          where: {
+            terminalId,
+            type: ShareType.EMAIL,
+            OR: [
+              { sharedWithId: userId },
+              { sharedEmail: user.email },
+            ],
+          },
+        });
+        if (emailShare) {
+          permission = emailShare.permission as SharePermission;
+          // Update sharedWithId if not set
+          if (!emailShare.sharedWithId) {
+            await prisma.terminalShare.update({
+              where: { id: emailShare.id },
+              data: { sharedWithId: userId },
+            });
+          }
+        }
+      }
+    }
+
+    // No access
+    if (!permission) {
+      this.send(ws, {
+        type: 'terminal.error',
+        terminalId,
+        error: 'Access denied',
+      });
+      return;
+    }
+
+    // Associate connection with terminal and permission
+    console.log('[WS] Associating terminal:', { terminalId, permission, isOwner });
+    this.connectionManager.associateTerminal(ws, terminalId, { permission, isOwner });
+
+    // Verify association worked
+    const verifyConnection = this.connectionManager.get(ws);
+    console.log('[WS] After association:', {
+      terminalId: verifyConnection?.terminalId,
+      permission: verifyConnection?.permission,
+    });
 
     const ptyManager = getPTYManager();
     const instance = ptyManager.get(terminalId);
@@ -226,6 +373,7 @@ export class TerminalWebSocketServer {
       type: 'terminal.connected',
       terminalId,
       bufferedOutput,
+      permission,
     });
 
     this.send(ws, {
@@ -233,6 +381,10 @@ export class TerminalWebSocketServer {
       terminalId,
       status: (instance?.status || terminal.status) as TerminalStatus,
     });
+
+    // Broadcast viewer joined and send current viewers
+    this.broadcastViewerJoined(ws, terminalId);
+    this.sendViewersList(ws, terminalId);
   }
 
   /**
@@ -482,11 +634,44 @@ export class TerminalWebSocketServer {
     data: string
   ): Promise<void> {
     const connection = this.connectionManager.get(ws);
-    if (connection?.terminalId !== terminalId) {
+
+    // Debug logging
+    console.log('[WS] handleTerminalInput:', {
+      terminalId,
+      connectionExists: !!connection,
+      connectionTerminalId: connection?.terminalId,
+      match: connection?.terminalId === terminalId,
+    });
+
+    if (!connection) {
+      console.error('[WS] No connection found for WebSocket');
+      this.send(ws, {
+        type: 'terminal.error',
+        terminalId,
+        error: 'Connection not found. Please refresh the page.',
+      });
+      return;
+    }
+
+    if (connection.terminalId !== terminalId) {
+      console.error('[WS] Terminal ID mismatch:', {
+        expected: terminalId,
+        actual: connection.terminalId,
+      });
       this.send(ws, {
         type: 'terminal.error',
         terminalId,
         error: 'Not connected to this terminal',
+      });
+      return;
+    }
+
+    // Check if user has CONTROL permission
+    if (connection.permission !== SharePermission.CONTROL) {
+      this.send(ws, {
+        type: 'terminal.error',
+        terminalId,
+        error: 'View-only access. You cannot write to this terminal.',
       });
       return;
     }
@@ -497,14 +682,8 @@ export class TerminalWebSocketServer {
     // Try PTY first
     const ptyInstance = ptyManager.get(terminalId);
     if (ptyInstance) {
-      if (ptyInstance.userId !== userId) {
-        this.send(ws, {
-          type: 'terminal.error',
-          terminalId,
-          error: 'Terminal not running or access denied',
-        });
-        return;
-      }
+      // For shared terminals, we don't check userId ownership of PTY instance
+      // Permission check above is sufficient
       ptyManager.write(terminalId, data);
     }
     // Try SSH
@@ -779,6 +958,73 @@ export class TerminalWebSocketServer {
    */
   private send(ws: WebSocket, message: ServerMessage): void {
     this.connectionManager.send(ws, message);
+  }
+
+  /**
+   * Broadcast viewer joined to all connections on a terminal
+   */
+  private broadcastViewerJoined(ws: WebSocket, terminalId: string): void {
+    const connection = this.connectionManager.get(ws);
+    if (!connection) return;
+
+    const viewer: TerminalViewer = {
+      odId: connection.odId,
+      visitorId: connection.visitorId,
+      email: connection.email,
+      name: connection.name,
+      image: connection.image,
+      permission: connection.permission || SharePermission.VIEW,
+      isOwner: connection.isOwner,
+    };
+
+    const message: ServerMessage = {
+      type: 'terminal.viewer.joined',
+      terminalId,
+      viewer,
+    };
+
+    // Broadcast to all other connections on this terminal
+    const sockets = this.connectionManager.getTerminalConnections(terminalId);
+    for (const socket of sockets) {
+      if (socket !== ws && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(message));
+      }
+    }
+  }
+
+  /**
+   * Broadcast viewer left to all connections on a terminal
+   */
+  private broadcastViewerLeft(terminalId: string, visitorId: string): void {
+    const message: ServerMessage = {
+      type: 'terminal.viewer.left',
+      terminalId,
+      odId: visitorId,
+    };
+
+    this.connectionManager.broadcastToTerminal(terminalId, JSON.stringify(message));
+  }
+
+  /**
+   * Send current viewers list to a connection
+   */
+  private sendViewersList(ws: WebSocket, terminalId: string): void {
+    const viewers = this.connectionManager.getTerminalViewers(terminalId);
+    const viewerList: TerminalViewer[] = viewers.map((v) => ({
+      odId: v.odId,
+      visitorId: v.visitorId,
+      email: v.email,
+      name: v.name,
+      image: v.image,
+      permission: v.permission || SharePermission.VIEW,
+      isOwner: v.isOwner,
+    }));
+
+    this.send(ws, {
+      type: 'terminal.viewers',
+      terminalId,
+      viewers: viewerList,
+    });
   }
 
   /**

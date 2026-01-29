@@ -19,6 +19,16 @@ enum TerminalType {
   SSH
 }
 
+enum ShareType {
+  LINK
+  EMAIL
+}
+
+enum SharePermission {
+  VIEW
+  CONTROL
+}
+
 model User {
   id            String     @id @default(cuid())
   email         String     @unique
@@ -38,6 +48,8 @@ model User {
   snippets      Snippet[]
   profiles      TerminalProfile[]
   apiKeys       ApiKey[]
+  sharesCreated TerminalShare[] @relation("SharedByMe")
+  sharesReceived TerminalShare[] @relation("SharedWithMe")
 
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
@@ -128,6 +140,7 @@ model Terminal {
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   category      Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  shares        TerminalShare[]
 
   createdAt     DateTime       @default(now()) @map("created_at")
   updatedAt     DateTime       @updatedAt @map("updated_at")
@@ -235,4 +248,39 @@ model ApiKey {
   @@index([keyHash])
   @@index([keyPrefix])
   @@map("api_keys")
+}
+
+model TerminalShare {
+  id             String          @id @default(cuid())
+  terminalId     String          @map("terminal_id")
+
+  // Share type
+  type           ShareType
+
+  // For EMAIL shares
+  sharedWithId   String?         @map("shared_with_id")
+  sharedEmail    String?         @map("shared_email")
+
+  // For LINK shares
+  shareToken     String?         @unique @map("share_token")
+
+  // Permissions
+  permission     SharePermission
+
+  // Metadata
+  createdById    String          @map("created_by_id")
+  expiresAt      DateTime?       @map("expires_at")
+  lastAccessedAt DateTime?       @map("last_accessed_at")
+  accessCount    Int             @default(0) @map("access_count")
+
+  terminal       Terminal        @relation(fields: [terminalId], references: [id], onDelete: Cascade)
+  sharedWith     User?           @relation("SharedWithMe", fields: [sharedWithId], references: [id], onDelete: Cascade)
+  createdBy      User            @relation("SharedByMe", fields: [createdById], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  @@index([terminalId])
+  @@index([sharedWithId])
+  @@index([shareToken])
+  @@map("terminal_shares")
 }

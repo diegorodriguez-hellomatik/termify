@@ -139,7 +139,7 @@ export default function ApiKeysPage() {
             API Keys
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage API keys for programmatic access to Claude Terminal
+            Manage API keys for programmatic access to Termify
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -301,7 +301,7 @@ export default function ApiKeysPage() {
               <Key size={48} className="mx-auto text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">No API keys yet</h3>
               <p className="text-muted-foreground mb-6">
-                Create an API key to start using the Claude Terminal API
+                Create an API key to start using the Termify API
               </p>
               <Button onClick={() => setShowCreateModal(true)} className="gap-2">
                 <Plus size={16} />

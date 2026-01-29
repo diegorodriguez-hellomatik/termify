@@ -38,7 +38,7 @@ export function MobileNav({ userName, userEmail }: MobileNavProps) {
         <div className="flex items-center justify-between px-4 py-3">
           <Link href="/terminals" className="flex items-center gap-2">
             <Terminal className="h-6 w-6 text-primary" />
-            <span className="font-semibold">Claude Terminal</span>
+            <span className="font-semibold">Termify</span>
           </Link>
           <button
             onClick={() => setIsOpen(!isOpen)}

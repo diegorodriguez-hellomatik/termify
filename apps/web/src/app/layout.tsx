@@ -10,8 +10,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Claude Terminal Platform',
-  description: 'Interactive terminal platform for Claude Code',
+  title: 'Termify',
+  description: 'Cloud terminal platform',
 };
 
 // Script to prevent theme flash - runs before React hydrates

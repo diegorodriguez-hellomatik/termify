@@ -7,7 +7,7 @@ import { prisma } from '../lib/prisma.js';
 import { authMiddleware } from '../auth/middleware.js';
 import { getPTYManager } from '../pty/PTYManager.js';
 import { SSHManager } from '../ssh/SSHManager.js';
-import { DEFAULT_COLS, DEFAULT_ROWS, TerminalStatus } from '@claude-terminal/shared';
+import { DEFAULT_COLS, DEFAULT_ROWS, TerminalStatus } from '@termify/shared';
 
 const router = Router();
 

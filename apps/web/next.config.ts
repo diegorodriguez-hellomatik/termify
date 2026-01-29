@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '2mb',
     },
   },
-  transpilePackages: ['@claude-terminal/shared'],
+  transpilePackages: ['@termify/shared'],
 };
 
 export default nextConfig;

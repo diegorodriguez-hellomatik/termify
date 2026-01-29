@@ -15,11 +15,14 @@ import {
   FileText,
   Plus,
   ChevronDown,
+  Share2,
+  Users,
 } from 'lucide-react';
-import { TerminalStatus } from '@claude-terminal/shared';
+import { TerminalStatus } from '@termify/shared';
 import { terminalsApi } from '@/lib/api';
 import { Terminal } from '@/components/terminal/Terminal';
 import { FileViewer } from '@/components/files/FileViewer';
+import { ShareTerminalModal } from '@/components/terminals/ShareTerminalModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useTheme } from '@/context/ThemeContext';
@@ -131,6 +134,9 @@ export default function TerminalPage() {
   const [showTerminalPicker, setShowTerminalPicker] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
   const addButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Share modal
+  const [showShareModal, setShowShareModal] = useState(false);
 
   const terminalId = params.id as string;
 
@@ -358,6 +364,26 @@ export default function TerminalPage() {
     setReadyTerminals(prev => new Set(prev).add(termId));
   }, []);
 
+  // Fallback: Force show terminal after 3 seconds regardless of ready state
+  useEffect(() => {
+    const terminalIds = tabs
+      .filter(t => t.type === 'terminal' && t.terminalId)
+      .map(t => t.terminalId!);
+
+    const timeouts = terminalIds.map(termId => {
+      if (!readyTerminals.has(termId)) {
+        return setTimeout(() => {
+          setReadyTerminals(prev => new Set(prev).add(termId));
+        }, 3000);
+      }
+      return null;
+    });
+
+    return () => {
+      timeouts.forEach(t => t && clearTimeout(t));
+    };
+  }, [tabs, readyTerminals]);
+
   const activeTab = tabs.find(t => t.id === activeTabId);
   const activeTerminalId = activeTab?.type === 'terminal' ? activeTab.terminalId : null;
 
@@ -452,21 +478,32 @@ export default function TerminalPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>
-            {tabs.filter(t => t.type === 'terminal').length} terminal
-            {tabs.filter(t => t.type === 'terminal').length !== 1 ? 's' : ''}
-          </span>
-          <span className="mx-2">|</span>
-          <span>
-            {terminal.cols}x{terminal.rows}
-          </span>
-          {terminal.cwd && (
-            <>
-              <span className="mx-2">|</span>
-              <span>{terminal.cwd}</span>
-            </>
-          )}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>
+              {tabs.filter(t => t.type === 'terminal').length} terminal
+              {tabs.filter(t => t.type === 'terminal').length !== 1 ? 's' : ''}
+            </span>
+            <span className="mx-2">|</span>
+            <span>
+              {terminal.cols}x{terminal.rows}
+            </span>
+            {terminal.cwd && (
+              <>
+                <span className="mx-2">|</span>
+                <span>{terminal.cwd}</span>
+              </>
+            )}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowShareModal(true)}
+            className="flex items-center gap-2"
+          >
+            <Share2 className="h-4 w-4" />
+            Share
+          </Button>
         </div>
       </div>
 
@@ -702,7 +739,7 @@ export default function TerminalPage() {
                             className="text-lg font-semibold mb-2"
                             style={{ color: isDark ? '#fff' : '#1a1a1a' }}
                           >
-                            Starting Terminal
+                            Launching terminal
                           </h3>
                           <p
                             className="text-sm"
@@ -753,6 +790,16 @@ export default function TerminalPage() {
           )}
         </div>
       )}
+
+      {/* Share Modal */}
+      <ShareTerminalModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        terminalId={terminal.id}
+        terminalName={terminal.name}
+        isDark={isDark}
+        token={session?.accessToken}
+      />
     </div>
   );
 }

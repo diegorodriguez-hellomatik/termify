@@ -119,7 +119,7 @@ export default function LoginPage() {
               color: isDark ? '#888' : '#666',
             }}
           >
-            Sign in to your Claude Terminal account
+            Sign in to your Termify account
           </p>
         </div>
 

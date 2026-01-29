@@ -406,3 +406,131 @@ export const filesApi = {
       { method: 'PUT', body: { path: filePath, content }, token }
     ),
 };
+
+// Share Types
+export type ShareType = 'LINK' | 'EMAIL';
+export type SharePermission = 'VIEW' | 'CONTROL';
+
+export interface TerminalShare {
+  id: string;
+  terminalId: string;
+  type: ShareType;
+  sharedWithId: string | null;
+  sharedEmail: string | null;
+  shareToken: string | null;
+  permission: SharePermission;
+  createdById: string;
+  expiresAt: string | null;
+  lastAccessedAt: string | null;
+  accessCount: number;
+  createdAt: string;
+  sharedWith?: {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+  } | null;
+  createdBy?: {
+    id: string;
+    email: string;
+    name: string | null;
+  };
+}
+
+export interface SharedTerminal {
+  id: string;
+  name: string;
+  status: string;
+  type: string;
+  cols: number;
+  rows: number;
+  cwd: string | null;
+  createdAt: string;
+  updatedAt: string;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+  };
+  category: {
+    id: string;
+    name: string;
+    color: string;
+    icon: string | null;
+  } | null;
+  share: {
+    id: string;
+    permission: SharePermission;
+    createdBy: {
+      id: string;
+      email: string;
+      name: string | null;
+      image: string | null;
+    };
+    createdAt: string;
+  };
+}
+
+// Sharing API
+export const shareApi = {
+  // Get all shares for a terminal (owner only)
+  getShares: (terminalId: string, token: string) =>
+    api<{ shares: TerminalShare[] }>(`/api/terminals/${terminalId}/share`, { token }),
+
+  // Create a share link
+  createShareLink: (
+    terminalId: string,
+    data: { permission?: SharePermission; expiresIn?: number },
+    token: string
+  ) =>
+    api<{ share: TerminalShare; shareUrl: string }>(
+      `/api/terminals/${terminalId}/share/link`,
+      { method: 'POST', body: data, token }
+    ),
+
+  // Share with user by email
+  shareWithEmail: (
+    terminalId: string,
+    data: { email: string; permission?: SharePermission },
+    token: string
+  ) =>
+    api<{ share: TerminalShare }>(
+      `/api/terminals/${terminalId}/share/email`,
+      { method: 'POST', body: data, token }
+    ),
+
+  // Update share permissions
+  updateShare: (
+    terminalId: string,
+    shareId: string,
+    data: { permission: SharePermission },
+    token: string
+  ) =>
+    api<{ share: TerminalShare }>(
+      `/api/terminals/${terminalId}/share/${shareId}`,
+      { method: 'PATCH', body: data, token }
+    ),
+
+  // Revoke a share
+  deleteShare: (terminalId: string, shareId: string, token: string) =>
+    api<void>(`/api/terminals/${terminalId}/share/${shareId}`, {
+      method: 'DELETE',
+      token,
+    }),
+
+  // Access shared terminal by token (public)
+  accessByToken: (shareToken: string, token?: string) =>
+    api<{
+      share: { id: string; permission: SharePermission; type: ShareType };
+      terminal: any;
+      isAuthenticated: boolean;
+    }>(`/api/share/${shareToken}`, { token }),
+
+  // Get terminals shared with me
+  getSharedWithMe: (token: string) =>
+    api<{ terminals: SharedTerminal[]; total: number }>(
+      '/api/terminals/shared',
+      { token }
+    ),
+};

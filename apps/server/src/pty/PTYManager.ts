@@ -1,6 +1,6 @@
 import * as pty from '@lydell/node-pty';
 import { EventEmitter } from 'events';
-import { TerminalStatus } from '@claude-terminal/shared';
+import { TerminalStatus } from '@termify/shared';
 import { OutputBuffer } from './OutputBuffer.js';
 
 export interface PTYInstance {
@@ -11,6 +11,7 @@ export interface PTYInstance {
   status: TerminalStatus;
   cols: number;
   rows: number;
+  cwd: string;
 }
 
 export interface PTYManagerOptions {
@@ -87,6 +88,7 @@ export class PTYManager extends EventEmitter {
       status: TerminalStatus.RUNNING,
       cols,
       rows,
+      cwd,
     };
 
     // Handle data output
@@ -94,6 +96,18 @@ export class PTYManager extends EventEmitter {
       console.log(`[PTY ${terminalId}] Data:`, data.substring(0, 100));
       instance.outputBuffer.append(data);
       this.emit('data', terminalId, data);
+
+      // Detect CWD changes via OSC 7 sequences (sent by zsh/bash)
+      // Format: \x1b]7;file://hostname/path\x07 or \x1b]7;file://hostname/path\x1b\\
+      const osc7Match = data.match(/\x1b\]7;file:\/\/[^\/]*([^\x07\x1b]+)[\x07\x1b]/);
+      if (osc7Match) {
+        const newCwd = decodeURIComponent(osc7Match[1]);
+        if (newCwd !== instance.cwd) {
+          console.log(`[PTY ${terminalId}] CWD changed: ${instance.cwd} -> ${newCwd}`);
+          instance.cwd = newCwd;
+          this.emit('cwd', terminalId, newCwd);
+        }
+      }
     });
 
     // Handle process exit
@@ -134,6 +148,8 @@ export class PTYManager extends EventEmitter {
       throw new Error(`Terminal ${terminalId} not found`);
     }
     instance.process.write(data);
+    // Emit input event for command tracking
+    this.emit('input', terminalId, data);
   }
 
   /**
@@ -200,6 +216,95 @@ export class PTYManager extends EventEmitter {
    */
   get count(): number {
     return this.instances.size;
+  }
+
+  /**
+   * Execute a command and capture output
+   * Returns the output after the command completes (detected by shell prompt or timeout)
+   */
+  async execute(
+    terminalId: string,
+    command: string,
+    options: {
+      timeout?: number; // Max time to wait for output (ms)
+      waitForPrompt?: boolean; // Wait for shell prompt to appear
+    } = {}
+  ): Promise<{ output: string; timedOut: boolean }> {
+    const instance = this.instances.get(terminalId);
+    if (!instance) {
+      throw new Error(`Terminal ${terminalId} not found`);
+    }
+
+    const timeout = options.timeout || 30000; // Default 30 seconds
+    const waitForPrompt = options.waitForPrompt !== false;
+
+    return new Promise((resolve) => {
+      let output = '';
+      let timeoutId: NodeJS.Timeout;
+      let resolved = false;
+      let idleTimeout: NodeJS.Timeout | null = null;
+
+      // Capture output
+      const onData = (tid: string, data: string) => {
+        if (tid !== terminalId || resolved) return;
+        output += data;
+
+        // Reset idle timeout on each data chunk
+        if (idleTimeout) clearTimeout(idleTimeout);
+
+        // If we see common shell prompts, command likely finished
+        // Wait a bit more for any trailing output, then resolve
+        if (waitForPrompt) {
+          const promptPatterns = [
+            /\$\s*$/, // bash/zsh prompt
+            />\s*$/, // some shells
+            /❯\s*$/, // fancy prompts
+            /#\s*$/, // root prompt
+            /\]\s*$/, // custom prompts ending with ]
+          ];
+
+          const hasPrompt = promptPatterns.some((p) => p.test(data));
+          if (hasPrompt) {
+            // Wait 100ms for any trailing output, then resolve
+            idleTimeout = setTimeout(() => {
+              if (!resolved) {
+                resolved = true;
+                clearTimeout(timeoutId);
+                this.removeListener('data', onData);
+                resolve({ output, timedOut: false });
+              }
+            }, 100);
+          }
+        }
+      };
+
+      this.on('data', onData);
+
+      // Set overall timeout
+      timeoutId = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          if (idleTimeout) clearTimeout(idleTimeout);
+          this.removeListener('data', onData);
+          resolve({ output, timedOut: true });
+        }
+      }, timeout);
+
+      // Write the command with newline to execute it
+      const commandWithNewline = command.endsWith('\n') ? command : command + '\n';
+      instance.process.write(commandWithNewline);
+    });
+  }
+
+  /**
+   * Write input without waiting for output (fire and forget)
+   */
+  writeInput(terminalId: string, input: string): void {
+    const instance = this.instances.get(terminalId);
+    if (!instance) {
+      throw new Error(`Terminal ${terminalId} not found`);
+    }
+    instance.process.write(input);
   }
 
   /**

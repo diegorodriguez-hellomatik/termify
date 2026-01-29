@@ -91,7 +91,7 @@ export default function SettingsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `claude-terminal-config-${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `termify-config-${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (error) {
@@ -188,7 +188,7 @@ export default function SettingsPage() {
 
       <div className="space-y-6">
         {/* Profile Section */}
-        <Card>
+        <Card id="profile" className="scroll-mt-8">
           <CardHeader>
             <div className="flex items-center gap-3">
               <User className="h-5 w-5 text-primary" />
@@ -224,7 +224,7 @@ export default function SettingsPage() {
         </Card>
 
         {/* Terminal Theme */}
-        <Card>
+        <Card id="terminal-theme" className="scroll-mt-8">
           <CardHeader>
             <div className="flex items-center gap-3">
               <Palette className="h-5 w-5 text-primary" />
@@ -274,7 +274,7 @@ export default function SettingsPage() {
         </Card>
 
         {/* View Mode */}
-        <Card>
+        <Card id="view-mode" className="scroll-mt-8">
           <CardHeader>
             <div className="flex items-center gap-3">
               <LayoutGrid className="h-5 w-5 text-primary" />
@@ -311,7 +311,7 @@ export default function SettingsPage() {
         </Card>
 
         {/* Terminal Defaults */}
-        <Card>
+        <Card id="terminal-defaults" className="scroll-mt-8">
           <CardHeader>
             <div className="flex items-center gap-3">
               <Terminal className="h-5 w-5 text-primary" />
@@ -366,7 +366,7 @@ export default function SettingsPage() {
         </Card>
 
         {/* Keyboard Shortcuts */}
-        <Card>
+        <Card id="keyboard-shortcuts" className="scroll-mt-8">
           <CardHeader>
             <div className="flex items-center gap-3">
               <Keyboard className="h-5 w-5 text-primary" />
@@ -401,7 +401,7 @@ export default function SettingsPage() {
         </Card>
 
         {/* Import/Export */}
-        <Card>
+        <Card id="import-export" className="scroll-mt-8">
           <CardHeader>
             <div className="flex items-center gap-3">
               <FileJson className="h-5 w-5 text-primary" />
@@ -475,60 +475,135 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* API Keys */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <Key className="h-5 w-5 text-primary" />
-              <div>
-                <CardTitle>API Keys</CardTitle>
-                <CardDescription>
-                  Manage API keys for programmatic access
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-4">
-              API keys allow you to interact with the Claude Terminal API
-              programmatically.
-            </p>
-            <Button variant="outline">Generate API Key</Button>
-          </CardContent>
-        </Card>
-
         {/* Notifications */}
-        <Card>
+        <Card id="notifications" className="scroll-mt-8">
           <CardHeader>
             <div className="flex items-center gap-3">
               <Bell className="h-5 w-5 text-primary" />
               <div>
                 <CardTitle>Notifications</CardTitle>
                 <CardDescription>
-                  Configure notification preferences
+                  Configure notification preferences for browser and desktop alerts
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Terminal Crashes</p>
-                  <p className="text-sm text-muted-foreground">
-                    Get notified when a terminal crashes
-                  </p>
+            <div className="space-y-6">
+              {/* Enable Browser Notifications */}
+              <div className="p-4 rounded-lg border border-primary/20 bg-primary/5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Enable Browser Notifications</p>
+                    <p className="text-sm text-muted-foreground">
+                      Allow Termify to send you desktop notifications
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if ('Notification' in window) {
+                        Notification.requestPermission().then((permission) => {
+                          if (permission === 'granted') {
+                            new Notification('Notifications Enabled', {
+                              body: 'You will now receive notifications from Termify',
+                              icon: '/favicon.ico',
+                            });
+                          }
+                        });
+                      }
+                    }}
+                  >
+                    Enable
+                  </Button>
                 </div>
-                <input type="checkbox" defaultChecked className="toggle" />
               </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Usage Alerts</p>
-                  <p className="text-sm text-muted-foreground">
-                    Notify when approaching usage limits
-                  </p>
+
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Terminal Events</h4>
+
+                <div className="flex items-center justify-between py-2">
+                  <div>
+                    <p className="font-medium">Task Completed</p>
+                    <p className="text-sm text-muted-foreground">
+                      Notify when a terminal finishes a long-running task (Claude Code, builds, etc.)
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" defaultChecked className="sr-only peer" />
+                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
                 </div>
-                <input type="checkbox" defaultChecked className="toggle" />
+
+                <div className="flex items-center justify-between py-2">
+                  <div>
+                    <p className="font-medium">Terminal Started</p>
+                    <p className="text-sm text-muted-foreground">
+                      Notify when a terminal successfully starts
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" />
+                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between py-2">
+                  <div>
+                    <p className="font-medium">Terminal Crashed</p>
+                    <p className="text-sm text-muted-foreground">
+                      Notify when a terminal unexpectedly crashes or stops
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" defaultChecked className="sr-only peer" />
+                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between py-2">
+                  <div>
+                    <p className="font-medium">Command Completed</p>
+                    <p className="text-sm text-muted-foreground">
+                      Notify when a command finishes execution (after idle for 3 seconds)
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" defaultChecked className="sr-only peer" />
+                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="border-t border-border pt-4 space-y-4">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Other Notifications</h4>
+
+                <div className="flex items-center justify-between py-2">
+                  <div>
+                    <p className="font-medium">Shared Terminal Activity</p>
+                    <p className="text-sm text-muted-foreground">
+                      Notify when someone joins or leaves a shared terminal
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" defaultChecked className="sr-only peer" />
+                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between py-2">
+                  <div>
+                    <p className="font-medium">Usage Alerts</p>
+                    <p className="text-sm text-muted-foreground">
+                      Notify when approaching usage limits
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" defaultChecked className="sr-only peer" />
+                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
               </div>
             </div>
           </CardContent>

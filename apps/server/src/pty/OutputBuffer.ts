@@ -1,4 +1,4 @@
-import { MAX_OUTPUT_BUFFER_SIZE } from '@claude-terminal/shared';
+import { MAX_OUTPUT_BUFFER_SIZE } from '@termify/shared';
 
 /**
  * Circular buffer for terminal output

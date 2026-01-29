@@ -4,7 +4,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { TerminalStatus } from '@claude-terminal/shared';
+import { TerminalStatus } from '@termify/shared';
 import { useTerminalSocket } from '@/hooks/useTerminalSocket';
 import { useTheme } from '@/context/ThemeContext';
 import { getXtermTheme, getTerminalTheme } from '@/lib/terminal-themes';
@@ -17,6 +17,8 @@ import '@xterm/xterm/css/xterm.css';
 interface TerminalProps {
   terminalId: string;
   token: string;
+  shareToken?: string;
+  readOnly?: boolean;
   initialStatus?: TerminalStatus;
   className?: string;
   onReady?: () => void;
@@ -40,6 +42,8 @@ const STATUS_LABELS: Record<TerminalStatus, string> = {
 export function Terminal({
   terminalId,
   token,
+  shareToken,
+  readOnly = false,
   initialStatus = TerminalStatus.STOPPED,
   className,
   onReady,
@@ -82,6 +86,7 @@ export function Terminal({
     useTerminalSocket({
       terminalId,
       token,
+      shareToken,
       onOutput: handleOutput,
       onStatusChange: handleStatusChange,
       onConnected: handleConnected,
@@ -91,6 +96,8 @@ export function Terminal({
   // Track if we've initialized to prevent double-init in StrictMode
   const initializedRef = useRef(false);
   const hasAutoStartedRef = useRef(false);
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
 
   // Initialize xterm - same pattern as working test page
   useEffect(() => {
@@ -135,8 +142,11 @@ export function Terminal({
     setIsReady(true);
 
     // Handle user input - use ref to avoid stale closure
+    // Don't send input if readOnly mode
     terminal.onData((data) => {
-      send(data);
+      if (!readOnlyRef.current) {
+        send(data);
+      }
     });
 
     // Connect to WebSocket
@@ -194,7 +204,18 @@ export function Terminal({
     }
   }, [isConnected, isReady, start]);
 
-  // Refit when status changes to RUNNING and notify parent
+  // Track if onReady has been called
+  const hasCalledOnReadyRef = useRef(false);
+
+  // Call onReady once - when connected or after timeout
+  const callOnReadyOnce = useCallback(() => {
+    if (!hasCalledOnReadyRef.current) {
+      hasCalledOnReadyRef.current = true;
+      onReady?.();
+    }
+  }, [onReady]);
+
+  // Notify parent when terminal is RUNNING
   useEffect(() => {
     if (status === TerminalStatus.RUNNING && fitAddonRef.current && terminalRef.current) {
       setTimeout(() => {
@@ -202,11 +223,29 @@ export function Terminal({
         if (terminalRef.current) {
           resize(terminalRef.current.cols, terminalRef.current.rows);
         }
-        // Notify parent that terminal is ready
-        onReady?.();
+        callOnReadyOnce();
       }, 100);
     }
-  }, [status, resize, onReady]);
+  }, [status, resize, callOnReadyOnce]);
+
+  // Fallback: notify parent when WebSocket connects (even if not RUNNING yet)
+  useEffect(() => {
+    if (isConnected && isReady) {
+      // Give it 2 seconds to reach RUNNING, then call onReady anyway
+      const timeoutId = setTimeout(() => {
+        callOnReadyOnce();
+      }, 2000);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isConnected, isReady, callOnReadyOnce]);
+
+  // Ultimate fallback: after 5 seconds, always show the terminal
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      callOnReadyOnce();
+    }, 5000);
+    return () => clearTimeout(timeoutId);
+  }, [callOnReadyOnce]);
 
   // Update theme when terminalTheme changes
   useEffect(() => {
@@ -234,7 +273,7 @@ export function Terminal({
 
   const handleStart = () => {
     terminalRef.current?.clear();
-    terminalRef.current?.writeln('Starting Claude Code...');
+    terminalRef.current?.writeln('Launching terminal...');
     start();
   };
 

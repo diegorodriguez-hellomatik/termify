@@ -6,6 +6,45 @@ export enum TerminalStatus {
   CRASHED = 'CRASHED',
 }
 
+// Share Types
+export enum ShareType {
+  LINK = 'LINK',
+  EMAIL = 'EMAIL',
+}
+
+// Share Permissions
+export enum SharePermission {
+  VIEW = 'VIEW',
+  CONTROL = 'CONTROL',
+}
+
+// Terminal Share model
+export interface TerminalShare {
+  id: string;
+  terminalId: string;
+  type: ShareType;
+  sharedWithId: string | null;
+  sharedEmail: string | null;
+  shareToken: string | null;
+  permission: SharePermission;
+  createdById: string;
+  expiresAt: Date | null;
+  lastAccessedAt: Date | null;
+  accessCount: number;
+  createdAt: Date;
+}
+
+// Viewer info for real-time presence
+export interface TerminalViewer {
+  odId: string;
+  visitorId: string;
+  email: string;
+  name: string | null;
+  image: string | null;
+  permission: SharePermission;
+  isOwner: boolean;
+}
+
 // Terminal model
 export interface Terminal {
   id: string;
@@ -30,7 +69,7 @@ export interface User {
 
 // WebSocket Messages - Client to Server
 export type ClientMessage =
-  | { type: 'terminal.connect'; terminalId: string }
+  | { type: 'terminal.connect'; terminalId: string; shareToken?: string }
   | { type: 'terminal.input'; terminalId: string; data: string }
   | { type: 'terminal.resize'; terminalId: string; cols: number; rows: number }
   | { type: 'terminal.start'; terminalId: string }
@@ -40,10 +79,13 @@ export type ClientMessage =
 // WebSocket Messages - Server to Client
 export type ServerMessage =
   | { type: 'terminal.output'; terminalId: string; data: string }
-  | { type: 'terminal.connected'; terminalId: string; bufferedOutput?: string }
+  | { type: 'terminal.connected'; terminalId: string; bufferedOutput?: string; permission?: SharePermission }
   | { type: 'terminal.status'; terminalId: string; status: TerminalStatus }
   | { type: 'terminal.error'; terminalId: string; error: string }
   | { type: 'terminal.cwd'; terminalId: string; cwd: string }
+  | { type: 'terminal.viewers'; terminalId: string; viewers: TerminalViewer[] }
+  | { type: 'terminal.viewer.joined'; terminalId: string; viewer: TerminalViewer }
+  | { type: 'terminal.viewer.left'; terminalId: string; odId: string }
   | { type: 'files.changed'; terminalId: string }
   | { type: 'error'; message: string }
   | { type: 'pong' };

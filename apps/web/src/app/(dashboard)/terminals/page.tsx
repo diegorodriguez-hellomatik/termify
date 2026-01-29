@@ -51,8 +51,11 @@ import {
   List,
   Search,
   Keyboard,
+  Users,
+  Share2,
+  ExternalLink,
 } from 'lucide-react';
-import { TerminalStatus } from '@claude-terminal/shared';
+import { TerminalStatus } from '@termify/shared';
 import { terminalsApi, categoriesApi } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/utils';
 import { useTheme } from '@/context/ThemeContext';
@@ -61,8 +64,116 @@ import { TerminalThemeSelector } from '@/components/settings/TerminalThemeSelect
 import { KeyboardShortcutsProvider, useKeyboardShortcuts } from '@/contexts/KeyboardShortcutsContext';
 import { ShortcutsHelpModalWithContext } from '@/components/ui/ShortcutsHelpModal';
 import { CreateTerminalModal, SSHConfig } from '@/components/terminals/CreateTerminalModal';
+import { ShareTerminalModal } from '@/components/terminals/ShareTerminalModal';
 import { MobileTerminalList } from '@/components/mobile/MobileTerminalList';
 import { cn } from '@/lib/utils';
+
+// Context Menu Component
+function ContextMenu({
+  x,
+  y,
+  terminal,
+  onClose,
+  onConnect,
+  onRename,
+  onShare,
+  onDelete,
+  isDark,
+}: {
+  x: number;
+  y: number;
+  terminal: TerminalData;
+  onClose: () => void;
+  onConnect: () => void;
+  onRename: () => void;
+  onShare: () => void;
+  onDelete: () => void;
+  isDark: boolean;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [onClose]);
+
+  // Adjust position to stay within viewport
+  const adjustedX = Math.min(x, window.innerWidth - 200);
+  const adjustedY = Math.min(y, window.innerHeight - 200);
+
+  if (typeof window === 'undefined') return null;
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="fixed z-[9999] min-w-[180px] py-1 rounded-lg shadow-xl border border-border overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+      style={{
+        left: adjustedX,
+        top: adjustedY,
+        backgroundColor: isDark ? '#1f1f1f' : '#ffffff',
+      }}
+    >
+      <button
+        onClick={() => {
+          onConnect();
+          onClose();
+        }}
+        className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+      >
+        <Play size={16} className="text-green-500" />
+        <span>Connect</span>
+      </button>
+      <button
+        onClick={() => {
+          onRename();
+          onClose();
+        }}
+        className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+      >
+        <Pencil size={16} className="text-blue-500" />
+        <span>Rename</span>
+      </button>
+      <button
+        onClick={() => {
+          onShare();
+          onClose();
+        }}
+        className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+      >
+        <Share2 size={16} className="text-purple-500" />
+        <span>Share</span>
+      </button>
+      <div className="h-px bg-border my-1" />
+      <button
+        onClick={() => {
+          onDelete();
+          onClose();
+        }}
+        className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-destructive/10 transition-colors text-left text-destructive"
+      >
+        <Trash2 size={16} />
+        <span>Delete</span>
+      </button>
+    </div>,
+    document.body
+  );
+}
 
 interface TerminalData {
   id: string;
@@ -100,6 +211,9 @@ function DraggableTerminalCard({
   onDelete,
   onRename,
   onToggleFavorite,
+  onContextMenu,
+  isRenaming,
+  onRenameComplete,
   isDark,
   isCompact,
   isDragging,
@@ -109,6 +223,9 @@ function DraggableTerminalCard({
   onDelete: (id: string) => void;
   onRename: (id: string, newName: string) => void;
   onToggleFavorite: (id: string, isFavorite: boolean) => void;
+  onContextMenu?: (e: React.MouseEvent, terminal: TerminalData) => void;
+  isRenaming?: boolean;
+  onRenameComplete?: () => void;
   isDark: boolean;
   isCompact?: boolean;
   isDragging?: boolean;
@@ -116,6 +233,24 @@ function DraggableTerminalCard({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(terminal.name);
+
+  // Trigger edit mode from external prop
+  useEffect(() => {
+    if (isRenaming && !isEditing) {
+      setIsEditing(true);
+      setEditName(terminal.name);
+    }
+  }, [isRenaming, isEditing, terminal.name]);
+
+  const handleFinishEditing = (save: boolean) => {
+    if (save && editName !== terminal.name) {
+      onRename(terminal.id, editName);
+    } else {
+      setEditName(terminal.name);
+    }
+    setIsEditing(false);
+    onRenameComplete?.();
+  };
   const {
     attributes,
     listeners,
@@ -149,6 +284,12 @@ function DraggableTerminalCard({
         style={style}
         {...attributes}
         {...listeners}
+        onContextMenu={(e) => {
+          if (onContextMenu && !isOverlay) {
+            e.preventDefault();
+            onContextMenu(e, terminal);
+          }
+        }}
         className={cn(
           'group relative bg-card border border-border rounded-lg overflow-hidden cursor-grab active:cursor-grabbing',
           dragging && !isOverlay && 'opacity-30',
@@ -226,6 +367,12 @@ function DraggableTerminalCard({
       style={style}
       {...attributes}
       {...listeners}
+      onContextMenu={(e) => {
+        if (onContextMenu && !isOverlay) {
+          e.preventDefault();
+          onContextMenu(e, terminal);
+        }
+      }}
       className={cn(
         'group relative bg-card border border-border rounded-xl overflow-hidden cursor-grab active:cursor-grabbing',
         'transition-colors duration-200',
@@ -264,20 +411,13 @@ function DraggableTerminalCard({
                     autoFocus
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        onRename(terminal.id, editName);
-                        setIsEditing(false);
+                        handleFinishEditing(true);
                       }
                       if (e.key === 'Escape') {
-                        setEditName(terminal.name);
-                        setIsEditing(false);
+                        handleFinishEditing(false);
                       }
                     }}
-                    onBlur={() => {
-                      if (editName !== terminal.name) {
-                        onRename(terminal.id, editName);
-                      }
-                      setIsEditing(false);
-                    }}
+                    onBlur={() => handleFinishEditing(true)}
                   />
                 </div>
               ) : (
@@ -616,6 +756,13 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
   const [overId, setOverId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    terminal: TerminalData;
+  } | null>(null);
+  const [terminalToShare, setTerminalToShare] = useState<TerminalData | null>(null);
+  const [terminalToRename, setTerminalToRename] = useState<string | null>(null);
 
   const { setShowHelp } = useKeyboardShortcuts();
 
@@ -797,6 +944,39 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
       setTerminals((prev) =>
         prev.map((t) => (t.id === id ? { ...t, isFavorite: !isFavorite } : t))
       );
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, terminal: TerminalData) => {
+    e.preventDefault();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      terminal,
+    });
+  };
+
+  const handleContextMenuConnect = () => {
+    if (contextMenu) {
+      router.push(`/terminals/${contextMenu.terminal.id}`);
+    }
+  };
+
+  const handleContextMenuRename = () => {
+    if (contextMenu) {
+      setTerminalToRename(contextMenu.terminal.id);
+    }
+  };
+
+  const handleContextMenuShare = () => {
+    if (contextMenu) {
+      setTerminalToShare(contextMenu.terminal);
+    }
+  };
+
+  const handleContextMenuDelete = () => {
+    if (contextMenu) {
+      handleDeleteTerminal(contextMenu.terminal.id);
     }
   };
 
@@ -1000,7 +1180,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
           <div>
             <h1 className="text-3xl font-bold text-foreground">Terminals</h1>
             <p className="text-muted-foreground mt-1">
-              Manage your Claude Code terminal sessions
+              Manage your terminal sessions
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -1092,6 +1272,15 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
             <Star size={14} fill={showFavoritesOnly ? 'currentColor' : 'none'} />
             Favorites ({favoritesCount})
           </button>
+
+          {/* Shared with me link */}
+          <Link
+            href="/terminals/shared"
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-muted text-muted-foreground hover:text-foreground transition-all"
+          >
+            <Users size={14} />
+            Shared with me
+          </Link>
 
           {categories.map((category) => (
             <DroppableCategory
@@ -1244,6 +1433,9 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
                     onDelete={handleDeleteTerminal}
                     onRename={handleRenameTerminal}
                     onToggleFavorite={handleToggleFavorite}
+                    onContextMenu={handleContextMenu}
+                    isRenaming={terminalToRename === terminal.id}
+                    onRenameComplete={() => setTerminalToRename(null)}
                     isDark={isDark}
                     isCompact={viewMode === 'compact'}
                     isDragging={activeId === terminal.id}
@@ -1296,6 +1488,32 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
           isDark={isDark}
           token={session?.accessToken}
         />
+
+        {/* Context Menu */}
+        {contextMenu && (
+          <ContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            terminal={contextMenu.terminal}
+            onClose={() => setContextMenu(null)}
+            onConnect={handleContextMenuConnect}
+            onRename={handleContextMenuRename}
+            onShare={handleContextMenuShare}
+            onDelete={handleContextMenuDelete}
+            isDark={isDark}
+          />
+        )}
+
+        {/* Share Terminal Modal */}
+        {terminalToShare && (
+          <ShareTerminalModal
+            isOpen={true}
+            onClose={() => setTerminalToShare(null)}
+            terminalId={terminalToShare.id}
+            terminalName={terminalToShare.name}
+            isDark={isDark}
+          />
+        )}
         </div>
       </DndContext>
     </>

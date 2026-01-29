@@ -5,13 +5,14 @@ import type {
   ClientMessage,
   ServerMessage,
   TerminalStatus,
-} from '@claude-terminal/shared';
+} from '@termify/shared';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
 
 interface UseTerminalSocketOptions {
   terminalId: string;
   token: string;
+  shareToken?: string;
   onOutput: (data: string) => void;
   onStatusChange: (status: TerminalStatus) => void;
   onConnected: (bufferedOutput?: string) => void;
@@ -32,6 +33,7 @@ interface UseTerminalSocketReturn {
 export function useTerminalSocket({
   terminalId,
   token,
+  shareToken,
   onOutput,
   onStatusChange,
   onConnected,
@@ -142,21 +144,29 @@ export function useTerminalSocket({
   );
 
   const connect = useCallback(() => {
+    // If already connected, just send terminal.connect
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('[WS] Already connected, re-sending terminal.connect');
+      sendMessage({ type: 'terminal.connect', terminalId, shareToken });
       return;
     }
 
     // Use 'dev' token in development if no real token
     const authToken = token || 'dev';
-    const ws = new WebSocket(`${WS_URL}?token=${authToken}`);
+    console.log('[WS] Creating new WebSocket connection');
+    // Include shareToken in URL if provided (for share link access)
+    const wsUrl = shareToken
+      ? `${WS_URL}?token=${authToken}&shareToken=${shareToken}`
+      : `${WS_URL}?token=${authToken}`;
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log('[WS] Connected');
+      console.log('[WS] Connected, sending terminal.connect for:', terminalId);
       setIsConnected(true);
 
-      // Connect to terminal
-      sendMessage({ type: 'terminal.connect', terminalId });
+      // Connect to terminal (include shareToken if provided)
+      sendMessage({ type: 'terminal.connect', terminalId, shareToken });
 
       // Start ping interval
       pingIntervalRef.current = setInterval(() => {
@@ -194,7 +204,7 @@ export function useTerminalSocket({
       console.error('[WS] Error:', error);
       callbacksRef.current.onError('WebSocket connection error');
     };
-  }, [token, terminalId, sendMessage, handleMessage]);
+  }, [token, terminalId, shareToken, sendMessage, handleMessage]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {

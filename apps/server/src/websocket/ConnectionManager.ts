@@ -3,12 +3,20 @@ import {
   RATE_LIMIT_MESSAGES_PER_MIN,
   WS_PING_INTERVAL,
   WS_PONG_TIMEOUT,
-} from '@claude-terminal/shared';
+  SharePermission,
+} from '@termify/shared';
 
 export interface Connection {
   ws: WebSocket;
+  odId: string;
+  visitorId: string;
   userId: string;
+  email: string;
+  name: string | null;
+  image: string | null;
   terminalId: string | null;
+  permission: SharePermission | null;
+  isOwner: boolean;
   isAlive: boolean;
   messageCount: number;
   lastMessageReset: number;
@@ -30,11 +38,19 @@ export class ConnectionManager {
   /**
    * Add a new connection
    */
-  add(ws: WebSocket, userId: string): Connection {
+  add(ws: WebSocket, userId: string, userInfo?: { email: string; name: string | null; image: string | null }): Connection {
+    const visitorId = `visitor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const connection: Connection = {
       ws,
+      odId: visitorId,
+      visitorId,
       userId,
+      email: userInfo?.email || 'anonymous',
+      name: userInfo?.name || null,
+      image: userInfo?.image || null,
       terminalId: null,
+      permission: null,
+      isOwner: false,
       isAlive: true,
       messageCount: 0,
       lastMessageReset: Date.now(),
@@ -91,7 +107,7 @@ export class ConnectionManager {
   /**
    * Associate a connection with a terminal
    */
-  associateTerminal(ws: WebSocket, terminalId: string): void {
+  associateTerminal(ws: WebSocket, terminalId: string, options?: { permission: SharePermission | null; isOwner: boolean }): void {
     const connection = this.connections.get(ws);
     if (!connection) return;
 
@@ -108,10 +124,55 @@ export class ConnectionManager {
 
     // Associate with new terminal
     connection.terminalId = terminalId;
+    connection.permission = options?.permission ?? null;
+    connection.isOwner = options?.isOwner ?? false;
     if (!this.terminalConnections.has(terminalId)) {
       this.terminalConnections.set(terminalId, new Set());
     }
     this.terminalConnections.get(terminalId)!.add(ws);
+  }
+
+  /**
+   * Get viewers for a terminal (connections with their user info)
+   */
+  getTerminalViewers(terminalId: string): Array<{
+    odId: string;
+    visitorId: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+    permission: SharePermission | null;
+    isOwner: boolean;
+  }> {
+    const sockets = this.terminalConnections.get(terminalId);
+    if (!sockets) return [];
+
+    const viewers: Array<{
+      odId: string;
+      visitorId: string;
+      email: string;
+      name: string | null;
+      image: string | null;
+      permission: SharePermission | null;
+      isOwner: boolean;
+    }> = [];
+
+    for (const ws of sockets) {
+      const conn = this.connections.get(ws);
+      if (conn) {
+        viewers.push({
+          odId: conn.odId,
+          visitorId: conn.visitorId,
+          email: conn.email,
+          name: conn.name,
+          image: conn.image,
+          permission: conn.permission,
+          isOwner: conn.isOwner,
+        });
+      }
+    }
+
+    return viewers;
   }
 
   /**

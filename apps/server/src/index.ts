@@ -11,6 +11,8 @@ import categoriesRoutes from './api/categories.js';
 import snippetsRoutes from './api/snippets.js';
 import profilesRoutes from './api/profiles.js';
 import auditlogsRoutes from './api/auditlogs.js';
+import apikeysRoutes from './api/apikeys.js';
+import shareRoutes from './api/share.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',');
@@ -36,11 +38,13 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/auth', authRoutes);
+app.use('/api', shareRoutes); // Must be before terminalsRoutes to handle /terminals/shared
 app.use('/api/terminals', terminalsRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/snippets', snippetsRoutes);
 app.use('/api/profiles', profilesRoutes);
 app.use('/api/auditlogs', auditlogsRoutes);
+app.use('/api/apikeys', apikeysRoutes);
 
 // Stats endpoint
 app.get('/api/stats', (req, res) => {
@@ -93,7 +97,7 @@ server.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
-║   Claude Terminal Platform - Server                       ║
+║   Termify - Server                                          ║
 ║                                                           ║
 ║   HTTP API:    http://localhost:${PORT}                    ║
 ║   WebSocket:   ws://localhost:${PORT}                      ║

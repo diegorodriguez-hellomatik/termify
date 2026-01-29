@@ -1,5 +1,5 @@
 {
-  "name": "claude-terminal-platform",
+  "name": "termify",
   "private": true,
   "workspaces": [
     "apps/*",
