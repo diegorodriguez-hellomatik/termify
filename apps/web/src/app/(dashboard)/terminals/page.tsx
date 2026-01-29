@@ -12,8 +12,6 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-  DragOverlay,
-  DragStartEvent,
   useDroppable,
   MeasuringStrategy,
 } from '@dnd-kit/core';
@@ -212,8 +210,6 @@ function DraggableTerminalCard({
   onRenameComplete,
   isDark,
   isCompact,
-  isDragging,
-  isOverlay,
 }: {
   terminal: TerminalData;
   onDelete: (id: string) => void;
@@ -225,8 +221,6 @@ function DraggableTerminalCard({
   onRenameComplete?: () => void;
   isDark: boolean;
   isCompact?: boolean;
-  isDragging?: boolean;
-  isOverlay?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(terminal.name);
@@ -254,7 +248,7 @@ function DraggableTerminalCard({
     setNodeRef,
     transform,
     transition,
-    isDragging: isSortableDragging,
+    isDragging,
   } = useSortable({
     id: terminal.id,
     transition: {
@@ -263,17 +257,14 @@ function DraggableTerminalCard({
     },
   });
 
-  const dragging = isDragging || isSortableDragging;
-
   // Combine dnd-kit transition with hover transitions for border/shadow
   const baseTransition = 'border-color 200ms, box-shadow 200ms';
-  const combinedTransition = dragging ? undefined : (transition ? `${transition}, ${baseTransition}` : baseTransition);
+  const combinedTransition = isDragging ? undefined : (transition ? `${transition}, ${baseTransition}` : baseTransition);
 
   const style: React.CSSProperties = {
     transform: transform ? `translate3d(${Math.round(transform.x)}px, ${Math.round(transform.y)}px, 0)` : undefined,
     transition: combinedTransition,
-    opacity: dragging && !isOverlay ? 0.3 : 1,
-    zIndex: dragging ? 1000 : 1,
+    zIndex: isDragging ? 1000 : 1,
   };
 
   if (isCompact) {
@@ -284,21 +275,20 @@ function DraggableTerminalCard({
         {...attributes}
         {...listeners}
         onClick={(e) => {
-          if (!dragging && !isOverlay) {
+          if (!isDragging) {
             onConnect?.(terminal.id);
           }
         }}
         onContextMenu={(e) => {
-          if (onContextMenu && !isOverlay) {
+          if (onContextMenu) {
             e.preventDefault();
             onContextMenu(e, terminal);
           }
         }}
         className={cn(
           'group relative bg-card border border-border rounded-lg overflow-hidden cursor-grab active:cursor-grabbing',
-          !dragging && 'transition-shadow transition-border duration-200 hover:border-primary/50 hover:shadow-md',
-          dragging && !isOverlay && 'opacity-30',
-          isOverlay && 'shadow-2xl ring-2 ring-primary/50 scale-[1.02] rotate-1'
+          !isDragging && 'transition-shadow transition-border duration-200 hover:border-primary/50 hover:shadow-md',
+          isDragging && 'shadow-2xl ring-2 ring-primary/50'
         )}
       >
         <div className="p-3">
@@ -377,21 +367,20 @@ function DraggableTerminalCard({
       {...attributes}
       {...listeners}
       onClick={(e) => {
-        if (!dragging && !isOverlay) {
+        if (!isDragging) {
           onConnect?.(terminal.id);
         }
       }}
       onContextMenu={(e) => {
-        if (onContextMenu && !isOverlay) {
+        if (onContextMenu) {
           e.preventDefault();
           onContextMenu(e, terminal);
         }
       }}
       className={cn(
         'group relative bg-card border border-border rounded-xl overflow-hidden cursor-grab active:cursor-grabbing',
-        !dragging && 'transition-shadow transition-border duration-200 hover:border-primary/50 hover:shadow-md',
-        dragging && !isOverlay && 'opacity-30',
-        isOverlay && 'shadow-2xl ring-2 ring-primary/50 scale-[1.02] rotate-1 bg-card/95 backdrop-blur-sm'
+        !isDragging && 'transition-shadow transition-border duration-200 hover:border-primary/50 hover:shadow-md',
+        isDragging && 'shadow-2xl ring-2 ring-primary/50'
       )}
     >
       <div className="p-5">
@@ -989,7 +978,6 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
   const [showSharedOnly, setShowSharedOnly] = useState(false);
   const [sharedTerminals, setSharedTerminals] = useState<SharedTerminal[]>([]);
   const [terminalToDelete, setTerminalToDelete] = useState<TerminalData | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -1253,10 +1241,6 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
     }
   };
 
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
-
   const handleDragOver = (event: DragEndEvent) => {
     const { over } = event;
     setOverId(over?.id as string | null);
@@ -1264,7 +1248,6 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
-    setActiveId(null);
     setOverId(null);
 
     if (!over) return;
@@ -1416,7 +1399,6 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
         measuring={{
@@ -1784,32 +1766,10 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
                     onRenameComplete={() => setTerminalToRename(null)}
                     isDark={isDark}
                     isCompact={viewMode === 'compact'}
-                    isDragging={activeId === terminal.id}
                   />
                 </div>
               ))}
             </div>
-
-            {/* Drag Overlay - Ghost preview that follows cursor */}
-            <DragOverlay
-              dropAnimation={{
-                duration: 200,
-                easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
-              }}
-            >
-              {activeId ? (
-                <DraggableTerminalCard
-                  terminal={(filteredTerminals as TerminalData[]).find((t) => t.id === activeId)!}
-                  onDelete={() => {}}
-                  onRename={() => {}}
-                  onToggleFavorite={() => {}}
-                  onConnect={() => {}}
-                  isDark={isDark}
-                  isCompact={viewMode === 'compact'}
-                  isOverlay
-                />
-              ) : null}
-            </DragOverlay>
           </SortableContext>
         )}
 
