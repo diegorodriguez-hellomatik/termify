@@ -107,6 +107,7 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
     { href: '/terminals', icon: LayoutDashboard, label: 'Dashboard' },
     { href: '/workspace', icon: LayoutGrid, label: 'Workspace' },
     { href: '/api-keys', icon: Key, label: 'API Keys' },
+    { href: '/settings', icon: Settings, label: 'Settings' },
   ];
 
   const isActive = (href: string) => pathname === href || pathname?.startsWith(href + '/');
@@ -163,18 +164,6 @@ export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
           {/* Bottom icons */}
           <div className="flex flex-col items-center gap-1">
             <NotificationsDropdown />
-            <Link
-              href="/settings"
-              className={cn(
-                'w-10 h-10 flex items-center justify-center rounded-md transition-colors',
-                isSettingsActive
-                  ? 'text-foreground bg-muted'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-              )}
-              title="Settings"
-            >
-              <Settings className="h-5 w-5" />
-            </Link>
             <button
               onClick={onSignOut}
               className="w-10 h-10 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
