@@ -1,7 +1,7 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface ApiOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';
   body?: unknown;
   token?: string;
 }
@@ -76,6 +76,22 @@ export const authApi = {
     }),
 };
 
+// SSH Test Connection Response
+export interface SSHTestResult {
+  connected: boolean;
+  serverInfo?: string;
+  error?: string;
+}
+
+// SSH Terminal Config
+export interface SSHConfig {
+  host: string;
+  port?: number;
+  username: string;
+  password?: string;
+  privateKey?: string;
+}
+
 // Terminals API
 export const terminalsApi = {
   list: (token: string) =>
@@ -109,6 +125,30 @@ export const terminalsApi = {
       body: { isFavorite },
       token,
     }),
+
+  // SSH Methods
+  testSSH: (data: SSHConfig, token: string) =>
+    api<SSHTestResult>('/api/terminals/ssh/test', {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  createSSH: (
+    data: {
+      name?: string;
+      cols?: number;
+      rows?: number;
+      categoryId?: string;
+      host: string;
+      port?: number;
+      username: string;
+      password?: string;
+      privateKey?: string;
+    },
+    token: string
+  ) =>
+    api<any>('/api/terminals/ssh', { method: 'POST', body: data, token }),
 };
 
 // Categories API
@@ -282,4 +322,87 @@ export const auditlogsApi = {
 
   clear: (token: string) =>
     api<void>('/api/auditlogs', { method: 'DELETE', token }),
+};
+
+// API Keys API
+export interface ApiKey {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  key?: string; // Only returned on creation
+  permissions: string[];
+  lastUsedAt?: string | null;
+  usageCount: number;
+  expiresAt?: string | null;
+  createdAt: string;
+}
+
+export const apikeysApi = {
+  list: (token: string) =>
+    api<{ apiKeys: ApiKey[] }>('/api/apikeys', { token }),
+
+  create: (
+    data: { name: string; permissions?: string[]; expiresIn?: number },
+    token: string
+  ) =>
+    api<{ apiKey: ApiKey; warning: string }>('/api/apikeys', { method: 'POST', body: data, token }),
+
+  update: (
+    id: string,
+    data: { name?: string; permissions?: string[] },
+    token: string
+  ) =>
+    api<{ apiKey: ApiKey }>(`/api/apikeys/${id}`, { method: 'PATCH', body: data, token }),
+
+  revoke: (id: string, token: string) =>
+    api<{ message: string }>(`/api/apikeys/${id}`, { method: 'DELETE', token }),
+};
+
+// Files API (for terminal file explorer)
+export interface FileEntry {
+  name: string;
+  path: string;
+  relativePath: string;
+  isDirectory: boolean;
+  isSymlink: boolean;
+  size: number;
+  modifiedAt: string | null;
+  extension: string | null;
+}
+
+export interface FilesResponse {
+  path: string;
+  relativePath: string;
+  parentPath: string;
+  canGoUp: boolean;
+  files: FileEntry[];
+}
+
+export interface FileContent {
+  path: string;
+  name: string;
+  extension: string;
+  size: number;
+  isBinary: boolean;
+  isTruncated: boolean;
+  content: string | null;
+  modifiedAt?: string;
+  message?: string;
+}
+
+export const filesApi = {
+  list: (terminalId: string, path: string, token: string) =>
+    api<FilesResponse>(`/api/terminals/${terminalId}/files?path=${encodeURIComponent(path)}`, { token }),
+
+  read: (terminalId: string, filePath: string, token: string, maxSize?: number) => {
+    const params = new URLSearchParams({ path: filePath });
+    if (maxSize) params.set('maxSize', maxSize.toString());
+    return api<FileContent>(`/api/terminals/${terminalId}/file?${params}`, { token });
+  },
+
+  write: (terminalId: string, filePath: string, content: string, token: string) =>
+    api<{ path: string; name: string; size: number; modifiedAt: string }>(
+      `/api/terminals/${terminalId}/file`,
+      { method: 'PUT', body: { path: filePath, content }, token }
+    ),
 };

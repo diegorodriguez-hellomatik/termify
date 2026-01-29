@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Keyboard } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -63,7 +64,7 @@ export function ShortcutsHelpModal({
     }
   }, [show]);
 
-  if (!show) return null;
+  if (!show || typeof window === 'undefined') return null;
 
   // Group shortcuts by category
   const navigationShortcuts = shortcuts.filter((s) =>
@@ -73,7 +74,7 @@ export function ShortcutsHelpModal({
     ['Escape', '?'].includes(s.key)
   );
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
@@ -189,7 +190,8 @@ export function ShortcutsHelpModal({
           </p>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

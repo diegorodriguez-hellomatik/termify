@@ -243,7 +243,7 @@ function WorkspaceContent() {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex-1 flex flex-col min-h-0">
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-2 border-b border-border"
@@ -267,8 +267,8 @@ function WorkspaceContent() {
               onOpenQuickSwitcher={() => setShowQuickSwitcher(true)}
               onOpenShortcuts={() => setShowShortcuts(true)}
               onOpenThemes={() => setShowThemeSelector(!showThemeSelector)}
-              onSplitHorizontal={activeTab ? () => handleSplitHorizontal(activeTab.terminalId) : undefined}
-              onSplitVertical={activeTab ? () => handleSplitVertical(activeTab.terminalId) : undefined}
+              onSplitHorizontal={activeTab?.type === 'terminal' && activeTab.terminalId ? () => handleSplitHorizontal(activeTab.terminalId!) : undefined}
+              onSplitVertical={activeTab?.type === 'terminal' && activeTab.terminalId ? () => handleSplitVertical(activeTab.terminalId!) : undefined}
             />
           )}
 
@@ -279,8 +279,11 @@ function WorkspaceContent() {
       {/* Tab bar */}
       <TabBar onAddTab={handleAddTab} isDark={isDark} />
 
-      {/* Main content */}
-      <div className="flex-1 min-h-0">
+      {/* Main content - header ~44px, tabs ~40px */}
+      <div
+        className="relative w-full"
+        style={{ height: 'calc(100vh - 44px - 40px)' }}
+      >
         {!layout || tabs.length === 0 ? (
           // Empty state
           <div
@@ -349,6 +352,7 @@ function WorkspaceContent() {
               node={layout}
               token={session.accessToken}
               isDark={isDark}
+              activeTerminalId={activeTab?.type === 'terminal' ? activeTab.terminalId : tabs.find(t => t.type === 'terminal')?.terminalId}
               onSplitHorizontal={handleSplitHorizontal}
               onSplitVertical={handleSplitVertical}
             />

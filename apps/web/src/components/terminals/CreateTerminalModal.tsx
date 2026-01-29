@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Terminal, Server, Eye, EyeOff, Key } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { X, Terminal, Server, Eye, EyeOff, Key, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { terminalsApi } from '@/lib/api';
 
 interface CreateTerminalModalProps {
   isOpen: boolean;
@@ -10,6 +12,7 @@ interface CreateTerminalModalProps {
   onCreateLocal: () => void;
   onCreateSSH: (config: SSHConfig) => void;
   isDark: boolean;
+  token?: string;
 }
 
 export interface SSHConfig {
@@ -23,6 +26,7 @@ export interface SSHConfig {
 
 type TerminalType = 'local' | 'ssh' | null;
 type AuthMethod = 'password' | 'key';
+type ConnectionStatus = 'idle' | 'testing' | 'success' | 'error';
 
 export function CreateTerminalModal({
   isOpen,
@@ -30,6 +34,7 @@ export function CreateTerminalModal({
   onCreateLocal,
   onCreateSSH,
   isDark,
+  token,
 }: CreateTerminalModalProps) {
   const [terminalType, setTerminalType] = useState<TerminalType>(null);
   const [authMethod, setAuthMethod] = useState<AuthMethod>('password');
@@ -43,6 +48,11 @@ export function CreateTerminalModal({
   const [privateKey, setPrivateKey] = useState('');
   const [connectionName, setConnectionName] = useState('');
 
+  // Connection status
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('idle');
+  const [connectionMessage, setConnectionMessage] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+
   const resetForm = () => {
     setTerminalType(null);
     setAuthMethod('password');
@@ -52,6 +62,9 @@ export function CreateTerminalModal({
     setPassword('');
     setPrivateKey('');
     setConnectionName('');
+    setConnectionStatus('idle');
+    setConnectionMessage('');
+    setIsCreating(false);
   };
 
   const handleClose = () => {
@@ -64,24 +77,89 @@ export function CreateTerminalModal({
     onCreateLocal();
   };
 
-  const handleCreateSSH = () => {
-    if (!host || !username) return;
+  const testConnection = async () => {
+    if (!host || !username || !token) return;
 
-    onCreateSSH({
-      host,
-      port: parseInt(port, 10) || 22,
-      username,
-      password: authMethod === 'password' ? password : undefined,
-      privateKey: authMethod === 'key' ? privateKey : undefined,
-      name: connectionName || `${username}@${host}`,
-    });
-    handleClose();
+    setConnectionStatus('testing');
+    setConnectionMessage('Testing connection...');
+
+    try {
+      const response = await terminalsApi.testSSH(
+        {
+          host,
+          port: parseInt(port, 10) || 22,
+          username,
+          password: authMethod === 'password' ? password : undefined,
+          privateKey: authMethod === 'key' ? privateKey : undefined,
+        },
+        token
+      );
+
+      if (response.success && response.data?.connected) {
+        setConnectionStatus('success');
+        setConnectionMessage(response.data.serverInfo || 'Connection successful!');
+      } else {
+        setConnectionStatus('error');
+        setConnectionMessage(response.data?.error || response.error?.toString() || 'Connection failed');
+      }
+    } catch (error) {
+      setConnectionStatus('error');
+      setConnectionMessage(error instanceof Error ? error.message : 'Connection failed');
+    }
   };
 
-  if (!isOpen) return null;
+  const handleCreateSSH = async () => {
+    if (!host || !username || !token) return;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    setIsCreating(true);
+
+    try {
+      const response = await terminalsApi.createSSH(
+        {
+          name: connectionName || `${username}@${host}`,
+          host,
+          port: parseInt(port, 10) || 22,
+          username,
+          password: authMethod === 'password' ? password : undefined,
+          privateKey: authMethod === 'key' ? privateKey : undefined,
+        },
+        token
+      );
+
+      if (response.success && response.data) {
+        // Call the callback with the config
+        onCreateSSH({
+          host,
+          port: parseInt(port, 10) || 22,
+          username,
+          password: authMethod === 'password' ? password : undefined,
+          privateKey: authMethod === 'key' ? privateKey : undefined,
+          name: connectionName || `${username}@${host}`,
+        });
+        handleClose();
+      } else {
+        setConnectionStatus('error');
+        setConnectionMessage(
+          Array.isArray(response.error)
+            ? response.error.map((e: any) => e.message).join(', ')
+            : response.error?.toString() || 'Failed to create SSH terminal'
+        );
+      }
+    } catch (error) {
+      setConnectionStatus('error');
+      setConnectionMessage(error instanceof Error ? error.message : 'Failed to create SSH terminal');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  if (!isOpen || typeof window === 'undefined') return null;
+
+  const canTest = host && username && (authMethod === 'password' ? password : privateKey);
+  const canConnect = connectionStatus === 'success';
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
@@ -92,7 +170,7 @@ export function CreateTerminalModal({
       <div
         className={cn(
           'relative w-full max-w-md rounded-xl shadow-2xl overflow-hidden',
-          'animate-in fade-in-0 zoom-in-95 duration-200'
+          'animate-in fade-in-0 zoom-in-95 duration-100'
         )}
         style={{
           backgroundColor: isDark ? '#1a1a1a' : '#ffffff',
@@ -113,7 +191,7 @@ export function CreateTerminalModal({
           <button
             onClick={handleClose}
             className={cn(
-              'p-2 rounded-lg transition-colors',
+              'p-2 rounded-lg transition-colors duration-75',
               isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'
             )}
           >
@@ -137,7 +215,7 @@ export function CreateTerminalModal({
               <button
                 onClick={() => handleCreateLocal()}
                 className={cn(
-                  'w-full flex items-center gap-4 p-4 rounded-lg border-2 transition-all text-left',
+                  'w-full flex items-center gap-4 p-4 rounded-lg border-2 transition-all duration-75 text-left',
                   'hover:border-primary hover:bg-primary/5',
                   isDark ? 'border-gray-700' : 'border-gray-200'
                 )}
@@ -168,7 +246,7 @@ export function CreateTerminalModal({
               <button
                 onClick={() => setTerminalType('ssh')}
                 className={cn(
-                  'w-full flex items-center gap-4 p-4 rounded-lg border-2 transition-all text-left',
+                  'w-full flex items-center gap-4 p-4 rounded-lg border-2 transition-all duration-75 text-left',
                   'hover:border-primary hover:bg-primary/5',
                   isDark ? 'border-gray-700' : 'border-gray-200'
                 )}
@@ -232,7 +310,10 @@ export function CreateTerminalModal({
                   <input
                     type="text"
                     value={host}
-                    onChange={(e) => setHost(e.target.value)}
+                    onChange={(e) => {
+                      setHost(e.target.value);
+                      setConnectionStatus('idle');
+                    }}
                     placeholder="192.168.1.1 or server.com"
                     className={cn(
                       'w-full px-3 py-2 rounded-lg text-sm font-mono',
@@ -252,7 +333,10 @@ export function CreateTerminalModal({
                   <input
                     type="text"
                     value={port}
-                    onChange={(e) => setPort(e.target.value)}
+                    onChange={(e) => {
+                      setPort(e.target.value);
+                      setConnectionStatus('idle');
+                    }}
                     placeholder="22"
                     className={cn(
                       'w-full px-3 py-2 rounded-lg text-sm font-mono',
@@ -275,7 +359,10 @@ export function CreateTerminalModal({
                 <input
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    setConnectionStatus('idle');
+                  }}
                   placeholder="root"
                   className={cn(
                     'w-full px-3 py-2 rounded-lg text-sm font-mono',
@@ -296,9 +383,12 @@ export function CreateTerminalModal({
                 </label>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setAuthMethod('password')}
+                    onClick={() => {
+                      setAuthMethod('password');
+                      setConnectionStatus('idle');
+                    }}
                     className={cn(
-                      'flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors',
+                      'flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors duration-75',
                       authMethod === 'password'
                         ? 'bg-primary text-primary-foreground'
                         : isDark
@@ -313,9 +403,12 @@ export function CreateTerminalModal({
                     Password
                   </button>
                   <button
-                    onClick={() => setAuthMethod('key')}
+                    onClick={() => {
+                      setAuthMethod('key');
+                      setConnectionStatus('idle');
+                    }}
                     className={cn(
-                      'flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors',
+                      'flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors duration-75',
                       authMethod === 'key'
                         ? 'bg-primary text-primary-foreground'
                         : isDark
@@ -339,13 +432,16 @@ export function CreateTerminalModal({
                     className="block text-sm font-medium mb-1"
                     style={{ color: isDark ? '#ccc' : '#444' }}
                   >
-                    Password
+                    Password *
                   </label>
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setConnectionStatus('idle');
+                      }}
                       placeholder="••••••••"
                       className={cn(
                         'w-full px-3 py-2 pr-10 rounded-lg text-sm font-mono',
@@ -373,11 +469,14 @@ export function CreateTerminalModal({
                     className="block text-sm font-medium mb-1"
                     style={{ color: isDark ? '#ccc' : '#444' }}
                   >
-                    Private Key
+                    Private Key *
                   </label>
                   <textarea
                     value={privateKey}
-                    onChange={(e) => setPrivateKey(e.target.value)}
+                    onChange={(e) => {
+                      setPrivateKey(e.target.value);
+                      setConnectionStatus('idle');
+                    }}
                     placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
                     rows={4}
                     className={cn(
@@ -390,12 +489,29 @@ export function CreateTerminalModal({
                 </div>
               )}
 
+              {/* Connection status message */}
+              {connectionStatus !== 'idle' && (
+                <div
+                  className={cn(
+                    'flex items-center gap-2 p-3 rounded-lg text-sm',
+                    connectionStatus === 'testing' && (isDark ? 'bg-blue-500/10 text-blue-400' : 'bg-blue-50 text-blue-600'),
+                    connectionStatus === 'success' && (isDark ? 'bg-green-500/10 text-green-400' : 'bg-green-50 text-green-600'),
+                    connectionStatus === 'error' && (isDark ? 'bg-red-500/10 text-red-400' : 'bg-red-50 text-red-600')
+                  )}
+                >
+                  {connectionStatus === 'testing' && <Loader2 size={16} className="animate-spin" />}
+                  {connectionStatus === 'success' && <CheckCircle size={16} />}
+                  {connectionStatus === 'error' && <AlertCircle size={16} />}
+                  <span>{connectionMessage}</span>
+                </div>
+              )}
+
               {/* Actions */}
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setTerminalType(null)}
                   className={cn(
-                    'flex-1 px-4 py-2 rounded-lg text-sm transition-colors',
+                    'px-4 py-2 rounded-lg text-sm transition-colors duration-75',
                     isDark ? 'bg-white/5 hover:bg-white/10' : 'bg-black/5 hover:bg-black/10'
                   )}
                   style={{ color: isDark ? '#ccc' : '#444' }}
@@ -403,21 +519,48 @@ export function CreateTerminalModal({
                   Back
                 </button>
                 <button
-                  onClick={handleCreateSSH}
-                  disabled={!host || !username}
+                  onClick={testConnection}
+                  disabled={!canTest || connectionStatus === 'testing'}
                   className={cn(
-                    'flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                    'flex-1 px-4 py-2 rounded-lg text-sm transition-colors duration-75',
+                    isDark ? 'bg-white/10 hover:bg-white/15' : 'bg-black/10 hover:bg-black/15',
+                    'disabled:opacity-50 disabled:cursor-not-allowed'
+                  )}
+                  style={{ color: isDark ? '#ccc' : '#444' }}
+                >
+                  {connectionStatus === 'testing' ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 size={16} className="animate-spin" />
+                      Testing...
+                    </span>
+                  ) : (
+                    'Test Connection'
+                  )}
+                </button>
+                <button
+                  onClick={handleCreateSSH}
+                  disabled={!canConnect || isCreating}
+                  className={cn(
+                    'flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-75',
                     'bg-primary text-primary-foreground hover:bg-primary/90',
                     'disabled:opacity-50 disabled:cursor-not-allowed'
                   )}
                 >
-                  Connect
+                  {isCreating ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 size={16} className="animate-spin" />
+                      Creating...
+                    </span>
+                  ) : (
+                    'Connect'
+                  )}
                 </button>
               </div>
             </div>
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

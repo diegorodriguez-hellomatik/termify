@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -9,14 +10,18 @@ import {
   closestCenter,
   KeyboardSensor,
   PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
+  DragMoveEvent,
   useDroppable,
   pointerWithin,
   rectIntersection,
+  MeasuringStrategy,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -56,6 +61,7 @@ import { TerminalThemeSelector } from '@/components/settings/TerminalThemeSelect
 import { KeyboardShortcutsProvider, useKeyboardShortcuts } from '@/contexts/KeyboardShortcutsContext';
 import { ShortcutsHelpModalWithContext } from '@/components/ui/ShortcutsHelpModal';
 import { CreateTerminalModal, SSHConfig } from '@/components/terminals/CreateTerminalModal';
+import { MobileTerminalList } from '@/components/mobile/MobileTerminalList';
 import { cn } from '@/lib/utils';
 
 interface TerminalData {
@@ -88,14 +94,16 @@ const STATUS_COLORS: Record<TerminalStatus, string> = {
   [TerminalStatus.CRASHED]: 'bg-red-500',
 };
 
-// Sortable Terminal Card Component
-function SortableTerminalCard({
+// Draggable Terminal Card Component - Smooth free movement
+function DraggableTerminalCard({
   terminal,
   onDelete,
   onRename,
   onToggleFavorite,
   isDark,
   isCompact,
+  isDragging,
+  isOverlay,
 }: {
   terminal: TerminalData;
   onDelete: (id: string) => void;
@@ -103,6 +111,8 @@ function SortableTerminalCard({
   onToggleFavorite: (id: string, isFavorite: boolean) => void;
   isDark: boolean;
   isCompact?: boolean;
+  isDragging?: boolean;
+  isOverlay?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(terminal.name);
@@ -112,14 +122,24 @@ function SortableTerminalCard({
     setNodeRef,
     transform,
     transition,
-    isDragging,
-  } = useSortable({ id: terminal.id });
+    isDragging: isSortableDragging,
+    over,
+  } = useSortable({
+    id: terminal.id,
+    transition: {
+      duration: 250,
+      easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+    },
+  });
+
+  const dragging = isDragging || isSortableDragging;
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 1000 : 1,
+    transition: dragging ? undefined : transition,
+    opacity: dragging && !isOverlay ? 0.3 : 1,
+    zIndex: dragging ? 1000 : 1,
+    scale: isOverlay ? 1.02 : 1,
   };
 
   if (isCompact) {
@@ -129,9 +149,12 @@ function SortableTerminalCard({
         style={style}
         {...attributes}
         {...listeners}
-        className={`group relative bg-card border border-border rounded-lg overflow-hidden transition-all duration-300 hover:shadow-md cursor-grab active:cursor-grabbing ${
-          isDragging ? 'shadow-xl scale-105' : ''
-        }`}
+        className={cn(
+          'group relative bg-card border border-border rounded-lg overflow-hidden cursor-grab active:cursor-grabbing',
+          dragging && !isOverlay && 'opacity-30',
+          isOverlay && 'shadow-2xl ring-2 ring-primary/50 scale-[1.02] rotate-1',
+          !dragging && 'hover:border-primary/50 transition-colors'
+        )}
       >
         <div className="p-3">
           <div className="flex items-center justify-between">
@@ -203,9 +226,13 @@ function SortableTerminalCard({
       style={style}
       {...attributes}
       {...listeners}
-      className={`group relative bg-card border border-border rounded-xl overflow-hidden transition-all duration-300 hover:shadow-lg cursor-grab active:cursor-grabbing ${
-        isDragging ? 'shadow-2xl scale-105' : ''
-      }`}
+      className={cn(
+        'group relative bg-card border border-border rounded-xl overflow-hidden cursor-grab active:cursor-grabbing',
+        'transition-colors duration-200',
+        dragging && !isOverlay && 'opacity-30',
+        isOverlay && 'shadow-2xl ring-2 ring-primary/50 scale-[1.02] rotate-1 bg-card/95 backdrop-blur-sm',
+        !dragging && 'hover:border-primary/50'
+      )}
     >
       <div className="p-5">
         {/* Header row with terminal info and action buttons */}
@@ -373,7 +400,9 @@ function DeleteConfirmModal({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  return (
+  if (typeof window === 'undefined') return null;
+
+  return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
@@ -483,7 +512,8 @@ function DeleteConfirmModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -589,9 +619,18 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
 
   const { setShowHelp } = useKeyboardShortcuts();
 
+  // Smooth drag sensors with minimal activation distance
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 5, // Start drag after 5px movement
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 150, // Long press on mobile
+        tolerance: 5,
+      },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -660,28 +699,41 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
   };
 
   const handleCreateSSHTerminal = async (config: SSHConfig) => {
-    if (!session?.accessToken) return;
-
+    // The modal now creates the terminal via API
+    // Just reload data and navigate
     setShowCreateModal(false);
     setCreating(true);
-    try {
-      // For now, create a terminal with SSH info in the name
-      // TODO: Implement proper SSH backend support
-      const response = await terminalsApi.create(
-        {
-          name: config.name || `SSH: ${config.username}@${config.host}`,
-          categoryId: selectedCategory || undefined,
-        },
-        session.accessToken
-      );
 
-      if (response.success && response.data) {
-        // TODO: Pass SSH config to terminal connection
-        router.push(`/terminals/${response.data.id}?ssh=${encodeURIComponent(JSON.stringify(config))}`);
+    // Reload the terminal list to get the new SSH terminal
+    await loadData();
+
+    // Find the newest terminal (should be the SSH one just created)
+    if (session?.accessToken) {
+      try {
+        const response = await terminalsApi.list(session.accessToken);
+        const terminalsList = response.data?.terminals;
+        if (response.success && terminalsList && terminalsList.length > 0) {
+          // Find the SSH terminal we just created by name
+          const sshTerminal = terminalsList.find(
+            (t: any) => t.name === (config.name || `${config.username}@${config.host}`)
+          );
+          if (sshTerminal) {
+            router.push(`/terminals/${sshTerminal.id}`);
+            return;
+          }
+          // Fallback to the most recent terminal
+          const newest = [...terminalsList].sort(
+            (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          )[0];
+          if (newest) {
+            router.push(`/terminals/${newest.id}`);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to find created SSH terminal:', error);
+      } finally {
+        setCreating(false);
       }
-    } catch (error) {
-      console.error('Failed to create SSH terminal:', error);
-      setCreating(false);
     }
   };
 
@@ -893,34 +945,57 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
 
   if (loading) {
     return (
-      <div className="p-8">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 w-48 bg-muted rounded" />
-          <div className="flex gap-2 mb-6">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-8 w-24 bg-muted rounded-full" />
-            ))}
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-48 bg-muted rounded-lg" />
-            ))}
+      <>
+        {/* Mobile loading skeleton */}
+        <div className="md:hidden h-[calc(100vh-8rem)]">
+          <MobileTerminalList terminals={[]} isLoading={true} />
+        </div>
+        {/* Desktop loading skeleton */}
+        <div className="hidden md:block p-8">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 w-48 bg-muted rounded" />
+            <div className="flex gap-2 mb-6">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-8 w-24 bg-muted rounded-full" />
+              ))}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-48 bg-muted rounded-lg" />
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={pointerWithin}
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="p-8">
-        {/* Header */}
+    <>
+      {/* Mobile View - Status monitoring interface */}
+      <div className="md:hidden h-[calc(100vh-8rem)]">
+        <MobileTerminalList
+          terminals={terminals}
+          onRefresh={loadData}
+          isLoading={loading}
+        />
+      </div>
+
+      {/* Desktop View - Full feature interface */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+        measuring={{
+          droppable: {
+            strategy: MeasuringStrategy.Always,
+          },
+        }}
+      >
+        <div className="hidden md:block p-8">
+          {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Terminals</h1>
@@ -1152,7 +1227,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
           >
             <div
               className={cn(
-                'grid gap-4',
+                'grid gap-4 transition-all',
                 viewMode === 'compact'
                   ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
                   : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
@@ -1164,17 +1239,38 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
                   className="slide-up"
                   style={{ animationDelay: `${index * 0.05}s` }}
                 >
-                  <SortableTerminalCard
+                  <DraggableTerminalCard
                     terminal={terminal}
                     onDelete={handleDeleteTerminal}
                     onRename={handleRenameTerminal}
                     onToggleFavorite={handleToggleFavorite}
                     isDark={isDark}
                     isCompact={viewMode === 'compact'}
+                    isDragging={activeId === terminal.id}
                   />
                 </div>
               ))}
             </div>
+
+            {/* Drag Overlay - Ghost preview that follows cursor */}
+            <DragOverlay
+              dropAnimation={{
+                duration: 200,
+                easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
+              }}
+            >
+              {activeId ? (
+                <DraggableTerminalCard
+                  terminal={filteredTerminals.find((t) => t.id === activeId)!}
+                  onDelete={() => {}}
+                  onRename={() => {}}
+                  onToggleFavorite={() => {}}
+                  isDark={isDark}
+                  isCompact={viewMode === 'compact'}
+                  isOverlay
+                />
+              ) : null}
+            </DragOverlay>
           </SortableContext>
         )}
 
@@ -1198,9 +1294,11 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
           onCreateLocal={handleCreateLocalTerminal}
           onCreateSSH={handleCreateSSHTerminal}
           isDark={isDark}
+          token={session?.accessToken}
         />
-      </div>
-    </DndContext>
+        </div>
+      </DndContext>
+    </>
   );
 }
 

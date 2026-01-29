@@ -6,6 +6,7 @@ import os from 'os';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware } from '../auth/middleware.js';
 import { getPTYManager } from '../pty/PTYManager.js';
+import { SSHManager } from '../ssh/SSHManager.js';
 import { DEFAULT_COLS, DEFAULT_ROWS, TerminalStatus } from '@claude-terminal/shared';
 
 const router = Router();
@@ -20,6 +21,30 @@ const createTerminalSchema = z.object({
   rows: z.number().int().min(10).max(200).optional().default(DEFAULT_ROWS),
   cwd: z.string().max(1000).optional(),
   categoryId: z.string().optional(),
+});
+
+const createSSHTerminalSchema = z.object({
+  name: z.string().min(1).max(100).optional().default('SSH Terminal'),
+  cols: z.number().int().min(40).max(500).optional().default(DEFAULT_COLS),
+  rows: z.number().int().min(10).max(200).optional().default(DEFAULT_ROWS),
+  categoryId: z.string().optional(),
+  host: z.string().min(1).max(255),
+  port: z.number().int().min(1).max(65535).optional().default(22),
+  username: z.string().min(1).max(100),
+  password: z.string().optional(),
+  privateKey: z.string().optional(),
+}).refine(data => data.password || data.privateKey, {
+  message: 'Either password or privateKey must be provided',
+});
+
+const testSSHConnectionSchema = z.object({
+  host: z.string().min(1).max(255),
+  port: z.number().int().min(1).max(65535).optional().default(22),
+  username: z.string().min(1).max(100),
+  password: z.string().optional(),
+  privateKey: z.string().optional(),
+}).refine(data => data.password || data.privateKey, {
+  message: 'Either password or privateKey must be provided',
 });
 
 const updateTerminalSchema = z.object({
@@ -205,6 +230,140 @@ router.post('/', async (req: Request, res: Response) => {
     }
     console.error('[API] Error creating terminal:', error);
     res.status(500).json({ success: false, error: 'Failed to create terminal' });
+  }
+});
+
+/**
+ * POST /api/terminals/ssh/test
+ * Test SSH connection without creating a terminal
+ */
+router.post('/ssh/test', async (req: Request, res: Response) => {
+  try {
+    const data = testSSHConnectionSchema.parse(req.body);
+
+    const sshManager = SSHManager.getInstance();
+    const result = await sshManager.testConnection({
+      host: data.host,
+      port: data.port,
+      username: data.username,
+      password: data.password,
+      privateKey: data.privateKey,
+    });
+
+    res.json({
+      success: result.success,
+      data: {
+        connected: result.success,
+        serverInfo: result.serverInfo,
+        error: result.error,
+      },
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ success: false, error: error.errors });
+      return;
+    }
+    console.error('[API] Error testing SSH connection:', error);
+    res.status(500).json({ success: false, error: 'Failed to test SSH connection' });
+  }
+});
+
+/**
+ * POST /api/terminals/ssh
+ * Create a new SSH terminal
+ */
+router.post('/ssh', async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const data = createSSHTerminalSchema.parse(req.body);
+
+    // Test connection first
+    const sshManager = SSHManager.getInstance();
+    const testResult = await sshManager.testConnection({
+      host: data.host,
+      port: data.port,
+      username: data.username,
+      password: data.password,
+      privateKey: data.privateKey,
+    });
+
+    if (!testResult.success) {
+      res.status(400).json({
+        success: false,
+        error: testResult.error || 'Failed to connect to SSH server',
+      });
+      return;
+    }
+
+    // Get the highest position
+    const lastTerminal = await prisma.terminal.findFirst({
+      where: { userId },
+      orderBy: { position: 'desc' },
+    });
+    const position = (lastTerminal?.position ?? -1) + 1;
+
+    // Verify category ownership if provided
+    if (data.categoryId) {
+      const category = await prisma.category.findFirst({
+        where: { id: data.categoryId, userId },
+      });
+      if (!category) {
+        res.status(400).json({ success: false, error: 'Invalid category' });
+        return;
+      }
+    }
+
+    // Create the SSH terminal
+    const terminal = await prisma.terminal.create({
+      data: {
+        userId,
+        name: data.name,
+        type: 'SSH',
+        cols: data.cols,
+        rows: data.rows,
+        categoryId: data.categoryId,
+        position,
+        status: TerminalStatus.STOPPED,
+        sshHost: data.host,
+        sshPort: data.port,
+        sshUsername: data.username,
+        sshPassword: data.password,
+        sshPrivateKey: data.privateKey,
+      },
+      include: {
+        category: {
+          select: { id: true, name: true, color: true, icon: true },
+        },
+      },
+    });
+
+    // Log the action
+    await prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'terminal.create',
+        resource: 'terminal',
+        resourceId: terminal.id,
+        details: { name: data.name, type: 'SSH', host: data.host },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      },
+    });
+
+    // Don't return sensitive data
+    const { sshPassword, sshPrivateKey, ...safeTerminal } = terminal;
+
+    res.status(201).json({
+      success: true,
+      data: safeTerminal,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ success: false, error: error.errors });
+      return;
+    }
+    console.error('[API] Error creating SSH terminal:', error);
+    res.status(500).json({ success: false, error: 'Failed to create SSH terminal' });
   }
 });
 

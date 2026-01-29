@@ -9,6 +9,7 @@ import {
 } from '@claude-terminal/shared';
 import { ConnectionManager } from './ConnectionManager.js';
 import { getPTYManager } from '../pty/PTYManager.js';
+import { SSHManager } from '../ssh/SSHManager.js';
 import { prisma } from '../lib/prisma.js';
 
 interface TokenPayload {
@@ -33,6 +34,7 @@ export class TerminalWebSocketServer {
 
     this.setupEventHandlers();
     this.setupPTYHandlers();
+    this.setupSSHHandlers();
 
     console.log('[WS] WebSocket server initialized');
   }
@@ -277,6 +279,23 @@ export class TerminalWebSocketServer {
       return;
     }
 
+    // Check terminal type and route to appropriate handler
+    if (terminal.type === 'SSH') {
+      await this.handleSSHTerminalStart(ws, userId, terminalId, terminal);
+    } else {
+      await this.handlePTYTerminalStart(ws, userId, terminalId, terminal);
+    }
+  }
+
+  /**
+   * Handle PTY (local) terminal start
+   */
+  private async handlePTYTerminalStart(
+    ws: WebSocket,
+    userId: string,
+    terminalId: string,
+    terminal: any
+  ): Promise<void> {
     const ptyManager = getPTYManager();
 
     // Check if already running
@@ -313,7 +332,7 @@ export class TerminalWebSocketServer {
 
       this.broadcastStatus(terminalId, TerminalStatus.RUNNING);
     } catch (error) {
-      console.error(`[WS] Failed to start terminal ${terminalId}:`, error);
+      console.error(`[WS] Failed to start PTY terminal ${terminalId}:`, error);
 
       await prisma.terminal.update({
         where: { id: terminalId },
@@ -324,6 +343,85 @@ export class TerminalWebSocketServer {
         type: 'terminal.error',
         terminalId,
         error: error instanceof Error ? error.message : 'Failed to start terminal',
+      });
+
+      this.broadcastStatus(terminalId, TerminalStatus.CRASHED);
+    }
+  }
+
+  /**
+   * Handle SSH terminal start
+   */
+  private async handleSSHTerminalStart(
+    ws: WebSocket,
+    userId: string,
+    terminalId: string,
+    terminal: any
+  ): Promise<void> {
+    const sshManager = SSHManager.getInstance();
+
+    // Check if already running
+    if (sshManager.hasSession(terminalId)) {
+      this.send(ws, {
+        type: 'terminal.status',
+        terminalId,
+        status: TerminalStatus.RUNNING,
+      });
+      return;
+    }
+
+    // Validate SSH config
+    if (!terminal.sshHost || !terminal.sshUsername) {
+      this.send(ws, {
+        type: 'terminal.error',
+        terminalId,
+        error: 'SSH configuration is incomplete',
+      });
+      return;
+    }
+
+    try {
+      // Update status to starting
+      await prisma.terminal.update({
+        where: { id: terminalId },
+        data: { status: TerminalStatus.STARTING },
+      });
+
+      this.broadcastStatus(terminalId, TerminalStatus.STARTING);
+
+      // Create SSH session
+      await sshManager.createSession(
+        terminalId,
+        {
+          host: terminal.sshHost,
+          port: terminal.sshPort || 22,
+          username: terminal.sshUsername,
+          password: terminal.sshPassword || undefined,
+          privateKey: terminal.sshPrivateKey || undefined,
+        },
+        terminal.cols,
+        terminal.rows
+      );
+
+      // Update status to running
+      await prisma.terminal.update({
+        where: { id: terminalId },
+        data: { status: TerminalStatus.RUNNING, lastActiveAt: new Date() },
+      });
+
+      this.broadcastStatus(terminalId, TerminalStatus.RUNNING);
+    } catch (error) {
+      console.error(`[WS] Failed to start SSH terminal ${terminalId}:`, error);
+
+      await prisma.terminal.update({
+        where: { id: terminalId },
+        data: { status: TerminalStatus.CRASHED },
+      });
+
+      this.send(ws, {
+        type: 'terminal.error',
+        terminalId,
+        error: error instanceof Error ? error.message : 'Failed to connect to SSH server',
       });
 
       this.broadcastStatus(terminalId, TerminalStatus.CRASHED);
@@ -394,18 +492,34 @@ export class TerminalWebSocketServer {
     }
 
     const ptyManager = getPTYManager();
-    const instance = ptyManager.get(terminalId);
+    const sshManager = SSHManager.getInstance();
 
-    if (!instance || instance.userId !== userId) {
+    // Try PTY first
+    const ptyInstance = ptyManager.get(terminalId);
+    if (ptyInstance) {
+      if (ptyInstance.userId !== userId) {
+        this.send(ws, {
+          type: 'terminal.error',
+          terminalId,
+          error: 'Terminal not running or access denied',
+        });
+        return;
+      }
+      ptyManager.write(terminalId, data);
+    }
+    // Try SSH
+    else if (sshManager.hasSession(terminalId)) {
+      sshManager.write(terminalId, data);
+    }
+    // Neither running
+    else {
       this.send(ws, {
         type: 'terminal.error',
         terminalId,
-        error: 'Terminal not running or access denied',
+        error: 'Terminal not running',
       });
       return;
     }
-
-    ptyManager.write(terminalId, data);
 
     // Update last active (ignore if terminal was deleted)
     try {
@@ -429,13 +543,21 @@ export class TerminalWebSocketServer {
     rows: number
   ): Promise<void> {
     const ptyManager = getPTYManager();
-    const instance = ptyManager.get(terminalId);
+    const sshManager = SSHManager.getInstance();
 
-    if (!instance || instance.userId !== userId) {
-      return; // Silently ignore if not running
+    // Try PTY first
+    const ptyInstance = ptyManager.get(terminalId);
+    if (ptyInstance && ptyInstance.userId === userId) {
+      ptyManager.resize(terminalId, cols, rows);
     }
-
-    ptyManager.resize(terminalId, cols, rows);
+    // Try SSH
+    else if (sshManager.hasSession(terminalId)) {
+      sshManager.resize(terminalId, cols, rows);
+    }
+    // Not running, silently ignore
+    else {
+      return;
+    }
 
     // Update dimensions (ignore if terminal was deleted)
     try {
@@ -454,12 +576,105 @@ export class TerminalWebSocketServer {
   private setupPTYHandlers(): void {
     const ptyManager = getPTYManager();
 
+    // Track recent input to detect file-changing commands
+    const recentInputs = new Map<string, string>();
+    const pendingRefresh = new Map<string, NodeJS.Timeout>();
+
     // Forward PTY output to connected clients
     ptyManager.on('data', (terminalId: string, data: string) => {
       const message: ServerMessage = {
         type: 'terminal.output',
         terminalId,
         data,
+      };
+      this.connectionManager.broadcastToTerminal(
+        terminalId,
+        JSON.stringify(message)
+      );
+
+      // Check if recent input was a file-changing command
+      const recentInput = recentInputs.get(terminalId) || '';
+
+      // Commands that likely change files/directories
+      const fileChangingCommands = [
+        /^cd\s/i,
+        /^mkdir\s/i,
+        /^rmdir\s/i,
+        /^rm\s/i,
+        /^touch\s/i,
+        /^mv\s/i,
+        /^cp\s/i,
+        /^ln\s/i,
+        /^git\s+(checkout|pull|merge|rebase|reset|stash|clone)/i,
+        /^npm\s+(install|uninstall|update)/i,
+        /^yarn\s+(add|remove|install)/i,
+        /^pnpm\s+(add|remove|install)/i,
+        /^unzip\s/i,
+        /^tar\s/i,
+        /^wget\s/i,
+        /^curl\s.*-o/i,
+      ];
+
+      const mightChangeFiles = fileChangingCommands.some(pattern => pattern.test(recentInput.trim()));
+
+      // Detect shell prompt patterns that indicate command completed
+      const promptPatterns = [
+        /\$\s*$/, />\s*$/, /❯\s*$/, /#\s*$/, /\]\s*$/,
+        /➜\s*$/, /λ\s*$/, /⟩\s*$/,
+      ];
+      const hasPrompt = promptPatterns.some(p => p.test(data));
+
+      if (mightChangeFiles && hasPrompt) {
+        // Debounce file refresh notifications
+        if (pendingRefresh.has(terminalId)) {
+          clearTimeout(pendingRefresh.get(terminalId)!);
+        }
+
+        pendingRefresh.set(terminalId, setTimeout(() => {
+          pendingRefresh.delete(terminalId);
+          recentInputs.delete(terminalId);
+
+          // Broadcast files.changed event
+          const refreshMessage: ServerMessage = {
+            type: 'files.changed',
+            terminalId,
+          };
+          this.connectionManager.broadcastToTerminal(
+            terminalId,
+            JSON.stringify(refreshMessage)
+          );
+        }, 300)); // Wait 300ms for any trailing output
+      }
+    });
+
+    // Track input to detect commands
+    ptyManager.on('input', (terminalId: string, input: string) => {
+      // Accumulate input until Enter
+      const current = recentInputs.get(terminalId) || '';
+      if (input === '\r' || input === '\n') {
+        // Keep the accumulated command for detection
+      } else {
+        recentInputs.set(terminalId, current + input);
+      }
+    });
+
+    // Handle CWD changes
+    ptyManager.on('cwd', async (terminalId: string, cwd: string) => {
+      // Update the database with the new CWD
+      try {
+        await prisma.terminal.update({
+          where: { id: terminalId },
+          data: { cwd },
+        });
+      } catch (error) {
+        // Terminal might have been deleted, ignore
+      }
+
+      // Broadcast CWD change to connected clients
+      const message: ServerMessage = {
+        type: 'terminal.cwd',
+        terminalId,
+        cwd,
       };
       this.connectionManager.broadcastToTerminal(
         terminalId,
@@ -482,6 +697,64 @@ export class TerminalWebSocketServer {
       } catch (error) {
         // Terminal was likely deleted, ignore the error
         console.log(`[WS] Terminal ${terminalId} no longer exists, skipping status update`);
+      }
+    });
+  }
+
+  /**
+   * Set up SSH event handlers
+   */
+  private setupSSHHandlers(): void {
+    const sshManager = SSHManager.getInstance();
+
+    // Forward SSH output to connected clients
+    sshManager.on('data', (terminalId: string, data: string) => {
+      const message: ServerMessage = {
+        type: 'terminal.output',
+        terminalId,
+        data,
+      };
+      this.connectionManager.broadcastToTerminal(
+        terminalId,
+        JSON.stringify(message)
+      );
+    });
+
+    // Handle SSH session close
+    sshManager.on('close', async (terminalId: string) => {
+      try {
+        await prisma.terminal.update({
+          where: { id: terminalId },
+          data: { status: TerminalStatus.STOPPED },
+        });
+        this.broadcastStatus(terminalId, TerminalStatus.STOPPED);
+      } catch (error) {
+        console.log(`[WS] SSH Terminal ${terminalId} no longer exists, skipping status update`);
+      }
+    });
+
+    // Handle SSH errors
+    sshManager.on('error', async (terminalId: string, error: Error) => {
+      console.error(`[WS] SSH error for terminal ${terminalId}:`, error);
+      try {
+        await prisma.terminal.update({
+          where: { id: terminalId },
+          data: { status: TerminalStatus.CRASHED },
+        });
+        this.broadcastStatus(terminalId, TerminalStatus.CRASHED);
+
+        // Send error message to connected clients
+        const message: ServerMessage = {
+          type: 'terminal.error',
+          terminalId,
+          error: error.message,
+        };
+        this.connectionManager.broadcastToTerminal(
+          terminalId,
+          JSON.stringify(message)
+        );
+      } catch (err) {
+        console.log(`[WS] SSH Terminal ${terminalId} no longer exists, skipping error update`);
       }
     });
   }
@@ -522,5 +795,6 @@ export class TerminalWebSocketServer {
     this.connectionManager.shutdown();
     this.wss.close();
     getPTYManager().shutdown();
+    SSHManager.getInstance().destroyAll();
   }
 }

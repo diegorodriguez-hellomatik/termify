@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, Terminal, Clock, Star, ArrowRight, Command, Plus } from 'lucide-react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { cn } from '@/lib/utils';
@@ -133,9 +134,9 @@ export function QuickSwitcher({
     setSelectedIndex(0);
   }, [query]);
 
-  if (!showQuickSwitcher) return null;
+  if (!showQuickSwitcher || typeof window === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh] p-4">
       {/* Backdrop */}
       <div
@@ -331,6 +332,7 @@ export function QuickSwitcher({
           <span>{filteredTerminals.length} terminals</span>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

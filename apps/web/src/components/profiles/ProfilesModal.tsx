@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Plus,
@@ -229,12 +230,12 @@ export function ProfilesModal({ isOpen, onClose, token, onSelectProfile }: Profi
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof window === 'undefined') return null;
 
   const isEditing = editingProfile || isCreating;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
       <div className="bg-card rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
@@ -489,6 +490,7 @@ export function ProfilesModal({ isOpen, onClose, token, onSelectProfile }: Profi
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

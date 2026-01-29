@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   DndContext,
   closestCenter,
@@ -18,19 +19,132 @@ import {
   horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { X, Plus, Terminal, ChevronDown } from 'lucide-react';
+import {
+  X,
+  Plus,
+  Terminal,
+  ChevronDown,
+  File,
+  FileCode,
+  FileJson,
+  FileText,
+  FileImage,
+  FileVideo,
+  FileCog,
+} from 'lucide-react';
 import { useWorkspace, Tab } from '@/contexts/WorkspaceContext';
 import { cn } from '@/lib/utils';
+
+// Get icon for file based on extension
+function getFileIcon(extension?: string) {
+  switch (extension) {
+    case 'ts':
+    case 'tsx':
+    case 'js':
+    case 'jsx':
+    case 'py':
+    case 'rb':
+    case 'go':
+    case 'rs':
+    case 'java':
+    case 'c':
+    case 'cpp':
+    case 'h':
+    case 'php':
+    case 'swift':
+    case 'kt':
+    case 'scala':
+    case 'sh':
+    case 'bash':
+    case 'zsh':
+    case 'css':
+    case 'scss':
+    case 'html':
+      return FileCode;
+    case 'json':
+    case 'yaml':
+    case 'yml':
+    case 'toml':
+    case 'xml':
+      return FileJson;
+    case 'md':
+    case 'txt':
+    case 'log':
+    case 'csv':
+      return FileText;
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+    case 'svg':
+    case 'webp':
+    case 'ico':
+    case 'bmp':
+      return FileImage;
+    case 'mp4':
+    case 'mov':
+    case 'avi':
+    case 'webm':
+    case 'mkv':
+      return FileVideo;
+    case 'gitignore':
+    case 'env':
+    case 'dockerignore':
+    case 'editorconfig':
+      return FileCog;
+    default:
+      return File;
+  }
+}
+
+// Get icon color for file based on extension
+function getFileIconColor(extension?: string): string {
+  switch (extension) {
+    case 'ts':
+    case 'tsx':
+      return 'text-blue-500';
+    case 'js':
+    case 'jsx':
+      return 'text-yellow-400';
+    case 'json':
+      return 'text-yellow-600';
+    case 'py':
+      return 'text-green-500';
+    case 'md':
+      return 'text-gray-400';
+    case 'css':
+    case 'scss':
+    case 'sass':
+      return 'text-pink-500';
+    case 'html':
+      return 'text-orange-500';
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+    case 'svg':
+    case 'webp':
+      return 'text-purple-500';
+    case 'mp4':
+    case 'mov':
+    case 'avi':
+    case 'webm':
+      return 'text-red-500';
+    default:
+      return 'text-muted-foreground';
+  }
+}
 
 interface TabItemProps {
   tab: Tab;
   isActive: boolean;
   onActivate: () => void;
   onClose: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
   isDark: boolean;
 }
 
-function SortableTab({ tab, isActive, onActivate, onClose, isDark }: TabItemProps) {
+function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark }: TabItemProps) {
   const {
     attributes,
     listeners,
@@ -47,6 +161,10 @@ function SortableTab({ tab, isActive, onActivate, onClose, isDark }: TabItemProp
     zIndex: isDragging ? 1000 : isActive ? 10 : 1,
   };
 
+  // Determine icon based on tab type
+  const Icon = tab.type === 'file' ? getFileIcon(tab.fileExtension) : Terminal;
+  const iconColor = tab.type === 'file' ? getFileIconColor(tab.fileExtension) : 'text-muted-foreground';
+
   return (
     <div
       ref={setNodeRef}
@@ -59,10 +177,11 @@ function SortableTab({ tab, isActive, onActivate, onClose, isDark }: TabItemProp
         isDragging && 'shadow-lg'
       )}
       onClick={onActivate}
+      onContextMenu={onContextMenu}
       {...attributes}
       {...listeners}
     >
-      <Terminal size={14} className="text-muted-foreground flex-shrink-0" />
+      <Icon size={14} className={cn('flex-shrink-0', iconColor)} />
       <span className="text-sm font-medium truncate flex-1">{tab.name}</span>
       <button
         onClick={(e) => {
@@ -87,6 +206,64 @@ interface TabBarProps {
 
 export function TabBar({ onAddTab, isDark }: TabBarProps) {
   const { tabs, activeTabId, setActiveTab, closeTab, reorderTabs } = useWorkspace();
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    tabId: string;
+  } | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, tabId: string) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, tabId });
+  }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  const handleCloseTab = useCallback(() => {
+    if (contextMenu) {
+      closeTab(contextMenu.tabId);
+      closeContextMenu();
+    }
+  }, [contextMenu, closeTab, closeContextMenu]);
+
+  const handleCloseToRight = useCallback(() => {
+    if (contextMenu) {
+      const index = tabs.findIndex(t => t.id === contextMenu.tabId);
+      if (index !== -1) {
+        const tabsToClose = tabs.slice(index + 1);
+        tabsToClose.forEach(t => closeTab(t.id));
+      }
+      closeContextMenu();
+    }
+  }, [contextMenu, tabs, closeTab, closeContextMenu]);
+
+  const handleCloseToLeft = useCallback(() => {
+    if (contextMenu) {
+      const index = tabs.findIndex(t => t.id === contextMenu.tabId);
+      if (index !== -1) {
+        const tabsToClose = tabs.slice(0, index);
+        tabsToClose.forEach(t => closeTab(t.id));
+      }
+      closeContextMenu();
+    }
+  }, [contextMenu, tabs, closeTab, closeContextMenu]);
+
+  const handleCloseOthers = useCallback(() => {
+    if (contextMenu) {
+      const tabsToClose = tabs.filter(t => t.id !== contextMenu.tabId);
+      tabsToClose.forEach(t => closeTab(t.id));
+      closeContextMenu();
+    }
+  }, [contextMenu, tabs, closeTab, closeContextMenu]);
+
+  const handleCloseAll = useCallback(() => {
+    tabs.forEach(t => closeTab(t.id));
+    closeContextMenu();
+  }, [tabs, closeTab, closeContextMenu]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -148,6 +325,7 @@ export function TabBar({ onAddTab, isDark }: TabBarProps) {
                 isActive={tab.id === activeTabId}
                 onActivate={() => setActiveTab(tab.id)}
                 onClose={() => closeTab(tab.id)}
+                onContextMenu={(e) => handleContextMenu(e, tab.id)}
                 isDark={isDark}
               />
             ))}
@@ -163,6 +341,59 @@ export function TabBar({ onAddTab, isDark }: TabBarProps) {
       >
         <Plus size={16} className="text-muted-foreground" />
       </button>
+
+      {/* Context Menu */}
+      {contextMenu && typeof window !== 'undefined' && createPortal(
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-[9998]"
+            onClick={closeContextMenu}
+            onContextMenu={(e) => { e.preventDefault(); closeContextMenu(); }}
+          />
+          {/* Menu */}
+          <div
+            className="fixed z-[9999] min-w-[180px] py-1 bg-popover border border-border rounded-lg shadow-lg animate-in fade-in duration-75"
+            style={{
+              top: contextMenu.y,
+              left: contextMenu.x,
+            }}
+          >
+            <button
+              onClick={handleCloseTab}
+              className="w-full px-3 py-2 text-sm text-left hover:bg-muted transition-colors duration-75"
+            >
+              Close
+            </button>
+            <button
+              onClick={handleCloseToRight}
+              className="w-full px-3 py-2 text-sm text-left hover:bg-muted transition-colors duration-75"
+            >
+              Close to the Right
+            </button>
+            <button
+              onClick={handleCloseToLeft}
+              className="w-full px-3 py-2 text-sm text-left hover:bg-muted transition-colors duration-75"
+            >
+              Close to the Left
+            </button>
+            <div className="my-1 border-t border-border" />
+            <button
+              onClick={handleCloseOthers}
+              className="w-full px-3 py-2 text-sm text-left hover:bg-muted transition-colors duration-75"
+            >
+              Close Others
+            </button>
+            <button
+              onClick={handleCloseAll}
+              className="w-full px-3 py-2 text-sm text-left text-destructive hover:bg-destructive/10 transition-colors duration-75"
+            >
+              Close All
+            </button>
+          </div>
+        </>,
+        document.body
+      )}
     </div>
   );
 }
