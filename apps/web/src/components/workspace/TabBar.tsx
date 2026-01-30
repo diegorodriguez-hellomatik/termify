@@ -3,18 +3,7 @@
 import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
   SortableContext,
-  sortableKeyboardCoordinates,
   useSortable,
   horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
@@ -31,6 +20,7 @@ import {
   FileImage,
   FileVideo,
   FileCog,
+  Minimize,
 } from 'lucide-react';
 import { useWorkspace, Tab } from '@/contexts/WorkspaceContext';
 import { cn } from '@/lib/utils';
@@ -152,7 +142,16 @@ function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: tab.id });
+  } = useSortable({
+    id: tab.id,
+    data: {
+      type: 'tab',
+      tabId: tab.id,
+      terminalId: tab.terminalId,
+      tabType: tab.type,
+      name: tab.name,
+    },
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -202,10 +201,12 @@ function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark
 interface TabBarProps {
   onAddTab: () => void;
   isDark: boolean;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }
 
-export function TabBar({ onAddTab, isDark }: TabBarProps) {
-  const { tabs, activeTabId, setActiveTab, closeTab, reorderTabs } = useWorkspace();
+export function TabBar({ onAddTab, isDark, isFullscreen, onToggleFullscreen }: TabBarProps) {
+  const { tabs, activeTabId, setActiveTab, closeTab } = useWorkspace();
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -265,31 +266,13 @@ export function TabBar({ onAddTab, isDark }: TabBarProps) {
     closeContextMenu();
   }, [tabs, closeTab, closeContextMenu]);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = tabs.findIndex((t) => t.id === active.id);
-    const newIndex = tabs.findIndex((t) => t.id === over.id);
-
-    if (oldIndex !== -1 && newIndex !== -1) {
-      reorderTabs(oldIndex, newIndex);
-    }
-  };
-
   if (tabs.length === 0) {
     return (
       <div
-        className="flex items-center gap-2 px-2 py-1 border-b border-border"
+        className={cn(
+          "flex items-center justify-between gap-2 px-2 border-b border-border",
+          isFullscreen ? "py-0.5" : "py-1"
+        )}
         style={{ backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5' }}
       >
         <button
@@ -299,39 +282,47 @@ export function TabBar({ onAddTab, isDark }: TabBarProps) {
           <Plus size={14} />
           Open Terminal
         </button>
+
+        {/* Exit fullscreen button */}
+        {isFullscreen && onToggleFullscreen && (
+          <button
+            onClick={onToggleFullscreen}
+            className="p-1 rounded hover:bg-muted transition-colors flex-shrink-0"
+            title="Exit Fullscreen (Esc)"
+          >
+            <Minimize size={14} className="text-muted-foreground" />
+          </button>
+        )}
       </div>
     );
   }
 
   return (
     <div
-      className="flex items-center gap-1 px-2 py-1 border-b border-border overflow-x-auto"
+      className={cn(
+        "flex items-center gap-1 px-2 border-b border-border overflow-x-auto",
+        isFullscreen ? "py-0.5" : "py-1"
+      )}
       style={{ backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5' }}
     >
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
+      <SortableContext
+        items={tabs.map((t) => t.id)}
+        strategy={horizontalListSortingStrategy}
       >
-        <SortableContext
-          items={tabs.map((t) => t.id)}
-          strategy={horizontalListSortingStrategy}
-        >
-          <div className="flex items-center gap-1">
-            {tabs.map((tab) => (
-              <SortableTab
-                key={tab.id}
-                tab={tab}
-                isActive={tab.id === activeTabId}
-                onActivate={() => setActiveTab(tab.id)}
-                onClose={() => closeTab(tab.id)}
-                onContextMenu={(e) => handleContextMenu(e, tab.id)}
-                isDark={isDark}
-              />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
+        <div className="flex items-center gap-1">
+          {tabs.map((tab) => (
+            <SortableTab
+              key={tab.id}
+              tab={tab}
+              isActive={tab.id === activeTabId}
+              onActivate={() => setActiveTab(tab.id)}
+              onClose={() => closeTab(tab.id)}
+              onContextMenu={(e) => handleContextMenu(e, tab.id)}
+              isDark={isDark}
+            />
+          ))}
+        </div>
+      </SortableContext>
 
       {/* Add new tab button */}
       <button
@@ -341,6 +332,20 @@ export function TabBar({ onAddTab, isDark }: TabBarProps) {
       >
         <Plus size={16} className="text-muted-foreground" />
       </button>
+
+      {/* Spacer to push exit button to the right */}
+      {isFullscreen && <div className="flex-1" />}
+
+      {/* Exit fullscreen button */}
+      {isFullscreen && onToggleFullscreen && (
+        <button
+          onClick={onToggleFullscreen}
+          className="p-1 rounded hover:bg-muted transition-colors flex-shrink-0"
+          title="Exit Fullscreen (Esc)"
+        >
+          <Minimize size={14} className="text-muted-foreground" />
+        </button>
+      )}
 
       {/* Context Menu */}
       {contextMenu && typeof window !== 'undefined' && createPortal(

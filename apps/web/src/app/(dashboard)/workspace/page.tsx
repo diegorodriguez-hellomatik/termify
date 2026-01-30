@@ -1190,58 +1190,60 @@ function WorkspaceContent() {
       "flex-1 flex flex-col min-h-0 transition-all duration-150",
       isTransitioning ? "opacity-0 scale-95" : "opacity-100 scale-100"
     )}>
-      {/* Header */}
-      <div
-        className="flex items-center justify-between px-4 py-2 border-b border-border"
-        style={{ backgroundColor: isDark ? '#0a0a0a' : '#fafafa' }}
-      >
-        <div className="flex items-center gap-3">
-          {/* Back button */}
-          <button
-            onClick={handleBackToList}
-            className="p-1.5 rounded-md hover:bg-muted transition-colors"
-            title="Back to workspaces"
-          >
-            <ArrowLeft size={18} className="text-muted-foreground" />
-          </button>
+      {/* Header - hidden in fullscreen */}
+      {!isFullscreen && (
+        <div
+          className="flex items-center justify-between px-4 py-2 border-b border-border"
+          style={{ backgroundColor: isDark ? '#0a0a0a' : '#fafafa' }}
+        >
+          <div className="flex items-center gap-3">
+            {/* Back button */}
+            <button
+              onClick={handleBackToList}
+              className="p-1.5 rounded-md hover:bg-muted transition-colors"
+              title="Back to workspaces"
+            >
+              <ArrowLeft size={18} className="text-muted-foreground" />
+            </button>
 
-          {/* Workspace info */}
-          <div
-            className="w-6 h-6 rounded flex items-center justify-center"
-            style={{ backgroundColor: (currentWorkspace?.color || '#6366f1') + '20' }}
-          >
-            {(() => {
-              const IconComp = getWorkspaceIcon(currentWorkspace?.icon);
-              return IconComp ? (
-                <IconComp size={14} style={{ color: currentWorkspace?.color || '#6366f1' }} />
-              ) : (
-                <Layers size={14} style={{ color: currentWorkspace?.color || '#6366f1' }} />
-              );
-            })()}
+            {/* Workspace info */}
+            <div
+              className="w-6 h-6 rounded flex items-center justify-center"
+              style={{ backgroundColor: (currentWorkspace?.color || '#6366f1') + '20' }}
+            >
+              {(() => {
+                const IconComp = getWorkspaceIcon(currentWorkspace?.icon);
+                return IconComp ? (
+                  <IconComp size={14} style={{ color: currentWorkspace?.color || '#6366f1' }} />
+                ) : (
+                  <Layers size={14} style={{ color: currentWorkspace?.color || '#6366f1' }} />
+                );
+              })()}
+            </div>
+            <h1 className="text-sm font-semibold">{currentWorkspace?.name || 'Workspace'}</h1>
+            <span className="text-xs text-muted-foreground">
+              {tabs.length} terminal{tabs.length !== 1 ? 's' : ''} open
+            </span>
           </div>
-          <h1 className="text-sm font-semibold">{currentWorkspace?.name || 'Workspace'}</h1>
-          <span className="text-xs text-muted-foreground">
-            {tabs.length} terminal{tabs.length !== 1 ? 's' : ''} open
-          </span>
-        </div>
 
-        <div className="flex items-center gap-2">
-          {session?.accessToken && (
-            <QuickActionsToolbar
-              token={session.accessToken}
-              onNewTerminal={handleCreateTerminal}
-              onNewTerminalWithProfile={handleCreateTerminalWithProfile}
-              onUseSnippet={handleUseSnippet}
-              onOpenQuickSwitcher={() => setShowQuickSwitcher(true)}
-              onOpenShortcuts={() => setShowShortcuts(true)}
-              isFullscreen={isFullscreen}
-              onToggleFullscreen={toggleFullscreen}
-            />
-          )}
+          <div className="flex items-center gap-2">
+            {session?.accessToken && (
+              <QuickActionsToolbar
+                token={session.accessToken}
+                onNewTerminal={handleCreateTerminal}
+                onNewTerminalWithProfile={handleCreateTerminalWithProfile}
+                onUseSnippet={handleUseSnippet}
+                onOpenQuickSwitcher={() => setShowQuickSwitcher(true)}
+                onOpenShortcuts={() => setShowShortcuts(true)}
+                isFullscreen={isFullscreen}
+                onToggleFullscreen={toggleFullscreen}
+              />
+            )}
 
-          <TerminalThemeSelector showLabel={false} />
+            <TerminalThemeSelector showLabel={false} />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Tab bar and Main content wrapped in DndProvider */}
       <WorkspaceDndProvider
@@ -1250,12 +1252,17 @@ function WorkspaceContent() {
         tabIds={tabs.map(t => t.id)}
       >
         {/* Tab bar */}
-        <TabBar onAddTab={handleAddTab} isDark={isDark} />
+        <TabBar
+          onAddTab={handleAddTab}
+          isDark={isDark}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={toggleFullscreen}
+        />
 
-        {/* Main content */}
+        {/* Main content - adjust height based on fullscreen */}
         <div
           className="relative w-full"
-          style={{ height: 'calc(100vh - 44px - 40px)' }}
+          style={{ height: isFullscreen ? 'calc(100vh - 32px)' : 'calc(100vh - 44px - 40px)' }}
         >
           {tabs.length === 0 ? (
             <div
