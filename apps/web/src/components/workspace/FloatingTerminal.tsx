@@ -204,6 +204,28 @@ export function FloatingTerminal({
     );
   }
 
+  // Track if we're animating (to disable during user interaction)
+  const [isAnimating, setIsAnimating] = useState(false);
+  const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Trigger animation when position/size changes from parent (not user interaction)
+  useEffect(() => {
+    if (!isCustomized && !isMaximized) {
+      setIsAnimating(true);
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+      animationTimeoutRef.current = setTimeout(() => {
+        setIsAnimating(false);
+      }, 300);
+    }
+    return () => {
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+    };
+  }, [initialPosition.x, initialPosition.y, initialSize.width, initialSize.height, isCustomized, isMaximized]);
+
   return (
     <Rnd
       position={position}
@@ -213,11 +235,14 @@ export function FloatingTerminal({
       dragHandleClassName="floating-terminal-handle"
       enableResizing={!isMaximized}
       disableDragging={isMaximized}
-      onDragStart={onFocus}
+      onDragStart={() => { setIsAnimating(false); onFocus(); }}
       onDragStop={handleDragStop}
-      onResizeStart={onFocus}
+      onResizeStart={() => { setIsAnimating(false); onFocus(); }}
       onResizeStop={handleResizeStop}
-      style={{ zIndex }}
+      style={{
+        zIndex,
+        transition: isAnimating ? 'transform 0.2s ease-out, width 0.2s ease-out, height 0.2s ease-out' : 'none',
+      }}
       resizeHandleStyles={{
         top: { cursor: 'ns-resize' },
         bottom: { cursor: 'ns-resize' },

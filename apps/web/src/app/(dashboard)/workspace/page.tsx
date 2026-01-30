@@ -616,6 +616,9 @@ function WorkspaceContent() {
   // Get fullscreen state from context
   const { isFullscreen, toggleFullscreen } = useWorkspace();
 
+  // Auto layout function from FloatingWorkspace
+  const [autoLayoutFn, setAutoLayoutFn] = useState<(() => void) | null>(null);
+
   // Filter workspaces by search
   const filteredWorkspaces = workspaces.filter((ws) => {
     if (!searchQuery) return true;
@@ -1257,6 +1260,7 @@ function WorkspaceContent() {
           isDark={isDark}
           isFullscreen={isFullscreen}
           onToggleFullscreen={toggleFullscreen}
+          onAutoLayout={autoLayoutFn ?? undefined}
         />
 
         {/* Main content - adjust height based on fullscreen */}
@@ -1326,7 +1330,10 @@ function WorkspaceContent() {
             </div>
           ) : (
             session?.accessToken && (
-              <FloatingWorkspace token={session.accessToken} />
+              <FloatingWorkspace
+                token={session.accessToken}
+                onResetLayoutReady={(fn) => setAutoLayoutFn(() => fn)}
+              />
             )
           )}
         </div>

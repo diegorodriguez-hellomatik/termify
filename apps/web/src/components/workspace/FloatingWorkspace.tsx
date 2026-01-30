@@ -17,6 +17,7 @@ interface WindowState {
 
 interface FloatingWorkspaceProps {
   token: string;
+  onResetLayoutReady?: (resetFn: () => void) => void;
 }
 
 const BASE_Z_INDEX = 10;
@@ -105,7 +106,7 @@ function getGridPosition(
   };
 }
 
-export function FloatingWorkspace({ token }: FloatingWorkspaceProps) {
+export function FloatingWorkspace({ token, onResetLayoutReady }: FloatingWorkspaceProps) {
   const { tabs, closeTab, floatingLayout, updateFloatingLayout } = useWorkspace();
   const [windows, setWindows] = useState<WindowState[]>([]);
   const [topZIndex, setTopZIndex] = useState(BASE_Z_INDEX);
@@ -327,6 +328,13 @@ export function FloatingWorkspace({ token }: FloatingWorkspaceProps) {
       })
     );
   }, [windows.length, containerSize]);
+
+  // Notify parent of reset function availability
+  useEffect(() => {
+    if (onResetLayoutReady && containerSize.width > 0 && containerSize.height > 0) {
+      onResetLayoutReady(resetToGrid);
+    }
+  }, [onResetLayoutReady, resetToGrid, containerSize]);
 
   // Get terminal tabs to check if we actually have terminals
   const terminalTabs = tabs.filter((tab): tab is Tab & { terminalId: string } =>

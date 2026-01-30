@@ -21,6 +21,7 @@ import {
   FileVideo,
   FileCog,
   Minimize,
+  LayoutGrid,
 } from 'lucide-react';
 import { useWorkspace, Tab } from '@/contexts/WorkspaceContext';
 import { cn } from '@/lib/utils';
@@ -208,9 +209,10 @@ interface TabBarProps {
   isDark: boolean;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  onAutoLayout?: () => void;
 }
 
-export function TabBar({ onAddTab, isDark, isFullscreen, onToggleFullscreen }: TabBarProps) {
+export function TabBar({ onAddTab, isDark, isFullscreen, onToggleFullscreen, onAutoLayout }: TabBarProps) {
   const { tabs, activeTabId, setActiveTab, closeTab } = useWorkspace();
 
   // Context menu state
@@ -339,8 +341,19 @@ export function TabBar({ onAddTab, isDark, isFullscreen, onToggleFullscreen }: T
         <Plus size={16} className="text-muted-foreground" />
       </button>
 
-      {/* Spacer to push exit button to the right */}
-      {isFullscreen && <div className="flex-1" />}
+      {/* Spacer to push buttons to the right */}
+      <div className="flex-1" />
+
+      {/* Auto layout button */}
+      {onAutoLayout && (
+        <button
+          onClick={onAutoLayout}
+          className="p-1 rounded hover:bg-muted transition-colors flex-shrink-0"
+          title="Auto Layout (reorganize terminals)"
+        >
+          <LayoutGrid size={14} className="text-muted-foreground" />
+        </button>
+      )}
 
       {/* Exit fullscreen button */}
       {isFullscreen && onToggleFullscreen && (
