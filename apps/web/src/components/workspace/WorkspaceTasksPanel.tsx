@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, X, ChevronRight, ChevronLeft, GripVertical, CheckSquare } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Plus, X, ChevronRight, ChevronLeft, GripVertical, CheckSquare, Terminal } from 'lucide-react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import { PersonalTask, TaskPriority, Workspace } from '@/lib/api';
 import { PersonalTaskCreateModal } from '@/components/tasks/PersonalTaskCreateModal';
+import { useTerminalTasksOptional } from '@/contexts/TerminalTasksContext';
 import { cn } from '@/lib/utils';
 
 interface WorkspaceTasksPanelProps {
@@ -44,9 +45,11 @@ const PRIORITY_ICONS: Record<TaskPriority, string> = {
 function DraggableTaskCard({
   task,
   onClick,
+  executingTerminal,
 }: {
   task: PersonalTask;
   onClick?: () => void;
+  executingTerminal?: { terminalName: string; commandsCompleted: number; commandsTotal: number } | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `task-${task.id}`,
@@ -63,10 +66,20 @@ function DraggableTaskCard({
 
   const hasCommands = task.commands && JSON.parse(task.commands || '[]').length > 0;
 
+  // Handle native HTML5 drag for compatibility with FloatingTerminal drops
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData('application/task-id', task.id);
+    e.dataTransfer.setData('text/plain', task.title);
+    e.dataTransfer.setData('application/task-commands', task.commands || '[]');
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={style}
+      draggable
+      onDragStart={handleDragStart}
       className={cn(
         'group relative p-2.5 rounded-lg border transition-all cursor-grab active:cursor-grabbing',
         'bg-card hover:bg-muted/50 border-border hover:border-muted-foreground/30',
@@ -92,7 +105,7 @@ function DraggableTaskCard({
           </div>
 
           {/* Meta */}
-          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
             <span className={cn(
               'px-1.5 py-0.5 rounded-full',
               task.status === 'done' ? 'bg-green-500/20 text-green-500' :
@@ -101,9 +114,20 @@ function DraggableTaskCard({
             )}>
               {task.status.replace('_', ' ')}
             </span>
-            {hasCommands && (
+            {hasCommands && !executingTerminal && (
               <span className="px-1.5 py-0.5 rounded-full bg-primary/20 text-primary">
                 has commands
+              </span>
+            )}
+            {executingTerminal && (
+              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-500">
+                <Terminal size={10} />
+                <span className="truncate max-w-[80px]" title={executingTerminal.terminalName}>
+                  {executingTerminal.terminalName}
+                </span>
+                <span className="text-blue-400">
+                  {executingTerminal.commandsCompleted}/{executingTerminal.commandsTotal}
+                </span>
               </span>
             )}
           </div>
@@ -123,6 +147,41 @@ export function WorkspaceTasksPanel({
   onTaskClick,
 }: WorkspaceTasksPanelProps) {
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [shouldRender, setShouldRender] = useState(isOpen);
+
+  // Get executing tasks info from context
+  const terminalTasksContext = useTerminalTasksOptional();
+
+  // Helper to get terminal info for a task
+  const getExecutingTerminal = (taskId: string) => {
+    if (!terminalTasksContext) return null;
+    const info = terminalTasksContext.getTerminalForTask(taskId);
+    if (!info) return null;
+    return {
+      terminalName: info.terminalName,
+      commandsCompleted: info.commandsCompleted,
+      commandsTotal: info.commandsTotal,
+    };
+  };
+
+  // Handle open/close animations
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true);
+      setIsClosing(false);
+    }
+  }, [isOpen]);
+
+  const handleClose = useCallback(() => {
+    setIsClosing(true);
+    // Wait for animation to complete before actually closing
+    setTimeout(() => {
+      setShouldRender(false);
+      setIsClosing(false);
+      onToggle();
+    }, 200); // Match the duration-200 animation
+  }, [onToggle]);
 
   // Filter tasks by status
   const todoTasks = tasks.filter(t => t.status === 'todo' || t.status === 'backlog');
@@ -144,8 +203,8 @@ export function WorkspaceTasksPanel({
     });
   };
 
-  // Collapsed state - just show toggle button
-  if (!isOpen) {
+  // Collapsed state - just show toggle button at bottom
+  if (!isOpen && !shouldRender) {
     return (
       <button
         onClick={onToggle}
@@ -165,7 +224,12 @@ export function WorkspaceTasksPanel({
 
   return (
     <>
-      <div className="fixed right-0 top-0 bottom-0 w-72 bg-background border-l border-border shadow-xl z-40 flex flex-col animate-in slide-in-from-right duration-200">
+      <div className={cn(
+        "fixed right-0 top-0 bottom-0 w-72 bg-background border-l border-border shadow-xl z-40 flex flex-col",
+        isClosing
+          ? "animate-out slide-out-to-right duration-200"
+          : "animate-in slide-in-from-right duration-200"
+      )}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <div className="flex items-center gap-2">
@@ -187,7 +251,7 @@ export function WorkspaceTasksPanel({
               variant="ghost"
               size="icon"
               className="h-7 w-7"
-              onClick={onToggle}
+              onClick={handleClose}
               title="Close panel"
             >
               <ChevronRight size={14} />
@@ -226,6 +290,7 @@ export function WorkspaceTasksPanel({
                         key={task.id}
                         task={task}
                         onClick={() => onTaskClick?.(task)}
+                        executingTerminal={getExecutingTerminal(task.id)}
                       />
                     ))}
                   </div>
@@ -244,6 +309,7 @@ export function WorkspaceTasksPanel({
                         key={task.id}
                         task={task}
                         onClick={() => onTaskClick?.(task)}
+                        executingTerminal={getExecutingTerminal(task.id)}
                       />
                     ))}
                   </div>
@@ -262,6 +328,7 @@ export function WorkspaceTasksPanel({
                         key={task.id}
                         task={task}
                         onClick={() => onTaskClick?.(task)}
+                        executingTerminal={getExecutingTerminal(task.id)}
                       />
                     ))}
                   </div>
