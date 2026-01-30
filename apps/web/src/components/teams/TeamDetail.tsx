@@ -238,8 +238,16 @@ export function TeamDetail({
                         key={member.userId}
                         className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-full"
                       >
-                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium">
-                          {member.userName?.charAt(0).toUpperCase() || '?'}
+                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium overflow-hidden">
+                          {member.userImage ? (
+                            <img
+                              src={member.userImage}
+                              alt={member.userName || ''}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            member.userName?.charAt(0).toUpperCase() || '?'
+                          )}
                         </div>
                         <span className="text-sm">{member.userName}</span>
                         {member.activeTerminalId && (
