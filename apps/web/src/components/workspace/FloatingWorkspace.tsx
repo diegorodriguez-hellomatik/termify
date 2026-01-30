@@ -107,7 +107,7 @@ function getGridPosition(
 }
 
 export function FloatingWorkspace({ token, onResetLayoutReady }: FloatingWorkspaceProps) {
-  const { tabs, closeTab, floatingLayout, updateFloatingLayout, getTerminalSettings, isLayoutLocked, layoutMode } = useWorkspace();
+  const { tabs, closeTab, floatingLayout, updateFloatingLayout, getTerminalSettings, isLayoutLocked, isTerminalLocked, toggleTerminalLock, layoutMode } = useWorkspace();
   const [windows, setWindows] = useState<WindowState[]>([]);
   const [topZIndex, setTopZIndex] = useState(BASE_Z_INDEX);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -404,6 +404,7 @@ export function FloatingWorkspace({ token, onResetLayoutReady }: FloatingWorkspa
 
         {windows.map((window) => {
           const settings = getTerminalSettings(window.terminalId);
+          const terminalLocked = isTerminalLocked(window.terminalId);
           return (
             <FloatingTerminal
               key={window.id}
@@ -415,7 +416,9 @@ export function FloatingWorkspace({ token, onResetLayoutReady }: FloatingWorkspa
               initialSize={window.size}
               zIndex={window.zIndex}
               isCustomized={window.isCustomized}
-              isLocked={isLayoutLocked}
+              isLocked={terminalLocked}
+              isGlobalLock={isLayoutLocked}
+              onToggleLock={() => toggleTerminalLock(window.terminalId)}
               initialSettings={settings}
               onFocus={() => handleFocus(window.id)}
               onClose={() => handleClose(window.id)}

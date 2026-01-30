@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Rnd } from 'react-rnd';
 import dynamic from 'next/dynamic';
-import { X, Minus, Maximize2, Minimize2, Loader2, Settings, Trash2, Pencil, ListChecks, Play, ChevronDown, Zap } from 'lucide-react';
+import { X, Minus, Maximize2, Minimize2, Loader2, Settings, Trash2, Pencil, ListChecks, Play, ChevronDown, Zap, Lock, Unlock } from 'lucide-react';
 import { TerminalStatus } from '@termify/shared';
 import { cn } from '@/lib/utils';
 import { TerminalSettingsModal, TerminalSettings } from '@/components/terminal/TerminalSettingsModal';
@@ -37,8 +37,12 @@ interface FloatingTerminalProps {
   zIndex: number;
   /** Whether user has customized position/size - if false, syncs with parent */
   isCustomized?: boolean;
-  /** Whether the layout is locked (prevents moving/resizing) */
+  /** Whether the terminal is locked (prevents moving/resizing) */
   isLocked?: boolean;
+  /** Whether the lock is from global layout lock (vs individual) */
+  isGlobalLock?: boolean;
+  /** Callback to toggle individual terminal lock */
+  onToggleLock?: () => void;
   /** Initial display settings from database */
   initialSettings?: {
     fontSize?: number | null;
@@ -66,6 +70,8 @@ export function FloatingTerminal({
   zIndex,
   isCustomized = false,
   isLocked = false,
+  isGlobalLock = false,
+  onToggleLock,
   initialSettings,
   onFocus,
   onClose,
@@ -883,6 +889,30 @@ export function FloatingTerminal({
                 </div>
               )}
             </div>
+
+            {/* Lock button */}
+            {onToggleLock && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleLock();
+                }}
+                className={cn(
+                  "p-1 rounded transition-colors",
+                  isLocked && !isGlobalLock
+                    ? "bg-primary/20 text-primary hover:bg-primary/30"
+                    : "hover:bg-muted"
+                )}
+                title={isGlobalLock ? "Locked by global layout lock" : (isLocked ? "Unlock Terminal" : "Lock Terminal")}
+                disabled={isGlobalLock}
+              >
+                {isLocked ? (
+                  <Lock size={14} className={isGlobalLock ? "text-muted-foreground" : "text-primary"} />
+                ) : (
+                  <Unlock size={14} className="text-muted-foreground" />
+                )}
+              </button>
+            )}
 
             {/* Settings button */}
             <button

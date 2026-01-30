@@ -120,6 +120,11 @@ interface WorkspaceContextType {
   setLayoutLocked: (locked: boolean) => void;
   toggleLayoutLock: () => void;
 
+  // Individual terminal locks
+  lockedTerminalIds: Set<string>;
+  isTerminalLocked: (terminalId: string) => boolean;
+  toggleTerminalLock: (terminalId: string) => void;
+
   // Layout mode (strict = no scroll, flexible = scroll enabled)
   layoutMode: LayoutMode;
   setLayoutMode: (mode: LayoutMode) => void;
@@ -184,6 +189,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
   const [isFullscreen, setFullscreen] = useState(false);
   const [isLayoutLocked, setLayoutLocked] = useState(false);
+  const [lockedTerminalIds, setLockedTerminalIds] = useState<Set<string>>(new Set());
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('flexible');
   const [mounted, setMounted] = useState(false);
 
@@ -195,6 +201,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Toggle layout lock
   const toggleLayoutLock = useCallback(() => {
     setLayoutLocked(prev => !prev);
+  }, []);
+
+  // Check if a specific terminal is locked (either globally or individually)
+  const isTerminalLocked = useCallback((terminalId: string): boolean => {
+    return isLayoutLocked || lockedTerminalIds.has(terminalId);
+  }, [isLayoutLocked, lockedTerminalIds]);
+
+  // Toggle individual terminal lock
+  const toggleTerminalLock = useCallback((terminalId: string) => {
+    setLockedTerminalIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(terminalId)) {
+        newSet.delete(terminalId);
+      } else {
+        newSet.add(terminalId);
+      }
+      return newSet;
+    });
   }, []);
 
   // Terminal IDs that should pre-connect (establish WebSocket before being visible)
@@ -906,6 +930,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         isLayoutLocked,
         setLayoutLocked,
         toggleLayoutLock,
+        // Individual terminal locks
+        lockedTerminalIds,
+        isTerminalLocked,
+        toggleTerminalLock,
         // Layout mode
         layoutMode,
         setLayoutMode,
