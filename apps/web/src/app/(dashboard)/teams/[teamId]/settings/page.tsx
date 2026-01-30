@@ -114,7 +114,7 @@ export default function TeamSettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6">
       {/* Team Settings */}
       <Card>
         <CardContent className="p-4 space-y-4">
