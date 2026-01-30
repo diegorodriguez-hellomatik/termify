@@ -1,14 +1,75 @@
 'use client';
 
 import { useState } from 'react';
-import { Layout, Plus, Trash2, MoreVertical, Loader2, Users } from 'lucide-react';
+import {
+  Layers,
+  Plus,
+  Trash2,
+  MoreHorizontal,
+  Loader2,
+  Users,
+  Terminal as TerminalIcon,
+  Folder,
+  Briefcase,
+  Wrench,
+  Rocket,
+  Home,
+  Settings,
+  Laptop,
+  Globe,
+  Star,
+  Flame,
+  Lightbulb,
+  Code,
+  Database,
+  Server,
+  Cloud,
+  Box,
+  Zap,
+  Shield,
+  Lock,
+  Key,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { useTeamWorkspaces } from '@/hooks/useTeamWorkspaces';
 import { DeleteConfirmModal } from '@/components/ui/DeleteConfirmModal';
 import { ShareWorkspaceWithTeamModal } from './ShareWorkspaceWithTeamModal';
 import { CreateTeamWorkspaceModal } from './CreateTeamWorkspaceModal';
 import { TeamWorkspace } from '@/lib/api';
+import { useTheme } from '@/context/ThemeContext';
+import { cn } from '@/lib/utils';
+
+// Icon mapping for workspaces
+const WORKSPACE_ICONS: Record<string, React.FC<{ className?: string; size?: number; style?: React.CSSProperties }>> = {
+  folder: Folder,
+  briefcase: Briefcase,
+  wrench: Wrench,
+  rocket: Rocket,
+  home: Home,
+  settings: Settings,
+  laptop: Laptop,
+  globe: Globe,
+  star: Star,
+  flame: Flame,
+  lightbulb: Lightbulb,
+  code: Code,
+  database: Database,
+  server: Server,
+  cloud: Cloud,
+  terminal: TerminalIcon,
+  box: Box,
+  zap: Zap,
+  shield: Shield,
+  lock: Lock,
+  key: Key,
+};
+
+const getWorkspaceIcon = (iconName: string | null | undefined) => {
+  if (!iconName) return null;
+  return WORKSPACE_ICONS[iconName] || null;
+};
+
+const getWorkspaceColor = (ws: TeamWorkspace) => ws.color || '#6366f1';
 
 interface TeamWorkspacesListProps {
   teamId: string;
@@ -21,6 +82,7 @@ export function TeamWorkspacesList({
   canManage,
   onOpen,
 }: TeamWorkspacesListProps) {
+  const { isDark } = useTheme();
   const {
     workspaces,
     loading,
@@ -95,7 +157,7 @@ export function TeamWorkspacesList({
     return (
       <div className="flex flex-col items-center justify-center py-16 px-4">
         <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-          <Layout className="h-8 w-8 text-muted-foreground" />
+          <Layers className="h-8 w-8 text-muted-foreground" />
         </div>
         <h3 className="text-lg font-semibold mb-1">No team workspaces</h3>
         <p className="text-sm text-muted-foreground text-center mb-4">
@@ -143,100 +205,154 @@ export function TeamWorkspacesList({
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {workspaces.map((workspace) => (
-          <Card
+          <div
             key={workspace.id}
-            className="hover:bg-muted/50 transition-colors cursor-pointer"
+            className={cn(
+              'group relative rounded-xl border cursor-pointer flex flex-col',
+              'hover:shadow-lg transition-shadow transition-border duration-200',
+              isDark
+                ? 'bg-card border-border hover:border-muted-foreground/30'
+                : 'bg-white border-gray-200 hover:border-gray-300'
+            )}
             onClick={() => onOpen?.(workspace.id)}
           >
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between mb-3">
+            {/* Color bar */}
+            <div
+              className="h-2 rounded-t-xl flex-shrink-0"
+              style={{ backgroundColor: getWorkspaceColor(workspace) }}
+            />
+
+            {/* Content */}
+            <div className="p-5 flex flex-col flex-1">
+              {/* Header */}
+              <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Layout className="h-5 w-5 text-primary" />
+                  <div
+                    className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: getWorkspaceColor(workspace) + '20' }}
+                  >
+                    {(() => {
+                      const IconComp = getWorkspaceIcon(workspace.icon);
+                      return IconComp ? (
+                        <IconComp size={24} style={{ color: getWorkspaceColor(workspace) }} />
+                      ) : (
+                        <Layers size={24} style={{ color: getWorkspaceColor(workspace) }} />
+                      );
+                    })()}
                   </div>
                   <div>
-                    <h4 className="font-medium">{workspace.name}</h4>
-                    <p className="text-xs text-muted-foreground">
-                      {workspace.terminalCount || 0} terminals
-                    </p>
+                    <h3 className="font-semibold text-foreground text-lg">{workspace.name}</h3>
+                    {workspace.isTeamDefault && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">
+                        team default
+                      </span>
+                    )}
                   </div>
                 </div>
-                <div className="relative">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                  <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setMenuOpenId(menuOpenId === workspace.id ? null : workspace.id);
                     }}
+                    className="p-1.5 rounded-md hover:bg-muted transition-all"
                   >
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                  {menuOpenId === workspace.id && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-40"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setMenuOpenId(null);
-                        }}
-                      />
-                      <div className="absolute right-0 top-full mt-1 w-48 bg-background border rounded-md shadow-lg z-50 py-1">
-                        <button
-                          className="w-full px-3 py-2 text-sm text-left hover:bg-muted flex items-center gap-2"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpen?.(workspace.id);
-                          }}
-                        >
-                          <Layout className="h-4 w-4" />
-                          Open Workspace
-                        </button>
-                        {canManage && !workspace.isTeamDefault && (
-                          <button
-                            className="w-full px-3 py-2 text-sm text-left hover:bg-muted flex items-center gap-2"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSetDefault(workspace.id);
-                            }}
-                          >
-                            <Users className="h-4 w-4" />
-                            Set as Default
-                          </button>
-                        )}
-                        {canManage && (
-                          <>
-                            <div className="border-t my-1" />
-                            <button
-                              className="w-full px-3 py-2 text-sm text-left hover:bg-muted flex items-center gap-2 text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteClick(workspace);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Remove from Team
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </>
+                    <MoreHorizontal size={16} className="text-muted-foreground" />
+                  </button>
+                  {canManage && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteClick(workspace);
+                      }}
+                      className="p-1.5 rounded-md hover:bg-destructive/10 transition-all"
+                      title="Remove from team"
+                    >
+                      <Trash2 size={16} className="text-destructive" />
+                    </button>
                   )}
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                {workspace.isTeamDefault && (
-                  <span className="px-2 py-0.5 text-xs font-medium bg-muted rounded">
-                    Team Default
-                  </span>
+              {/* Description - with min height to maintain card size */}
+              <div className="flex-1 min-h-[40px] mb-4">
+                {workspace.description ? (
+                  <p className="text-sm text-muted-foreground line-clamp-2">
+                    {workspace.description}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground/50 italic">
+                    No description
+                  </p>
                 )}
               </div>
-            </CardContent>
-          </Card>
+
+              {/* Stats */}
+              <div className="flex items-center gap-4 text-sm text-muted-foreground mt-auto pt-3 border-t border-border">
+                <div className="flex items-center gap-1.5">
+                  <TerminalIcon size={14} />
+                  <span>{workspace.terminalCount || 0} terminals</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Context menu */}
+            {menuOpenId === workspace.id && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpenId(null);
+                  }}
+                />
+                <div className="absolute right-2 top-14 w-48 bg-popover border border-border rounded-lg shadow-lg z-50 py-1">
+                  <button
+                    className="w-full px-3 py-2 text-sm text-left hover:bg-muted flex items-center gap-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpenId(null);
+                      onOpen?.(workspace.id);
+                    }}
+                  >
+                    <Layers className="h-4 w-4" />
+                    Open Workspace
+                  </button>
+                  {canManage && !workspace.isTeamDefault && (
+                    <button
+                      className="w-full px-3 py-2 text-sm text-left hover:bg-muted flex items-center gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSetDefault(workspace.id);
+                      }}
+                    >
+                      <Star className="h-4 w-4" />
+                      Set as Team Default
+                    </button>
+                  )}
+                  {canManage && (
+                    <>
+                      <div className="border-t border-border my-1" />
+                      <button
+                        className="w-full px-3 py-2 text-sm text-left hover:bg-muted flex items-center gap-2 text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteClick(workspace);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Remove from Team
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         ))}
       </div>
 
