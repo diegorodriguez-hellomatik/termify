@@ -156,36 +156,14 @@ export function FloatingWorkspace({ token }: FloatingWorkspaceProps) {
 
     setWindows((prevWindows) => {
       const existingWindows = new Map(prevWindows.map(w => [w.terminalId, w]));
-      const prevCount = prevWindows.length;
-      const newCount = terminalTabs.length;
-      const countChanged = prevCount !== newCount;
 
       const newWindows: WindowState[] = terminalTabs.map((tab, index) => {
         const existing = existingWindows.get(tab.terminalId);
         const saved = savedPositionsMap.get(tab.terminalId);
         const gridPos = getGridPosition(index, cols, cellWidth, cellHeight);
 
-        // If window exists and is customized, keep it as is
+        // If window exists and is customized (user moved/resized it), keep it as is
         if (existing && existing.isCustomized) {
-          return {
-            ...existing,
-            name: tab.name,
-          };
-        }
-
-        // If window exists but NOT customized and terminal count changed,
-        // recalculate its position/size based on the new grid
-        if (existing && !existing.isCustomized && countChanged) {
-          return {
-            ...existing,
-            name: tab.name,
-            position: { x: gridPos.x, y: gridPos.y },
-            size: { width: gridPos.width, height: gridPos.height },
-          };
-        }
-
-        // If window exists and count didn't change, keep it
-        if (existing) {
           return {
             ...existing,
             name: tab.name,
@@ -200,19 +178,20 @@ export function FloatingWorkspace({ token }: FloatingWorkspaceProps) {
             name: tab.name,
             position: { x: saved.x, y: saved.y },
             size: { width: saved.width, height: saved.height },
-            zIndex: saved.zIndex || topZIndex + index + 1,
+            zIndex: existing?.zIndex || saved.zIndex || topZIndex + index + 1,
             isCustomized: true,
           };
         }
 
-        // New window - use grid position
+        // For non-customized windows (new or existing), always use grid position
+        // This ensures they get repositioned when terminal count changes
         return {
           id: tab.id,
           terminalId: tab.terminalId,
           name: tab.name,
           position: { x: gridPos.x, y: gridPos.y },
           size: { width: gridPos.width, height: gridPos.height },
-          zIndex: topZIndex + index + 1,
+          zIndex: existing?.zIndex || topZIndex + index + 1,
           isCustomized: false,
         };
       });
