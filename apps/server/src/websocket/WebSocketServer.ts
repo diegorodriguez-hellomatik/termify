@@ -1042,6 +1042,13 @@ export class TerminalWebSocketServer {
     }
 
     // Send push notification to terminal owner (if viewer is not the owner)
+    console.log('[WS] broadcastViewerJoined - checking notification:', {
+      isOwner: connection.isOwner,
+      email: connection.email,
+      userId: connection.userId,
+      terminalId,
+    });
+
     if (!connection.isOwner && connection.email) {
       try {
         const terminal = await prisma.terminal.findUnique({
@@ -1049,8 +1056,15 @@ export class TerminalWebSocketServer {
           select: { userId: true, name: true },
         });
 
+        console.log('[WS] broadcastViewerJoined - terminal owner check:', {
+          terminalUserId: terminal?.userId,
+          connectionUserId: connection.userId,
+          shouldNotify: terminal && terminal.userId !== connection.userId,
+        });
+
         if (terminal && terminal.userId !== connection.userId) {
           const notificationService = NotificationService.getInstance();
+          console.log('[WS] broadcastViewerJoined - sending notification to owner:', terminal.userId);
           notificationService.notifyViewerJoined({
             ownerId: terminal.userId,
             terminalId,
@@ -1064,6 +1078,8 @@ export class TerminalWebSocketServer {
       } catch (err) {
         console.error('[WS] Failed to fetch terminal for viewer notification:', err);
       }
+    } else {
+      console.log('[WS] broadcastViewerJoined - skipping notification (isOwner or no email)');
     }
   }
 
