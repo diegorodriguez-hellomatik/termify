@@ -456,6 +456,7 @@ model Team {
   description String?
   color       String       @default("#6366f1")
   icon        String?
+  image       String?
 
   members     TeamMember[]
   roles       TeamCustomRole[]

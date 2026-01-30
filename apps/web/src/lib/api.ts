@@ -759,6 +759,7 @@ export interface Team {
   description: string | null;
   color: string;
   icon: string | null;
+  image: string | null;
   role: TeamRole;
   memberCount: number;
   taskCount: number;
@@ -875,17 +876,33 @@ export const teamsApi = {
     api<Team>(`/api/teams/${id}`, { token }),
 
   create: (
-    data: { name: string; description?: string; color?: string; icon?: string },
+    data: { name: string; description?: string; color?: string; icon?: string; image?: string },
     token: string
   ) =>
     api<Team>('/api/teams', { method: 'POST', body: data, token }),
 
   update: (
     id: string,
-    data: { name?: string; description?: string | null; color?: string; icon?: string | null },
+    data: { name?: string; description?: string | null; color?: string; icon?: string | null; image?: string | null },
     token: string
   ) =>
     api<Team>(`/api/teams/${id}`, { method: 'PATCH', body: data, token }),
+
+  uploadImage: async (id: string, file: File, token: string): Promise<ApiResponse<{ url: string }>> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_URL}/api/teams/${id}/image`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    const data = await response.json();
+    return data;
+  },
 
   delete: (id: string, token: string) =>
     api<void>(`/api/teams/${id}`, { method: 'DELETE', token }),

@@ -1,10 +1,27 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import multer from 'multer';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware } from '../auth/middleware.js';
 import { TeamRole } from '@termify/shared';
 import { getWebSocketServer } from '../websocket/WebSocketServer.js';
 import { NotificationService } from '../services/NotificationService.js';
+import { storageService } from '../services/StorageService.js';
+
+// Configure multer for file uploads (in-memory storage)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB max
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  },
+});
 
 const router = Router();
 
@@ -17,6 +34,7 @@ const createTeamSchema = z.object({
   description: z.string().max(500).optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   icon: z.string().max(50).optional(),
+  image: z.string().url().optional(),
 });
 
 const updateTeamSchema = z.object({
@@ -24,6 +42,7 @@ const updateTeamSchema = z.object({
   description: z.string().max(500).optional().nullable(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   icon: z.string().max(50).optional().nullable(),
+  image: z.string().url().optional().nullable(),
 });
 
 const inviteMemberSchema = z.object({
@@ -63,6 +82,7 @@ router.get('/', async (req: Request, res: Response) => {
       description: membership.team.description,
       color: membership.team.color,
       icon: membership.team.icon,
+      image: membership.team.image,
       role: membership.role,
       memberCount: membership.team._count.members,
       taskCount: membership.team._count.tasks,
@@ -95,6 +115,7 @@ router.post('/', async (req: Request, res: Response) => {
         description: data.description,
         color: data.color || '#6366f1',
         icon: data.icon,
+        image: data.image,
         members: {
           create: {
             userId,
@@ -117,6 +138,7 @@ router.post('/', async (req: Request, res: Response) => {
         description: team.description,
         color: team.color,
         icon: team.icon,
+        image: team.image,
         role: TeamRole.OWNER,
         memberCount: team._count.members,
         taskCount: team._count.tasks,
@@ -186,6 +208,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         description: team.description,
         color: team.color,
         icon: team.icon,
+        image: team.image,
         role: membership.role,
         memberCount: team.members.length,
         taskCount: team._count.tasks,
@@ -240,6 +263,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
         description: data.description,
         color: data.color,
         icon: data.icon,
+        image: data.image,
       },
       include: {
         _count: {
@@ -256,6 +280,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
         description: team.description,
         color: team.color,
         icon: team.icon,
+        image: team.image,
         role: membership.role,
         memberCount: team._count.members,
         taskCount: team._count.tasks,
@@ -598,6 +623,102 @@ router.delete('/:id/members/:memberId', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[API] Remove member error:', error);
     res.status(500).json({ success: false, error: 'Failed to remove member' });
+  }
+});
+
+/**
+ * POST /api/teams/:id/image
+ * Upload team image (OWNER or ADMIN only)
+ */
+router.post('/:id/image', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const teamId = req.params.id as string;
+
+    // Verify membership and role
+    const membership = await prisma.teamMember.findUnique({
+      where: { teamId_userId: { teamId, userId } },
+    });
+
+    if (!membership) {
+      res.status(404).json({ success: false, error: 'Team not found' });
+      return;
+    }
+
+    if (membership.role === TeamRole.MEMBER) {
+      res.status(403).json({ success: false, error: 'Only team owners and admins can update the team image' });
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({ success: false, error: 'No file uploaded' });
+      return;
+    }
+
+    // Check if storage is configured
+    if (!storageService.isConfigured()) {
+      res.status(503).json({ success: false, error: 'Storage service not configured' });
+      return;
+    }
+
+    // Upload image
+    const imageUrl = await storageService.uploadTeamImage(req.file.buffer, teamId);
+
+    // Update team with new image URL
+    await prisma.team.update({
+      where: { id: teamId },
+      data: { image: imageUrl },
+    });
+
+    res.json({
+      success: true,
+      data: { url: imageUrl },
+    });
+  } catch (error) {
+    console.error('[API] Upload team image error:', error);
+    res.status(500).json({ success: false, error: 'Failed to upload team image' });
+  }
+});
+
+/**
+ * DELETE /api/teams/:id/image
+ * Delete team image (OWNER or ADMIN only)
+ */
+router.delete('/:id/image', async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const teamId = req.params.id as string;
+
+    // Verify membership and role
+    const membership = await prisma.teamMember.findUnique({
+      where: { teamId_userId: { teamId, userId } },
+    });
+
+    if (!membership) {
+      res.status(404).json({ success: false, error: 'Team not found' });
+      return;
+    }
+
+    if (membership.role === TeamRole.MEMBER) {
+      res.status(403).json({ success: false, error: 'Only team owners and admins can delete the team image' });
+      return;
+    }
+
+    // Delete image from storage
+    if (storageService.isConfigured()) {
+      await storageService.deleteTeamImage(teamId);
+    }
+
+    // Update team to remove image URL
+    await prisma.team.update({
+      where: { id: teamId },
+      data: { image: null },
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[API] Delete team image error:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete team image' });
   }
 });
 

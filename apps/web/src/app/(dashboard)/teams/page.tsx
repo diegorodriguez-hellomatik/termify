@@ -108,6 +108,7 @@ export default function TeamsPage() {
     getTeam,
     createTeam,
     updateTeam,
+    uploadTeamImage,
     deleteTeam,
     inviteMember,
     updateMemberRole,
@@ -255,6 +256,15 @@ export default function TeamsPage() {
     return success;
   };
 
+  const handleUploadTeamImage = async (file: File) => {
+    if (!selectedTeamId) return null;
+    const url = await uploadTeamImage(selectedTeamId, file);
+    if (url) {
+      loadTeamDetails(selectedTeamId);
+    }
+    return url;
+  };
+
   // Filter teams by search query
   const filteredTeams = useMemo(() => {
     if (!searchQuery) return teams;
@@ -337,6 +347,7 @@ export default function TeamsPage() {
           onInviteMember={handleInviteMember}
           onUpdateMemberRole={handleUpdateMemberRole}
           onRemoveMember={handleRemoveMember}
+          onUploadTeamImage={handleUploadTeamImage}
           onViewTasks={handleViewTasks}
         />
       )}

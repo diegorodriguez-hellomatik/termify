@@ -20,6 +20,8 @@ import {
   ArrowRight,
   Clock,
   Zap,
+  Camera,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -43,11 +45,12 @@ import { useTeamHistory } from '@/hooks/useTeamHistory';
 interface TeamDetailProps {
   team: Team;
   onBack: () => void;
-  onUpdateTeam: (id: string, data: { name?: string; description?: string | null; color?: string }) => Promise<Team | null>;
+  onUpdateTeam: (id: string, data: { name?: string; description?: string | null; color?: string; image?: string | null }) => Promise<Team | null>;
   onDeleteTeam: (id: string) => Promise<boolean>;
   onInviteMember: (email: string, role?: 'ADMIN' | 'MEMBER') => Promise<any>;
   onUpdateMemberRole: (memberId: string, role: 'ADMIN' | 'MEMBER') => Promise<any>;
   onRemoveMember: (memberId: string) => Promise<boolean>;
+  onUploadTeamImage?: (file: File) => Promise<string | null>;
   onViewTasks: () => void;
 }
 
@@ -67,6 +70,7 @@ export function TeamDetail({
   onInviteMember,
   onUpdateMemberRole,
   onRemoveMember,
+  onUploadTeamImage,
   onViewTasks,
 }: TeamDetailProps) {
   const [name, setName] = useState(team.name);
@@ -74,6 +78,7 @@ export function TeamDetail({
   const [color, setColor] = useState(team.color);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -118,6 +123,29 @@ export function TeamDetail({
     }
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onUploadTeamImage) return;
+
+    setUploadingImage(true);
+    try {
+      await onUploadTeamImage(file);
+    } finally {
+      setUploadingImage(false);
+      // Reset input
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveImage = async () => {
+    setSaving(true);
+    try {
+      await onUpdateTeam(team.id, { image: null });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -127,10 +155,14 @@ export function TeamDetail({
         </Button>
         <div className="flex items-center gap-3 flex-1">
           <div
-            className="w-12 h-12 rounded-lg flex items-center justify-center text-white text-xl font-semibold"
-            style={{ backgroundColor: color || '#6366f1' }}
+            className="w-12 h-12 rounded-lg flex items-center justify-center text-white text-xl font-semibold overflow-hidden"
+            style={{ backgroundColor: team.image ? undefined : (color || '#6366f1') }}
           >
-            {team.icon || team.name.charAt(0).toUpperCase()}
+            {team.image ? (
+              <img src={team.image} alt={team.name} className="w-full h-full object-cover" />
+            ) : (
+              team.icon || team.name.charAt(0).toUpperCase()
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <h1 className="text-xl font-semibold truncate">{team.name}</h1>
@@ -454,6 +486,66 @@ export function TeamDetail({
             <Card>
               <CardContent className="p-4 space-y-4">
                 <h3 className="text-sm font-medium">Team Settings</h3>
+
+                {/* Team Avatar */}
+                <div>
+                  <label className="block text-sm text-muted-foreground mb-1.5">
+                    Team Avatar
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <div
+                      className="w-16 h-16 rounded-lg flex items-center justify-center text-white text-2xl font-semibold overflow-hidden relative group"
+                      style={{ backgroundColor: team.image ? undefined : (color || '#6366f1') }}
+                    >
+                      {team.image ? (
+                        <>
+                          <img src={team.image} alt={team.name} className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={handleRemoveImage}
+                            disabled={saving}
+                            className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                          >
+                            <X className="h-6 w-6 text-white" />
+                          </button>
+                        </>
+                      ) : (
+                        team.icon || team.name.charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          disabled={uploadingImage}
+                          className="hidden"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={uploadingImage}
+                          asChild
+                        >
+                          <span>
+                            {uploadingImage ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <Camera className="h-4 w-4 mr-2" />
+                            )}
+                            Upload Image
+                          </span>
+                        </Button>
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        JPG, PNG or WebP. Max 5MB.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm text-muted-foreground mb-1.5">
                     Team Name

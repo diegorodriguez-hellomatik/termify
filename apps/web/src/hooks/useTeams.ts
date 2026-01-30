@@ -73,6 +73,7 @@ export function useTeams() {
     description?: string | null;
     color?: string;
     icon?: string | null;
+    image?: string | null;
   }) => {
     if (!accessToken) return null;
 
@@ -87,6 +88,25 @@ export function useTeams() {
       return null;
     } catch (err) {
       console.error('[useTeams] Error updating team:', err);
+      return null;
+    }
+  }, [accessToken]);
+
+  const uploadTeamImage = useCallback(async (teamId: string, file: File) => {
+    if (!accessToken) return null;
+
+    try {
+      const response = await teamsApi.uploadImage(teamId, file, accessToken);
+      if (response.success && response.data) {
+        // Update team with new image URL
+        setTeams((prev) =>
+          prev.map((team) => (team.id === teamId ? { ...team, image: response.data!.url } : team))
+        );
+        return response.data.url;
+      }
+      return null;
+    } catch (err) {
+      console.error('[useTeams] Error uploading team image:', err);
       return null;
     }
   }, [accessToken]);
@@ -184,6 +204,7 @@ export function useTeams() {
     getTeam,
     createTeam,
     updateTeam,
+    uploadTeamImage,
     deleteTeam,
     inviteMember,
     updateMemberRole,

@@ -63,12 +63,16 @@ function TeamCard({
             className="w-1 h-10 rounded-full flex-shrink-0"
             style={{ backgroundColor: team.color || '#6366f1' }}
           />
-          {/* Icon */}
+          {/* Icon/Image */}
           <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-lg font-semibold flex-shrink-0"
-            style={{ backgroundColor: team.color || '#6366f1' }}
+            className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-lg font-semibold flex-shrink-0 overflow-hidden"
+            style={{ backgroundColor: team.image ? undefined : (team.color || '#6366f1') }}
           >
-            {team.icon || team.name.charAt(0).toUpperCase()}
+            {team.image ? (
+              <img src={team.image} alt={team.name} className="w-full h-full object-cover" />
+            ) : (
+              team.icon || team.name.charAt(0).toUpperCase()
+            )}
           </div>
           {/* Info */}
           <div className="flex-1 min-w-0">
@@ -119,10 +123,14 @@ function TeamCard({
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div
-                className="w-7 h-7 rounded flex items-center justify-center text-white text-sm font-semibold flex-shrink-0"
-                style={{ backgroundColor: team.color || '#6366f1' }}
+                className="w-7 h-7 rounded flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 overflow-hidden"
+                style={{ backgroundColor: team.image ? undefined : (team.color || '#6366f1') }}
               >
-                {team.icon || team.name.charAt(0).toUpperCase()}
+                {team.image ? (
+                  <img src={team.image} alt={team.name} className="w-full h-full object-cover" />
+                ) : (
+                  team.icon || team.name.charAt(0).toUpperCase()
+                )}
               </div>
               <h3 className="font-medium text-sm text-foreground truncate">{team.name}</h3>
             </div>
@@ -162,10 +170,14 @@ function TeamCard({
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div
-              className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-lg font-semibold"
-              style={{ backgroundColor: team.color || '#6366f1' }}
+              className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-lg font-semibold overflow-hidden"
+              style={{ backgroundColor: team.image ? undefined : (team.color || '#6366f1') }}
             >
-              {team.icon || team.name.charAt(0).toUpperCase()}
+              {team.image ? (
+                <img src={team.image} alt={team.name} className="w-full h-full object-cover" />
+              ) : (
+                team.icon || team.name.charAt(0).toUpperCase()
+              )}
             </div>
             <div>
               <CardTitle className="text-base">{team.name}</CardTitle>
