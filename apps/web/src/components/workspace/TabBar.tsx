@@ -21,6 +21,7 @@ import {
   FileVideo,
   FileCog,
   Minimize,
+  Maximize,
   LayoutGrid,
 } from 'lucide-react';
 import { useWorkspace, Tab } from '@/contexts/WorkspaceContext';
@@ -355,14 +356,18 @@ export function TabBar({ onAddTab, isDark, isFullscreen, onToggleFullscreen, onA
         </button>
       )}
 
-      {/* Exit fullscreen button */}
-      {isFullscreen && onToggleFullscreen && (
+      {/* Fullscreen toggle button - always visible */}
+      {onToggleFullscreen && (
         <button
           onClick={onToggleFullscreen}
           className="p-1 rounded hover:bg-muted transition-colors flex-shrink-0"
-          title="Exit Fullscreen (Esc)"
+          title={isFullscreen ? "Exit Fullscreen (Esc)" : "Fullscreen (F11)"}
         >
-          <Minimize size={14} className="text-muted-foreground" />
+          {isFullscreen ? (
+            <Minimize size={14} className="text-muted-foreground" />
+          ) : (
+            <Maximize size={14} className="text-muted-foreground" />
+          )}
         </button>
       )}
 
