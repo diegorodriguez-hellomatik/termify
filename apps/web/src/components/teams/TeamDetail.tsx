@@ -79,6 +79,8 @@ export function TeamDetail({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [isTabTransitioning, setIsTabTransitioning] = useState(false);
+  const [isSubTabTransitioning, setIsSubTabTransitioning] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -146,6 +148,35 @@ export function TeamDetail({
     }
   };
 
+  const handleTabChange = (newTab: TabType) => {
+    if (newTab === activeTab) return;
+    setIsTabTransitioning(true);
+    setTimeout(() => {
+      setActiveTab(newTab);
+      setTimeout(() => setIsTabTransitioning(false), 50);
+    }, 150);
+  };
+
+  const handleResourceSubTabChange = (subTab: ResourceSubTab) => {
+    if (subTab === resourceSubTab && activeTab === 'resources') return;
+    if (activeTab !== 'resources') {
+      // Coming from different tab, use main transition
+      setIsTabTransitioning(true);
+      setTimeout(() => {
+        setActiveTab('resources');
+        setResourceSubTab(subTab);
+        setTimeout(() => setIsTabTransitioning(false), 50);
+      }, 150);
+    } else {
+      // Already in resources, use sub-tab transition
+      setIsSubTabTransitioning(true);
+      setTimeout(() => {
+        setResourceSubTab(subTab);
+        setTimeout(() => setIsSubTabTransitioning(false), 50);
+      }, 150);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -183,28 +214,28 @@ export function TeamDetail({
       <div className="flex gap-1 border-b mb-4">
         <TabButton
           active={activeTab === 'overview'}
-          onClick={() => setActiveTab('overview')}
+          onClick={() => handleTabChange('overview')}
           icon={<Activity className="h-4 w-4" />}
         >
           Overview
         </TabButton>
         <TabButton
           active={activeTab === 'resources'}
-          onClick={() => setActiveTab('resources')}
+          onClick={() => handleTabChange('resources')}
           icon={<FolderOpen className="h-4 w-4" />}
         >
           Resources
         </TabButton>
         <TabButton
           active={activeTab === 'members'}
-          onClick={() => setActiveTab('members')}
+          onClick={() => handleTabChange('members')}
           icon={<Users className="h-4 w-4" />}
         >
           Members
         </TabButton>
         <TabButton
           active={activeTab === 'activity'}
-          onClick={() => setActiveTab('activity')}
+          onClick={() => handleTabChange('activity')}
           icon={<History className="h-4 w-4" />}
         >
           Activity
@@ -212,7 +243,7 @@ export function TeamDetail({
         {canEdit && (
           <TabButton
             active={activeTab === 'settings'}
-            onClick={() => setActiveTab('settings')}
+            onClick={() => handleTabChange('settings')}
             icon={<Settings className="h-4 w-4" />}
           >
             Settings
@@ -221,7 +252,10 @@ export function TeamDetail({
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto">
+      <div className={cn(
+        "flex-1 overflow-auto transition-all duration-150",
+        isTabTransitioning ? "opacity-0 translate-y-2" : "opacity-100 translate-y-0"
+      )}>
         {/* Overview Tab - Enhanced */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
@@ -232,7 +266,7 @@ export function TeamDetail({
                 label="Members"
                 value={team.memberCount || 0}
                 subtext={onlineMembers.length > 0 ? `${onlineMembers.length} online` : undefined}
-                onClick={() => setActiveTab('members')}
+                onClick={() => handleTabChange('members')}
               />
               <StatCard
                 icon={<ListTodo className="h-4 w-4" />}
@@ -244,13 +278,13 @@ export function TeamDetail({
                 icon={<Terminal className="h-4 w-4" />}
                 label="Terminals"
                 value="-"
-                onClick={() => { setActiveTab('resources'); setResourceSubTab('terminals'); }}
+                onClick={() => handleResourceSubTabChange('terminals')}
               />
               <StatCard
                 icon={<Code2 className="h-4 w-4" />}
                 label="Snippets"
                 value="-"
-                onClick={() => { setActiveTab('resources'); setResourceSubTab('snippets'); }}
+                onClick={() => handleResourceSubTabChange('snippets')}
               />
             </div>
 
@@ -312,7 +346,7 @@ export function TeamDetail({
                   <Button
                     variant="outline"
                     className="justify-start"
-                    onClick={() => { setActiveTab('resources'); setResourceSubTab('terminals'); }}
+                    onClick={() => handleResourceSubTabChange('terminals')}
                   >
                     <Terminal className="h-4 w-4 mr-2" />
                     Terminals
@@ -320,7 +354,7 @@ export function TeamDetail({
                   <Button
                     variant="outline"
                     className="justify-start"
-                    onClick={() => { setActiveTab('resources'); setResourceSubTab('snippets'); }}
+                    onClick={() => handleResourceSubTabChange('snippets')}
                   >
                     <Code2 className="h-4 w-4 mr-2" />
                     Snippets
@@ -393,28 +427,28 @@ export function TeamDetail({
             <div className="flex gap-2 flex-wrap">
               <SubTabButton
                 active={resourceSubTab === 'terminals'}
-                onClick={() => setResourceSubTab('terminals')}
+                onClick={() => handleResourceSubTabChange('terminals')}
                 icon={<Terminal className="h-4 w-4" />}
               >
                 Terminals
               </SubTabButton>
               <SubTabButton
                 active={resourceSubTab === 'workspaces'}
-                onClick={() => setResourceSubTab('workspaces')}
+                onClick={() => handleResourceSubTabChange('workspaces')}
                 icon={<Layout className="h-4 w-4" />}
               >
                 Workspaces
               </SubTabButton>
               <SubTabButton
                 active={resourceSubTab === 'snippets'}
-                onClick={() => setResourceSubTab('snippets')}
+                onClick={() => handleResourceSubTabChange('snippets')}
                 icon={<Code2 className="h-4 w-4" />}
               >
                 Snippets
               </SubTabButton>
               <SubTabButton
                 active={resourceSubTab === 'servers'}
-                onClick={() => setResourceSubTab('servers')}
+                onClick={() => handleResourceSubTabChange('servers')}
                 icon={<Server className="h-4 w-4" />}
               >
                 Servers
@@ -422,18 +456,23 @@ export function TeamDetail({
             </div>
 
             {/* Resource Content */}
-            {resourceSubTab === 'terminals' && (
-              <TeamTerminalsList teamId={team.id} canManage={canEdit} />
-            )}
-            {resourceSubTab === 'workspaces' && (
-              <TeamWorkspacesList teamId={team.id} canManage={canEdit} />
-            )}
-            {resourceSubTab === 'snippets' && (
-              <TeamSnippetsList teamId={team.id} canManage={canEdit} />
-            )}
-            {resourceSubTab === 'servers' && (
-              <TeamServersList teamId={team.id} canManage={canEdit} />
-            )}
+            <div className={cn(
+              "transition-all duration-150",
+              isSubTabTransitioning ? "opacity-0 translate-y-2" : "opacity-100 translate-y-0"
+            )}>
+              {resourceSubTab === 'terminals' && (
+                <TeamTerminalsList teamId={team.id} canManage={canEdit} />
+              )}
+              {resourceSubTab === 'workspaces' && (
+                <TeamWorkspacesList teamId={team.id} canManage={canEdit} />
+              )}
+              {resourceSubTab === 'snippets' && (
+                <TeamSnippetsList teamId={team.id} canManage={canEdit} />
+              )}
+              {resourceSubTab === 'servers' && (
+                <TeamServersList teamId={team.id} canManage={canEdit} />
+              )}
+            </div>
           </div>
         )}
 
