@@ -1,0 +1,19 @@
+[package]
+name = "stats-agent"
+version = "1.0.0"
+edition = "2021"
+description = "System stats agent for Termify - runs as daemon and outputs JSON stats"
+authors = ["Hellomatik"]
+
+[dependencies]
+sysinfo = "0.32"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+os_info = "3"
+lazy_static = "1.5"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
