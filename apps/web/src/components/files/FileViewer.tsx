@@ -116,7 +116,7 @@ export function FileViewer({ terminalId, filePath, fileName, extension, classNam
       setError(null);
       setBinaryUrl(null);
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
       // For binary files (images, videos, audio), fetch as blob
       if (isImageExtension(extension) || isVideoExtension(extension) || isAudioExtension(extension)) {

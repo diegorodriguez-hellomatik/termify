@@ -563,11 +563,12 @@ export class TerminalWebSocketServer {
 
       this.broadcastStatus(terminalId, TerminalStatus.STARTING);
 
-      // Create PTY instance
+      // Create PTY instance (with Claude session if specified)
       await ptyManager.create(terminalId, userId, {
         cols: terminal.cols,
         rows: terminal.rows,
         cwd: terminal.cwd || undefined,
+        claudeSessionId: terminal.claudeSessionId || undefined,
       });
 
       // Update status to running
@@ -656,6 +657,15 @@ export class TerminalWebSocketServer {
       });
 
       this.broadcastStatus(terminalId, TerminalStatus.RUNNING);
+
+      // If this is a remote Claude session, automatically send the resume command
+      if (terminal.claudeSessionId) {
+        console.log(`[WS] Resuming remote Claude session: ${terminal.claudeSessionId}`);
+        // Wait for shell to initialize, then resume Claude session
+        setTimeout(() => {
+          sshManager.write(terminalId, `claude --resume ${terminal.claudeSessionId}\n`);
+        }, 500);
+      }
     } catch (error) {
       console.error(`[WS] Failed to start SSH terminal ${terminalId}:`, error);
 

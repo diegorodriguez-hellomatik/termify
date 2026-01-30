@@ -11,6 +11,7 @@ interface CreateTerminalModalProps {
   onClose: () => void;
   onCreateLocal: () => void;
   onCreateSSH: (config: SSHConfig) => void;
+  onImportClaude?: () => void;
   isDark: boolean;
   token?: string;
 }
@@ -33,6 +34,7 @@ export function CreateTerminalModal({
   onClose,
   onCreateLocal,
   onCreateSSH,
+  onImportClaude,
   isDark,
   token,
 }: CreateTerminalModalProps) {

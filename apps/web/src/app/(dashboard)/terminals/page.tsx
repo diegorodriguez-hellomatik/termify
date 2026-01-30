@@ -58,6 +58,7 @@ import { KeyboardShortcutsProvider, useKeyboardShortcuts } from '@/contexts/Keyb
 import { ShortcutsHelpModalWithContext } from '@/components/ui/ShortcutsHelpModal';
 import { CreateTerminalModal, SSHConfig } from '@/components/terminals/CreateTerminalModal';
 import { ShareTerminalModal } from '@/components/terminals/ShareTerminalModal';
+import { ClaudeSessionsModal } from '@/components/terminals/ClaudeSessionsModal';
 import { MobileTerminalList } from '@/components/mobile/MobileTerminalList';
 import { cn } from '@/lib/utils';
 
@@ -1010,6 +1011,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
   const [overId, setOverId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showClaudeSessionsModal, setShowClaudeSessionsModal] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -1134,6 +1136,14 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
         setCreating(false);
       }
     }
+  };
+
+  const handleImportClaudeSession = () => {
+    setShowClaudeSessionsModal(true);
+  };
+
+  const handleClaudeSessionImported = (terminalId: string) => {
+    router.push(`/terminals/${terminalId}`);
   };
 
   const handleDeleteTerminal = (id: string) => {
@@ -1837,6 +1847,16 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
           onClose={() => setShowCreateModal(false)}
           onCreateLocal={handleCreateLocalTerminal}
           onCreateSSH={handleCreateSSHTerminal}
+          onImportClaude={handleImportClaudeSession}
+          isDark={isDark}
+          token={session?.accessToken}
+        />
+
+        {/* Claude Sessions Modal */}
+        <ClaudeSessionsModal
+          isOpen={showClaudeSessionsModal}
+          onClose={() => setShowClaudeSessionsModal(false)}
+          onSessionImported={handleClaudeSessionImported}
           isDark={isDark}
           token={session?.accessToken}
         />

@@ -7,6 +7,7 @@ type Theme = 'light' | 'dark';
 export type ViewMode = 'grid' | 'compact' | 'list';
 export type FontFamily = 'jetbrains' | 'fira' | 'source' | 'ibm' | 'space' | 'inter';
 export type FontSize = '13' | '14' | '15' | '16' | '17' | '18';
+export type PanelThemeMode = 'default' | 'terminal';
 
 export const FONT_OPTIONS: { value: FontFamily; label: string; description: string }[] = [
   { value: 'jetbrains', label: 'JetBrains Mono', description: 'Designed for developers' },
@@ -39,6 +40,8 @@ interface ThemeContextType {
   setFontFamily: (font: FontFamily) => void;
   fontSize: FontSize;
   setFontSize: (size: FontSize) => void;
+  panelThemeMode: PanelThemeMode;
+  setPanelThemeMode: (mode: PanelThemeMode) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -134,6 +137,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [viewMode, setViewModeState] = useState<ViewMode>('grid');
   const [fontFamily, setFontFamilyState] = useState<FontFamily>('jetbrains');
   const [fontSize, setFontSizeState] = useState<FontSize>('16');
+  const [panelThemeMode, setPanelThemeModeState] = useState<PanelThemeMode>('default');
   const [mounted, setMounted] = useState(false);
 
   // Load theme from localStorage on mount
@@ -217,6 +221,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setFontSizeState(size);
   };
 
+  const setPanelThemeMode = (mode: PanelThemeMode) => {
+    setPanelThemeModeState(mode);
+  };
+
   return (
     <ThemeContext.Provider
       value={{
@@ -232,6 +240,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         setFontFamily,
         fontSize,
         setFontSize,
+        panelThemeMode,
+        setPanelThemeMode,
       }}
     >
       {children}

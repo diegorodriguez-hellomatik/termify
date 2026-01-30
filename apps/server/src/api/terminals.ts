@@ -16,12 +16,24 @@ const router = Router();
 router.use(authMiddleware);
 
 // Validation schemas
+const sshConfigSchema = z.object({
+  host: z.string().min(1).max(255),
+  port: z.number().int().min(1).max(65535).optional().default(22),
+  username: z.string().min(1).max(100),
+  password: z.string().optional(),
+  privateKey: z.string().optional(),
+}).refine(data => data.password || data.privateKey, {
+  message: 'Either password or privateKey must be provided',
+});
+
 const createTerminalSchema = z.object({
   name: z.string().min(1).max(100).optional().default('Terminal'),
   cols: z.number().int().min(40).max(500).optional().default(DEFAULT_COLS),
   rows: z.number().int().min(10).max(200).optional().default(DEFAULT_ROWS),
   cwd: z.string().max(1000).optional(),
   categoryId: z.string().optional(),
+  claudeSessionId: z.string().max(200).optional(),
+  sshConfig: sshConfigSchema.optional(), // For remote Claude sessions
 });
 
 const createSSHTerminalSchema = z.object({
@@ -193,6 +205,9 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
+    // Determine terminal type: SSH if sshConfig is provided, otherwise LOCAL
+    const isSSHRemote = !!data.sshConfig;
+
     const terminal = await prisma.terminal.create({
       data: {
         userId,
@@ -201,8 +216,18 @@ router.post('/', async (req: Request, res: Response) => {
         rows: data.rows,
         cwd: data.cwd,
         categoryId: data.categoryId,
+        claudeSessionId: data.claudeSessionId,
         position,
         status: TerminalStatus.STOPPED,
+        // If creating a remote Claude session, store SSH config
+        ...(isSSHRemote && data.sshConfig ? {
+          type: 'SSH',
+          sshHost: data.sshConfig.host,
+          sshPort: data.sshConfig.port,
+          sshUsername: data.sshConfig.username,
+          sshPassword: data.sshConfig.password,
+          sshPrivateKey: data.sshConfig.privateKey,
+        } : {}),
       },
       include: {
         category: {
@@ -218,15 +243,22 @@ router.post('/', async (req: Request, res: Response) => {
         action: 'terminal.create',
         resource: 'terminal',
         resourceId: terminal.id,
-        details: { name: data.name },
+        details: {
+          name: data.name,
+          ...(isSSHRemote ? { type: 'SSH', host: data.sshConfig?.host } : {}),
+          ...(data.claudeSessionId ? { claudeSessionId: data.claudeSessionId } : {}),
+        },
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       },
     });
 
+    // Don't return sensitive SSH credentials
+    const { sshPassword, sshPrivateKey, ...safeTerminal } = terminal;
+
     res.status(201).json({
       success: true,
-      data: terminal,
+      data: safeTerminal,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -571,7 +603,7 @@ router.post('/reorder', async (req: Request, res: Response) => {
 
 /**
  * POST /api/terminals/:id/start
- * Start a terminal (spawn PTY process)
+ * Start a terminal (spawn PTY process or SSH session)
  */
 router.post('/:id/start', async (req: Request, res: Response) => {
   try {
@@ -589,9 +621,10 @@ router.post('/:id/start', async (req: Request, res: Response) => {
     }
 
     const ptyManager = getPTYManager();
+    const sshManager = SSHManager.getInstance();
 
     // Check if already running
-    if (ptyManager.has(id)) {
+    if (ptyManager.has(id) || sshManager.hasSession(id)) {
       res.json({
         success: true,
         data: { status: TerminalStatus.RUNNING, message: 'Terminal already running' },
@@ -599,12 +632,35 @@ router.post('/:id/start', async (req: Request, res: Response) => {
       return;
     }
 
-    // Start the PTY
-    await ptyManager.create(id, userId, {
-      cols: terminal.cols,
-      rows: terminal.rows,
-      cwd: terminal.cwd || undefined,
-    });
+    // Check if this is an SSH-based terminal (remote Claude session or SSH terminal)
+    const isSSHTerminal = terminal.type === 'SSH' && terminal.sshHost && terminal.sshUsername;
+
+    if (isSSHTerminal) {
+      // Create SSH session for remote terminal/Claude session
+      await sshManager.createSession(id, {
+        host: terminal.sshHost!,
+        port: terminal.sshPort || 22,
+        username: terminal.sshUsername!,
+        password: terminal.sshPassword || undefined,
+        privateKey: terminal.sshPrivateKey || undefined,
+      }, terminal.cols, terminal.rows);
+
+      // If this is a Claude session on remote, send the resume command
+      if (terminal.claudeSessionId) {
+        // Wait a moment for shell initialization, then resume Claude session
+        setTimeout(() => {
+          sshManager.write(id, `claude --resume ${terminal.claudeSessionId}\n`);
+        }, 500);
+      }
+    } else {
+      // Start local PTY (with Claude session if specified)
+      await ptyManager.create(id, userId, {
+        cols: terminal.cols,
+        rows: terminal.rows,
+        cwd: terminal.cwd || undefined,
+        claudeSessionId: terminal.claudeSessionId || undefined,
+      });
+    }
 
     // Update status in DB
     await prisma.terminal.update({
@@ -627,7 +683,7 @@ router.post('/:id/start', async (req: Request, res: Response) => {
 
 /**
  * POST /api/terminals/:id/stop
- * Stop a terminal (kill PTY process)
+ * Stop a terminal (kill PTY process or SSH session)
  */
 router.post('/:id/stop', async (req: Request, res: Response) => {
   try {
@@ -645,12 +701,19 @@ router.post('/:id/stop', async (req: Request, res: Response) => {
     }
 
     const ptyManager = getPTYManager();
+    const sshManager = SSHManager.getInstance();
 
-    // Get buffered output before killing
-    const bufferedOutput = ptyManager.getBufferedOutput(id);
+    let bufferedOutput: string | undefined;
 
-    // Kill the PTY
-    ptyManager.kill(id);
+    // Check if it's an SSH session or PTY
+    if (sshManager.hasSession(id)) {
+      // Destroy SSH session
+      sshManager.destroySession(id);
+    } else {
+      // Get buffered output before killing PTY
+      bufferedOutput = ptyManager.getBufferedOutput(id);
+      ptyManager.kill(id);
+    }
 
     // Update status in DB and save output buffer
     await prisma.terminal.update({

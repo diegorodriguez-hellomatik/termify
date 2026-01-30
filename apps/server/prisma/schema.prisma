@@ -249,6 +249,9 @@ model Terminal {
   // Team ownership - if set, terminal belongs to the team
   teamId        String?        @map("team_id")
 
+  // Claude Code session (for resuming)
+  claudeSessionId String?      @map("claude_session_id")
+
   // SSH connection fields
   sshHost       String?        @map("ssh_host")
   sshPort       Int?           @map("ssh_port") @default(22)

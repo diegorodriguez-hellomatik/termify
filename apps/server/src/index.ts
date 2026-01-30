@@ -15,6 +15,7 @@ import apikeysRoutes from './api/apikeys.js';
 import shareRoutes from './api/share.js';
 import workspaceShareRoutes from './api/workspace-share.js';
 import notificationsRoutes from './api/notifications.js';
+import claudeSessionsRoutes from './api/claude-sessions.js';
 import workspacesRoutes from './api/workspaces.js';
 import teamsRoutes from './api/teams.js';
 import tasksRoutes from './api/tasks.js';
@@ -48,7 +49,7 @@ app.use(cors({
 app.use(express.json());
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -67,6 +68,7 @@ app.use('/api/profiles', profilesRoutes);
 app.use('/api/auditlogs', auditlogsRoutes);
 app.use('/api/apikeys', apikeysRoutes);
 app.use('/api', notificationsRoutes);
+app.use('/api/claude-sessions', claudeSessionsRoutes);
 app.use('/api/workspaces', workspacesRoutes);
 app.use('/api/teams', teamsRoutes);
 app.use('/api/teams', teamTerminalsRoutes);
@@ -87,7 +89,7 @@ app.use('/api/teams', teamTaskStatusRoutes);
 app.use('/api/servers', serversRoutes);
 
 // Stats endpoint
-app.get('/api/stats', (req, res) => {
+app.get('/api/stats', (_req, res) => {
   const ptyManager = getPTYManager();
   res.json({
     ptyInstances: ptyManager.count,
@@ -102,7 +104,7 @@ const server = createServer(app);
 const wsServer = new TerminalWebSocketServer({ server });
 
 // Update stats endpoint with WebSocket stats
-app.get('/api/stats', (req, res) => {
+app.get('/api/stats', (_req, res) => {
   const ptyManager = getPTYManager();
   res.json({
     ptyInstances: ptyManager.count,

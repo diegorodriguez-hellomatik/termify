@@ -237,4 +237,75 @@ export class SSHManager extends EventEmitter {
       this.destroySession(sessionId);
     }
   }
+
+  /**
+   * Execute a command on remote server and return output
+   */
+  async executeCommand(config: SSHConfig, command: string, timeout: number = 30000): Promise<{ success: boolean; output?: string; error?: string }> {
+    return new Promise((resolve) => {
+      const client = new Client();
+      const timeoutId = setTimeout(() => {
+        client.end();
+        resolve({ success: false, error: `Command timeout (${timeout / 1000}s)` });
+      }, timeout);
+
+      client.on('ready', () => {
+        client.exec(command, (err, channel) => {
+          if (err) {
+            clearTimeout(timeoutId);
+            client.end();
+            resolve({ success: false, error: err.message });
+            return;
+          }
+
+          let output = '';
+          let stderr = '';
+
+          channel.on('data', (data: Buffer) => {
+            output += data.toString();
+          });
+
+          channel.stderr.on('data', (data: Buffer) => {
+            stderr += data.toString();
+          });
+
+          channel.on('close', (code: number) => {
+            clearTimeout(timeoutId);
+            client.end();
+
+            if (code === 0) {
+              resolve({ success: true, output });
+            } else {
+              resolve({ success: false, error: stderr || `Command exited with code ${code}`, output });
+            }
+          });
+        });
+      });
+
+      client.on('error', (err) => {
+        clearTimeout(timeoutId);
+        resolve({ success: false, error: err.message });
+      });
+
+      const connectConfig: ConnectConfig = {
+        host: config.host,
+        port: config.port,
+        username: config.username,
+        readyTimeout: 10000,
+      };
+
+      if (config.password) {
+        connectConfig.password = config.password;
+      } else if (config.privateKey) {
+        connectConfig.privateKey = config.privateKey;
+      }
+
+      try {
+        client.connect(connectConfig);
+      } catch (err) {
+        clearTimeout(timeoutId);
+        resolve({ success: false, error: err instanceof Error ? err.message : 'Connection failed' });
+      }
+    });
+  }
 }
