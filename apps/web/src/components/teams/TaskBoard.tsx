@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   DndContext,
   closestCorners,
@@ -71,6 +72,14 @@ export function TaskBoard({
   const [createModalStatus, setCreateModalStatus] = useState<TaskStatus>('todo');
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, [role="button"], [data-no-context-menu]')) return;
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
 
   // Create columns from statuses
   const columns = useMemo(() => {
@@ -184,7 +193,7 @@ export function TaskBoard({
   const defaultStatus = statuses.find((s) => s.isDefault)?.key || statuses[0]?.key || 'todo';
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-[300px]" onContextMenu={handleContextMenu}>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold">Task Board</h2>
         <div className="flex items-center gap-2">
@@ -256,6 +265,25 @@ export function TaskBoard({
         teamId={teamId}
         onStatusesChange={onStatusesChange}
       />
+
+      {contextMenu && typeof document !== 'undefined' && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+          <div
+            className="fixed z-[9999] min-w-[160px] py-1 rounded-lg shadow-xl border border-border bg-popover overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+            style={{ left: Math.min(contextMenu.x, window.innerWidth - 180), top: Math.min(contextMenu.y, window.innerHeight - 100) }}
+          >
+            <button
+              onClick={() => { handleOpenCreateModal(defaultStatus); setContextMenu(null); }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+            >
+              <Plus size={16} className="text-primary" />
+              <span>New Task</span>
+            </button>
+          </div>
+        </>,
+        document.body
+      )}
     </div>
   );
 }

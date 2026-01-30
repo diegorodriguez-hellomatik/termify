@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Server, Plus, Trash2, MoreVertical, Loader2, RefreshCw, Terminal, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -35,6 +36,15 @@ export function TeamServersList({
   const [selectedServer, setSelectedServer] = useState<TeamServer | null>(null);
   const [checkingServer, setCheckingServer] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (!canManage) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, [role="button"], [data-no-context-menu]')) return;
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
 
   const handleCheck = async (serverId: string) => {
     setMenuOpenId(null);
@@ -99,7 +109,7 @@ export function TeamServersList({
 
   if (servers.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 px-4">
+      <div className="flex flex-col items-center justify-center py-16 px-4 min-h-[300px]" onContextMenu={handleContextMenu}>
         <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
           <Server className="h-8 w-8 text-muted-foreground" />
         </div>
@@ -118,12 +128,30 @@ export function TeamServersList({
           onOpenChange={setCreateModalOpen}
           onCreate={createServer}
         />
+        {contextMenu && typeof document !== 'undefined' && createPortal(
+          <>
+            <div className="fixed inset-0 z-[9998]" onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+            <div
+              className="fixed z-[9999] min-w-[160px] py-1 rounded-lg shadow-xl border border-border bg-popover overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+              style={{ left: Math.min(contextMenu.x, window.innerWidth - 180), top: Math.min(contextMenu.y, window.innerHeight - 100) }}
+            >
+              <button
+                onClick={() => { setCreateModalOpen(true); setContextMenu(null); }}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+              >
+                <Plus size={16} className="text-primary" />
+                <span>New Server</span>
+              </button>
+            </div>
+          </>,
+          document.body
+        )}
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-h-[300px]" onContextMenu={handleContextMenu}>
       {canManage && (
         <div className="flex justify-end">
           <Button onClick={() => setCreateModalOpen(true)} className="gap-2">
@@ -263,6 +291,25 @@ export function TeamServersList({
           setSelectedServer(null);
         }}
       />
+
+      {contextMenu && typeof document !== 'undefined' && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+          <div
+            className="fixed z-[9999] min-w-[160px] py-1 rounded-lg shadow-xl border border-border bg-popover overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+            style={{ left: Math.min(contextMenu.x, window.innerWidth - 180), top: Math.min(contextMenu.y, window.innerHeight - 100) }}
+          >
+            <button
+              onClick={() => { setCreateModalOpen(true); setContextMenu(null); }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+            >
+              <Plus size={16} className="text-primary" />
+              <span>New Server</span>
+            </button>
+          </div>
+        </>,
+        document.body
+      )}
     </div>
   );
 }

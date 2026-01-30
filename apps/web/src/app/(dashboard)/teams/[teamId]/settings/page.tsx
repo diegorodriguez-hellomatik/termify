@@ -56,11 +56,15 @@ export default function TeamSettingsPage() {
     if (!name.trim() || !teamId) return;
     setSaving(true);
     try {
-      await updateTeam(teamId, {
+      const updated = await updateTeam(teamId, {
         name: name.trim(),
         description: description.trim() || null,
         color,
       });
+      if (updated) {
+        // Emit event so layout refreshes the header
+        window.dispatchEvent(new CustomEvent('team-updated', { detail: { teamId } }));
+      }
     } finally {
       setSaving(false);
     }
@@ -88,6 +92,8 @@ export default function TeamSettingsPage() {
     try {
       await uploadTeamImage(teamId, file);
       loadTeam();
+      // Emit event so layout refreshes the header
+      window.dispatchEvent(new CustomEvent('team-updated', { detail: { teamId } }));
     } finally {
       setUploadingImage(false);
       e.target.value = '';
@@ -100,6 +106,8 @@ export default function TeamSettingsPage() {
     try {
       await updateTeam(teamId, { image: null });
       loadTeam();
+      // Emit event so layout refreshes the header
+      window.dispatchEvent(new CustomEvent('team-updated', { detail: { teamId } }));
     } finally {
       setSaving(false);
     }

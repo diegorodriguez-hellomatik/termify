@@ -78,6 +78,19 @@ export default function TeamLayout({ children }: TeamLayoutProps) {
     loadTeam();
   }, [loadTeam]);
 
+  // Listen for team-updated events from settings page
+  useEffect(() => {
+    const handleTeamUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<{ teamId: string }>;
+      if (customEvent.detail.teamId === teamId) {
+        loadTeam();
+      }
+    };
+
+    window.addEventListener('team-updated', handleTeamUpdated);
+    return () => window.removeEventListener('team-updated', handleTeamUpdated);
+  }, [teamId, loadTeam]);
+
   // WebSocket for real-time updates
   useTeamSocket({
     token: accessToken || null,
