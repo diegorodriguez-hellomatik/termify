@@ -321,12 +321,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           }));
           setTabs(newTabs);
 
+          // Restore settings from server
+          const savedSettings = response.data.settings as {
+            activeTerminalId?: string;
+            isLayoutLocked?: boolean;
+            lockedTerminalIds?: string[];
+            layoutMode?: 'strict' | 'flexible';
+          } | null;
+
           // Restore active tab from settings, or use first tab
-          const savedActiveTerminalId = (response.data.settings as { activeTerminalId?: string } | null)?.activeTerminalId;
-          const activeTab = savedActiveTerminalId
-            ? newTabs.find((t) => t.terminalId === savedActiveTerminalId)
+          const activeTab = savedSettings?.activeTerminalId
+            ? newTabs.find((t) => t.terminalId === savedSettings.activeTerminalId)
             : null;
           setActiveTabId(activeTab?.id || newTabs[0]?.id || null);
+
+          // Restore layout lock settings
+          if (savedSettings?.isLayoutLocked !== undefined) {
+            setLayoutLocked(savedSettings.isLayoutLocked);
+          }
+          if (savedSettings?.lockedTerminalIds) {
+            setLockedTerminalIds(new Set(savedSettings.lockedTerminalIds));
+          }
+          if (savedSettings?.layoutMode) {
+            setLayoutMode(savedSettings.layoutMode);
+          }
 
           // Set all terminal IDs for pre-connection
           const terminalIds = response.data.terminals.map((t: WorkspaceTerminalItem) => t.id);
@@ -402,14 +420,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         {
           layout: layout as WorkspaceLayout | null,
           floatingLayout: floatingLayout,
-          settings: { activeTerminalId },
+          settings: {
+            activeTerminalId,
+            isLayoutLocked,
+            lockedTerminalIds: Array.from(lockedTerminalIds),
+            layoutMode,
+          },
         },
         session.accessToken
       );
     } catch (error) {
       console.error('Failed to save layout:', error);
     }
-  }, [session?.accessToken, currentWorkspaceId, layout, floatingLayout, tabs, activeTabId]);
+  }, [session?.accessToken, currentWorkspaceId, layout, floatingLayout, tabs, activeTabId, isLayoutLocked, lockedTerminalIds, layoutMode]);
 
   // Update floating layout
   const updateFloatingLayout = useCallback((newLayout: FloatingLayout) => {
@@ -433,7 +456,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [layout, floatingLayout, activeTabId, mounted, currentWorkspaceId, sessionStatus, saveLayoutToServer]);
+  }, [layout, floatingLayout, activeTabId, isLayoutLocked, lockedTerminalIds, layoutMode, mounted, currentWorkspaceId, sessionStatus, saveLayoutToServer]);
 
   // Get active tab object
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
@@ -454,6 +477,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setLayout(null);
     setFloatingLayout(null);
     setPreConnectTerminalIds([]);
+    // Reset lock states (will be restored from new workspace settings)
+    setLayoutLocked(false);
+    setLockedTerminalIds(new Set());
+    setLayoutMode('flexible');
   }, [currentWorkspaceId, saveLayoutToServer]);
 
   // Create workspace

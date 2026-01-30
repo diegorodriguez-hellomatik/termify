@@ -780,6 +780,10 @@ export interface WorkspaceSettings {
   defaultCols?: number;
   defaultRows?: number;
   activeTerminalId?: string;
+  // Layout lock settings
+  isLayoutLocked?: boolean;
+  lockedTerminalIds?: string[];
+  layoutMode?: 'strict' | 'flexible';
 }
 
 export interface WorkspaceLayout {
