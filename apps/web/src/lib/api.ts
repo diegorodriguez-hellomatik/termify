@@ -1593,8 +1593,8 @@ export const serversApi = {
     api<{
       installed: boolean;
       version?: string;
-      binaryName?: string;
-      manualInstructions?: string[];
+      targetPlatform?: string;
+      instructions?: string[];
     }>('/api/servers/install-stats-agent', { method: 'POST', body: data, token }),
 };
 

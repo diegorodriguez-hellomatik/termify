@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware } from '../auth/middleware.js';
 import { ServerAuthMethod, ServerStatus, TerminalStatus } from '@prisma/client';
@@ -888,7 +890,7 @@ router.post('/check-stats-agent', async (req: Request, res: Response) => {
 
 /**
  * POST /api/servers/install-stats-agent
- * Install stats-agent on a remote server
+ * Install stats-agent on a remote server via SFTP
  */
 router.post('/install-stats-agent', async (req: Request, res: Response) => {
   try {
@@ -913,7 +915,7 @@ router.post('/install-stats-agent', async (req: Request, res: Response) => {
       return;
     }
 
-    // Detect OS and architecture
+    // Detect OS and architecture of remote server
     const archResult = await sshManager.executeCommand({
       host: data.host,
       port: data.port,
@@ -923,57 +925,140 @@ router.post('/install-stats-agent', async (req: Request, res: Response) => {
       command: 'uname -sm',
     });
 
-    const [os, arch] = archResult.output.trim().split(' ');
-    let binaryName = '';
+    const [remoteOs, remoteArch] = archResult.output.trim().split(' ');
 
-    // Determine correct binary
-    if (os === 'Linux') {
-      binaryName = arch === 'aarch64' ? 'stats-agent-linux-arm64' : 'stats-agent-linux-x86_64';
-    } else if (os === 'Darwin') {
-      binaryName = arch === 'arm64' ? 'stats-agent-darwin-arm64' : 'stats-agent-darwin-x86_64';
-    } else {
+    // Map remote arch to our binary naming
+    const archMap: Record<string, string> = {
+      'x86_64': 'x86_64',
+      'aarch64': 'aarch64',
+      'arm64': 'aarch64',
+    };
+
+    const osMap: Record<string, string> = {
+      'Linux': 'linux',
+      'Darwin': 'darwin',
+    };
+
+    const normalizedOs = osMap[remoteOs];
+    const normalizedArch = archMap[remoteArch];
+
+    if (!normalizedOs || !normalizedArch) {
       res.json({
         success: false,
-        error: `Unsupported operating system: ${os}`,
+        error: `Unsupported platform: ${remoteOs} ${remoteArch}`,
       });
       return;
     }
 
-    // Create directory and download binary
-    // For now, we'll use a simple curl command to download from a hypothetical release URL
-    // In production, this would download from your release server
-    const installCommands = [
-      'mkdir -p ~/.termify',
-      // TODO: Replace with actual release URL
-      // For now, we'll create a placeholder that fails gracefully
-      `echo "stats-agent binary should be uploaded via SCP or downloaded from releases" && exit 1`,
-    ].join(' && ');
+    // Find the correct binary
+    // Check multiple possible locations for pre-built binaries
+    const possiblePaths = [
+      // Pre-built binaries directory
+      path.join(process.cwd(), '..', '..', 'tools', 'stats-agent', 'binaries', `stats-agent-${normalizedOs}-${normalizedArch}`),
+      // If same architecture as local, use the release build
+      path.join(process.cwd(), '..', '..', 'tools', 'stats-agent', 'target', 'release', 'stats-agent'),
+      // User's home directory
+      path.join(process.env.HOME || '', '.termify', 'stats-agent'),
+    ];
 
-    const installResult = await sshManager.executeCommand({
+    // Detect local platform
+    const localOs = process.platform === 'darwin' ? 'darwin' : 'linux';
+    const localArch = process.arch === 'arm64' ? 'aarch64' : 'x86_64';
+
+    let binaryPath: string | null = null;
+
+    // If remote platform matches local, we can use any of the paths
+    if (normalizedOs === localOs && normalizedArch === localArch) {
+      for (const p of possiblePaths) {
+        try {
+          if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+            binaryPath = p;
+            break;
+          }
+        } catch {
+          // Continue to next path
+        }
+      }
+    } else {
+      // Different platform - only check for pre-built binary
+      const prebuiltPath = path.join(process.cwd(), '..', '..', 'tools', 'stats-agent', 'binaries', `stats-agent-${normalizedOs}-${normalizedArch}`);
+      if (fs.existsSync(prebuiltPath)) {
+        binaryPath = prebuiltPath;
+      }
+    }
+
+    if (!binaryPath) {
+      res.json({
+        success: false,
+        error: `No binary available for ${remoteOs} ${remoteArch}. Please cross-compile stats-agent for this platform.`,
+        data: {
+          installed: false,
+          targetPlatform: `${normalizedOs}-${normalizedArch}`,
+          instructions: [
+            `Cross-compile for ${remoteOs} ${remoteArch}:`,
+            `  cd tools/stats-agent`,
+            `  rustup target add ${normalizedArch === 'aarch64' ? 'aarch64' : 'x86_64'}-unknown-${normalizedOs}-gnu`,
+            `  cargo build --release --target ${normalizedArch === 'aarch64' ? 'aarch64' : 'x86_64'}-unknown-${normalizedOs}-gnu`,
+            `  mkdir -p binaries`,
+            `  cp target/${normalizedArch === 'aarch64' ? 'aarch64' : 'x86_64'}-unknown-${normalizedOs}-gnu/release/stats-agent binaries/stats-agent-${normalizedOs}-${normalizedArch}`,
+          ],
+        },
+      });
+      return;
+    }
+
+    console.log(`[API] Uploading stats-agent from ${binaryPath} to ${data.host}`);
+
+    // Create directory on remote
+    await sshManager.executeCommand({
       host: data.host,
       port: data.port,
       username: data.username,
       password: data.password,
       privateKey: data.privateKey,
-      command: installCommands,
+      command: 'mkdir -p ~/.termify',
     });
 
-    if (installResult.exitCode !== 0) {
+    // Get remote home directory
+    const homeResult = await sshManager.executeCommand({
+      host: data.host,
+      port: data.port,
+      username: data.username,
+      password: data.password,
+      privateKey: data.privateKey,
+      command: 'echo $HOME',
+    });
+    const remoteHome = homeResult.output.trim();
+
+    // Upload via SFTP
+    const uploadResult = await sshManager.uploadFile({
+      host: data.host,
+      port: data.port,
+      username: data.username,
+      password: data.password,
+      privateKey: data.privateKey,
+      localPath: binaryPath,
+      remotePath: `${remoteHome}/.termify/stats-agent`,
+      mode: 0o755,
+    });
+
+    if (!uploadResult.success) {
       res.json({
         success: false,
-        error: `Installation failed. Please manually upload the stats-agent binary to ~/.termify/stats-agent on the server. Binary needed: ${binaryName}`,
-        binaryName,
-        manualInstructions: [
-          `1. Build stats-agent for ${os} ${arch}:`,
-          `   cargo build --release --target ${os === 'Linux' ? (arch === 'aarch64' ? 'aarch64-unknown-linux-gnu' : 'x86_64-unknown-linux-gnu') : (arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin')}`,
-          '2. Copy to server:',
-          `   scp target/release/stats-agent ${data.username}@${data.host}:~/.termify/stats-agent`,
-          '3. Make executable:',
-          `   ssh ${data.username}@${data.host} "chmod +x ~/.termify/stats-agent"`,
-        ],
+        error: `Failed to upload: ${uploadResult.error}`,
       });
       return;
     }
+
+    // Make sure it's executable
+    await sshManager.executeCommand({
+      host: data.host,
+      port: data.port,
+      username: data.username,
+      password: data.password,
+      privateKey: data.privateKey,
+      command: 'chmod +x ~/.termify/stats-agent',
+    });
 
     // Verify installation
     const verifyResult = await sshManager.executeCommand({
@@ -984,6 +1069,16 @@ router.post('/install-stats-agent', async (req: Request, res: Response) => {
       privateKey: data.privateKey,
       command: '~/.termify/stats-agent version',
     });
+
+    if (verifyResult.exitCode !== 0) {
+      res.json({
+        success: false,
+        error: `Installation verification failed: ${verifyResult.output}`,
+      });
+      return;
+    }
+
+    console.log(`[API] stats-agent installed successfully on ${data.host}: ${verifyResult.output.trim()}`);
 
     res.json({
       success: true,

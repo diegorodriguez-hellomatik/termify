@@ -1,5 +1,7 @@
-import { Client, ClientChannel, ConnectConfig } from 'ssh2';
+import { Client, ClientChannel, ConnectConfig, SFTPWrapper } from 'ssh2';
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface SSHConfig {
   host: string;
@@ -309,6 +311,94 @@ export class SSHManager extends EventEmitter {
       } catch (err) {
         clearTimeout(timeout);
         reject(err);
+      }
+    });
+  }
+
+  /**
+   * Upload a file to a remote server via SFTP
+   */
+  async uploadFile(config: SSHConfig & { localPath: string; remotePath: string; mode?: number }): Promise<{ success: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      const client = new Client();
+      const timeout = setTimeout(() => {
+        client.end();
+        resolve({ success: false, error: 'Upload timeout (60s)' });
+      }, 60000);
+
+      client.on('ready', () => {
+        client.sftp((err, sftp) => {
+          if (err) {
+            clearTimeout(timeout);
+            client.end();
+            resolve({ success: false, error: err.message });
+            return;
+          }
+
+          // Read local file
+          let localData: Buffer;
+          try {
+            localData = fs.readFileSync(config.localPath);
+          } catch (readErr) {
+            clearTimeout(timeout);
+            client.end();
+            resolve({ success: false, error: `Failed to read local file: ${readErr instanceof Error ? readErr.message : 'Unknown error'}` });
+            return;
+          }
+
+          // Create remote directory if needed
+          const remoteDir = path.dirname(config.remotePath);
+
+          // First create directory
+          sftp.mkdir(remoteDir, (mkdirErr) => {
+            // Ignore error if directory exists
+
+            // Write file
+            const writeStream = sftp.createWriteStream(config.remotePath, {
+              mode: config.mode || 0o755,
+            });
+
+            writeStream.on('close', () => {
+              clearTimeout(timeout);
+              client.end();
+              resolve({ success: true });
+            });
+
+            writeStream.on('error', (writeErr: Error) => {
+              clearTimeout(timeout);
+              client.end();
+              resolve({ success: false, error: writeErr.message });
+            });
+
+            writeStream.write(localData);
+            writeStream.end();
+          });
+        });
+      });
+
+      client.on('error', (err) => {
+        clearTimeout(timeout);
+        resolve({ success: false, error: err.message });
+      });
+
+      const connectConfig: ConnectConfig = {
+        host: config.host,
+        port: config.port,
+        username: config.username,
+        readyTimeout: 10000,
+      };
+
+      if (config.password) {
+        connectConfig.password = config.password;
+      } else if (config.privateKey) {
+        connectConfig.privateKey = config.privateKey;
+      }
+
+      try {
+        client.connect(connectConfig);
+      } catch (err) {
+        clearTimeout(timeout);
+        resolve({ success: false, error: err instanceof Error ? err.message : 'Connection failed' });
       }
     });
   }

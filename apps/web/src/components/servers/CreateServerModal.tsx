@@ -150,10 +150,12 @@ export function CreateServerModal({
           version: response.data.version,
         });
       } else {
+        // Get error message from response
+        const errorMsg = (response as { error?: string }).error || 'Installation failed';
         setInstallResult({
           success: false,
-          message: (response as { error?: string }).error || 'Installation failed',
-          instructions: response.data?.manualInstructions,
+          message: errorMsg,
+          instructions: response.data?.instructions,
         });
       }
     } catch {
