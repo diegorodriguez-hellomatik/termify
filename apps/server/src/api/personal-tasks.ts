@@ -138,6 +138,13 @@ router.post('/', async (req: Request, res: Response) => {
         type: 'personal-task.created',
         task,
       });
+      // Also broadcast to dev-user in development mode
+      if (process.env.NODE_ENV === 'development') {
+        wsServer.broadcastToUser('dev-user', {
+          type: 'personal-task.created',
+          task,
+        });
+      }
     }
 
     res.status(201).json({
@@ -255,6 +262,14 @@ router.patch('/:id', async (req: Request, res: Response) => {
         task,
         previousStatus: statusChanged ? existingTask.status : undefined,
       });
+      // Also broadcast to dev-user in development mode
+      if (process.env.NODE_ENV === 'development') {
+        wsServer.broadcastToUser('dev-user', {
+          type: 'personal-task.updated',
+          task,
+          previousStatus: statusChanged ? existingTask.status : undefined,
+        });
+      }
     }
 
     res.json({
@@ -308,6 +323,14 @@ router.delete('/:id', async (req: Request, res: Response) => {
         taskId,
         status: task.status,
       });
+      // Also broadcast to dev-user in development mode
+      if (process.env.NODE_ENV === 'development') {
+        wsServer.broadcastToUser('dev-user', {
+          type: 'personal-task.deleted',
+          taskId,
+          status: task.status,
+        });
+      }
     }
 
     res.json({ success: true });
@@ -374,6 +397,14 @@ router.post('/reorder', async (req: Request, res: Response) => {
         tasks: updatedTasks,
         status: data.status,
       });
+      // Also broadcast to dev-user in development mode
+      if (process.env.NODE_ENV === 'development') {
+        wsServer.broadcastToUser('dev-user', {
+          type: 'personal-task.reordered',
+          tasks: updatedTasks,
+          status: data.status,
+        });
+      }
     }
 
     res.json({ success: true });
