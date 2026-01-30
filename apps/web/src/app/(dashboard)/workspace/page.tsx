@@ -57,6 +57,7 @@ import {
   Key,
   Search,
   X,
+  Share2,
 } from 'lucide-react';
 
 // Icon mapping for workspaces
@@ -91,7 +92,7 @@ const getWorkspaceIcon = (iconName: string | null | undefined) => {
 import { PageLayout, PageHeader, PageContent } from '@/components/ui/page-layout';
 import { Button } from '@/components/ui/button';
 import { DeleteConfirmModal } from '@/components/ui/DeleteConfirmModal';
-import { terminalsApi, TerminalProfile, Workspace } from '@/lib/api';
+import { terminalsApi, TerminalProfile, Workspace, PersonalTask, TaskPriority } from '@/lib/api';
 import { useTheme } from '@/context/ThemeContext';
 import { useWorkspace, PaneNode } from '@/contexts/WorkspaceContext';
 import { TabBar } from '@/components/workspace/TabBar';
@@ -100,10 +101,14 @@ import { WorkspaceDndProvider } from '@/components/workspace/WorkspaceDndProvide
 import { DropPosition } from '@/components/workspace/DropZoneOverlay';
 import { QuickSwitcher } from '@/components/workspace/QuickSwitcher';
 import { QuickActionsToolbar } from '@/components/workspace/QuickActionsToolbar';
+import { WorkspaceTasksPanel } from '@/components/workspace/WorkspaceTasksPanel';
+import { PersonalTaskDetailModal } from '@/components/tasks/PersonalTaskDetailModal';
 import { TerminalThemeSelector } from '@/components/settings/TerminalThemeSelector';
 import { ShortcutsHelpModal } from '@/components/ui/ShortcutsHelpModal';
 import { WorkspaceModal } from '@/components/workspaces/WorkspaceModal';
 import { WorkspaceEditModal } from '@/components/workspaces/WorkspaceEditModal';
+import { ShareWorkspaceModal } from '@/components/workspaces/ShareWorkspaceModal';
+import { usePersonalTasks } from '@/hooks/usePersonalTasks';
 import { cn } from '@/lib/utils';
 
 interface TerminalData {
@@ -598,6 +603,7 @@ function WorkspaceContent() {
   // Workspace modal states
   const [showWorkspaceModal, setShowWorkspaceModal] = useState(false);
   const [showWorkspaceEditModal, setShowWorkspaceEditModal] = useState(false);
+  const [showShareWorkspaceModal, setShowShareWorkspaceModal] = useState(false);
   const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null);
 
   // Context menu state - workspaceId is optional for empty space clicks
@@ -612,6 +618,18 @@ function WorkspaceContent() {
 
   // Card view mode state
   const [cardViewMode, setCardViewMode] = useState<CardViewMode>('grid');
+
+  // Tasks panel state
+  const [tasksPanelOpen, setTasksPanelOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<PersonalTask | null>(null);
+
+  // Fetch tasks for current workspace
+  const {
+    tasks: workspaceTasks,
+    createTask,
+    updateTask,
+    deleteTask,
+  } = usePersonalTasks({ workspaceId: currentWorkspaceId || undefined });
 
   // Get fullscreen state from context
   const { isFullscreen, toggleFullscreen } = useWorkspace();
@@ -1030,6 +1048,7 @@ function WorkspaceContent() {
               </button>
             </div>
           ) : (
+            <div onContextMenu={handleEmptySpaceContextMenu} className="min-h-[calc(100vh-220px)]">
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
@@ -1040,7 +1059,7 @@ function WorkspaceContent() {
                 items={filteredWorkspaces.map((w) => w.id)}
                 strategy={rectSortingStrategy}
               >
-                <div
+                <div data-empty-space
                   key={`workspace-grid-${cardViewMode}`}
                   className={cn(
                     'grid gap-4',
@@ -1097,6 +1116,7 @@ function WorkspaceContent() {
                 </div>
               </SortableContext>
             </DndContext>
+            </div>
           )}
         </PageContent>
 
@@ -1112,7 +1132,21 @@ function WorkspaceContent() {
           >
             {(() => {
               const workspace = workspaces.find((w) => w.id === contextMenu.workspaceId);
-              if (!workspace) return null;
+              if (!workspace) {
+                // Blank area context menu - show "New Workspace"
+                return (
+                  <button
+                    onClick={() => {
+                      handleCreateWorkspace();
+                      setContextMenu(null);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors"
+                  >
+                    <Plus size={14} className="text-primary" />
+                    New Workspace
+                  </button>
+                );
+              }
               return (
                 <>
                   <button
@@ -1128,6 +1162,17 @@ function WorkspaceContent() {
                   >
                     <Edit2 size={14} />
                     Edit
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingWorkspace(workspace);
+                      setShowShareWorkspaceModal(true);
+                      setContextMenu(null);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors"
+                  >
+                    <Share2 size={14} />
+                    Share
                   </button>
                   {!workspace.isDefault && (
                     <button
@@ -1183,6 +1228,21 @@ function WorkspaceContent() {
           onConfirm={confirmDeleteWorkspace}
           onCancel={() => setWorkspaceToDelete(null)}
         />
+
+        {/* Share Workspace Modal */}
+        {editingWorkspace && (
+          <ShareWorkspaceModal
+            isOpen={showShareWorkspaceModal}
+            onClose={() => {
+              setShowShareWorkspaceModal(false);
+              setEditingWorkspace(null);
+            }}
+            workspaceId={editingWorkspace.id}
+            workspaceName={editingWorkspace.name}
+            isDark={isDark}
+            token={session?.accessToken}
+          />
+        )}
     </PageLayout>
     );
   }
@@ -1242,6 +1302,15 @@ function WorkspaceContent() {
                 onToggleFullscreen={toggleFullscreen}
               />
             )}
+
+            {/* Share button */}
+            <button
+              onClick={() => setShowShareWorkspaceModal(true)}
+              className="p-1.5 rounded-md hover:bg-muted transition-colors"
+              title="Share workspace"
+            >
+              <Share2 size={18} className="text-muted-foreground" />
+            </button>
 
             <TerminalThemeSelector showLabel={false} />
           </div>
@@ -1376,6 +1445,40 @@ function WorkspaceContent() {
         }}
         workspace={editingWorkspace}
       />
+
+      {/* Share Workspace Modal */}
+      {currentWorkspace && (
+        <ShareWorkspaceModal
+          isOpen={showShareWorkspaceModal}
+          onClose={() => setShowShareWorkspaceModal(false)}
+          workspaceId={currentWorkspace.id}
+          workspaceName={currentWorkspace.name}
+          isDark={isDark}
+          token={session?.accessToken}
+        />
+      )}
+
+      {/* Tasks Panel */}
+      <WorkspaceTasksPanel
+        tasks={workspaceTasks}
+        workspaces={workspaces}
+        currentWorkspaceId={currentWorkspaceId}
+        isOpen={tasksPanelOpen}
+        onToggle={() => setTasksPanelOpen(!tasksPanelOpen)}
+        onCreateTask={createTask}
+        onTaskClick={setSelectedTask}
+      />
+
+      {/* Task Detail Modal */}
+      {selectedTask && (
+        <PersonalTaskDetailModal
+          task={selectedTask}
+          onClose={() => setSelectedTask(null)}
+          onUpdate={updateTask}
+          onDelete={deleteTask}
+          workspaces={workspaces}
+        />
+      )}
     </div>
   );
 }
