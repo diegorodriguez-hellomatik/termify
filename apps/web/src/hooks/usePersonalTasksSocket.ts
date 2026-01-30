@@ -5,11 +5,26 @@ import type { PersonalTask } from '@/lib/api';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
 
+export interface QueueEvent {
+  type: string;
+  terminalId: string;
+  queueId: string;
+  name: string;
+  taskId?: string;
+  reason?: string;
+}
+
 interface PersonalTasksSocketCallbacks {
   onTaskCreated?: (task: PersonalTask) => void;
   onTaskUpdated?: (task: PersonalTask, previousStatus?: string) => void;
   onTaskDeleted?: (taskId: string, status: string) => void;
   onTasksReordered?: (tasks: PersonalTask[], status: string) => void;
+  onQueueCompleted?: (event: QueueEvent) => void;
+  onQueueFailed?: (event: QueueEvent) => void;
+  onQueueCancelled?: (event: QueueEvent) => void;
+  onQueueStarted?: (event: QueueEvent) => void;
+  onQueueCommandStarted?: (event: QueueEvent & { commandId: string }) => void;
+  onQueueCommandCompleted?: (event: QueueEvent & { commandId: string; exitCode: number }) => void;
 }
 
 interface UsePersonalTasksSocketOptions {
@@ -56,6 +71,37 @@ export function usePersonalTasksSocket({ token, callbacks }: UsePersonalTasksSoc
 
         case 'pong':
           // Ignore pong messages
+          break;
+
+        // Queue events for auto-pilot
+        case 'queue.started':
+          console.log('[PersonalTasksSocket] Queue started:', message.queueId);
+          cb.onQueueStarted?.(message);
+          break;
+
+        case 'queue.completed':
+          console.log('[PersonalTasksSocket] Queue completed:', message.queueId);
+          cb.onQueueCompleted?.(message);
+          break;
+
+        case 'queue.failed':
+          console.log('[PersonalTasksSocket] Queue failed:', message.queueId, message.reason);
+          cb.onQueueFailed?.(message);
+          break;
+
+        case 'queue.cancelled':
+          console.log('[PersonalTasksSocket] Queue cancelled:', message.queueId);
+          cb.onQueueCancelled?.(message);
+          break;
+
+        case 'queue.command.started':
+          console.log('[PersonalTasksSocket] Command started:', message.commandId);
+          cb.onQueueCommandStarted?.(message);
+          break;
+
+        case 'queue.command.completed':
+          console.log('[PersonalTasksSocket] Command completed:', message.commandId, 'exitCode:', message.exitCode);
+          cb.onQueueCommandCompleted?.(message);
           break;
 
         default:
