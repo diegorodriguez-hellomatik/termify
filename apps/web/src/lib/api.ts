@@ -630,6 +630,150 @@ export const shareApi = {
     ),
 };
 
+// Workspace Share Types
+export interface WorkspaceShare {
+  id: string;
+  workspaceId: string;
+  type: ShareType;
+  sharedWithId: string | null;
+  sharedEmail: string | null;
+  shareToken: string | null;
+  permission: SharePermission;
+  createdById: string;
+  expiresAt: string | null;
+  lastAccessedAt: string | null;
+  accessCount: number;
+  createdAt: string;
+  sharedWith?: {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+  } | null;
+  createdBy?: {
+    id: string;
+    email: string;
+    name: string | null;
+  };
+}
+
+export interface SharedWorkspace {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  icon: string | null;
+  terminalCount: number;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+  };
+  share: {
+    id: string;
+    permission: SharePermission;
+    createdBy: {
+      id: string;
+      email: string;
+      name: string | null;
+      image: string | null;
+    };
+    createdAt: string;
+  };
+}
+
+// Workspace Sharing API
+export const workspaceShareApi = {
+  // Get all shares for a workspace (owner only)
+  getShares: (workspaceId: string, token: string) =>
+    api<{ shares: WorkspaceShare[] }>(`/api/workspaces/${workspaceId}/share`, { token }),
+
+  // Create a share link
+  createShareLink: (
+    workspaceId: string,
+    data: { permission?: SharePermission; expiresIn?: number },
+    token: string
+  ) =>
+    api<{ share: WorkspaceShare; shareUrl: string }>(
+      `/api/workspaces/${workspaceId}/share/link`,
+      { method: 'POST', body: data, token }
+    ),
+
+  // Share with user by email
+  shareWithEmail: (
+    workspaceId: string,
+    data: { email: string; permission?: SharePermission },
+    token: string
+  ) =>
+    api<{ share: WorkspaceShare }>(
+      `/api/workspaces/${workspaceId}/share/email`,
+      { method: 'POST', body: data, token }
+    ),
+
+  // Update share permissions
+  updateShare: (
+    workspaceId: string,
+    shareId: string,
+    data: { permission: SharePermission },
+    token: string
+  ) =>
+    api<{ share: WorkspaceShare }>(
+      `/api/workspaces/${workspaceId}/share/${shareId}`,
+      { method: 'PATCH', body: data, token }
+    ),
+
+  // Revoke a share
+  deleteShare: (workspaceId: string, shareId: string, token: string) =>
+    api<void>(`/api/workspaces/${workspaceId}/share/${shareId}`, {
+      method: 'DELETE',
+      token,
+    }),
+
+  // Access shared workspace by token (public)
+  accessByToken: (shareToken: string, token?: string) =>
+    api<{
+      share: { id: string; permission: SharePermission; type: ShareType };
+      workspace: {
+        id: string;
+        name: string;
+        description: string | null;
+        color: string | null;
+        icon: string | null;
+        layout: any | null;
+        floatingLayout: any | null;
+        settings: any | null;
+        user: {
+          id: string;
+          email: string;
+          name: string | null;
+          image: string | null;
+        };
+        terminals: Array<{
+          id: string;
+          name: string;
+          status: string;
+          type: string;
+          cols: number;
+          rows: number;
+          cwd: string | null;
+          isFavorite: boolean;
+          lastActiveAt: string | null;
+          position: number;
+        }>;
+        terminalCount: number;
+      };
+      isAuthenticated: boolean;
+    }>(`/api/share/workspace/${shareToken}`, { token }),
+
+  // Get workspaces shared with me
+  getSharedWithMe: (token: string) =>
+    api<{ workspaces: SharedWorkspace[]; total: number }>(
+      '/api/workspaces/shared',
+      { token }
+    ),
+};
+
 // Workspace Types
 export interface WorkspaceSettings {
   theme?: string;
@@ -784,8 +928,24 @@ export const workspacesApi = {
 
 // Team Types
 export type TeamRole = 'OWNER' | 'ADMIN' | 'MEMBER';
-export type TaskStatus = 'BACKLOG' | 'TODO' | 'IN_PROGRESS' | 'IN_REVIEW' | 'DONE';
+// TaskStatus is now a custom string (status key from TaskStatusConfig)
+// Default values: 'backlog', 'todo', 'in_progress', 'in_review', 'done'
+export type TaskStatus = string;
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+// TaskStatusConfig - Custom task status configuration
+export interface TaskStatusConfig {
+  id: string;
+  userId?: string | null;
+  teamId?: string | null;
+  key: string;
+  name: string;
+  color: string;
+  position: number;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface Team {
   id: string;
@@ -1239,11 +1399,149 @@ export const pushApi = {
 };
 
 // ========================
-// Team Collaboration Types
+// Personal Servers Types
 // ========================
 
 export type ServerAuthMethod = 'PASSWORD' | 'KEY' | 'AGENT';
 export type ServerStatus = 'ONLINE' | 'OFFLINE' | 'UNKNOWN';
+
+export interface Server {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string | null;
+  authMethod: ServerAuthMethod;
+  description: string | null;
+  documentation: string | null;
+  tags: string[];
+  lastStatus: ServerStatus | null;
+  lastCheckedAt: string | null;
+  isDefault: boolean;
+  projectCount?: number;
+  connectionCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ServerConnection {
+  id: string;
+  terminalId: string | null;
+  success: boolean;
+  error: string | null;
+  createdAt: string;
+}
+
+export interface ServerDetails extends Server {
+  projects: {
+    id: string;
+    name: string;
+    status: string;
+    workingDirectory: string;
+    createdAt: string;
+  }[];
+  connections: ServerConnection[];
+}
+
+// Personal Servers API
+export const serversApi = {
+  list: (token: string) =>
+    api<{ servers: Server[]; total: number }>('/api/servers', { token }),
+
+  get: (id: string, token: string) =>
+    api<ServerDetails>(`/api/servers/${id}`, { token }),
+
+  create: (
+    data: {
+      name: string;
+      host: string;
+      port?: number;
+      username: string;
+      authMethod?: ServerAuthMethod;
+      password?: string;
+      privateKey?: string;
+      description?: string;
+      documentation?: string;
+      tags?: string[];
+    },
+    token: string
+  ) =>
+    api<Server>('/api/servers', { method: 'POST', body: data, token }),
+
+  update: (
+    id: string,
+    data: {
+      name?: string;
+      host?: string;
+      port?: number;
+      username?: string;
+      authMethod?: ServerAuthMethod;
+      password?: string | null;
+      privateKey?: string | null;
+      description?: string | null;
+      documentation?: string | null;
+      tags?: string[];
+    },
+    token: string
+  ) =>
+    api<Server>(`/api/servers/${id}`, { method: 'PATCH', body: data, token }),
+
+  delete: (id: string, token: string) =>
+    api<void>(`/api/servers/${id}`, { method: 'DELETE', token }),
+
+  test: (id: string, token: string) =>
+    api<{
+      connected: boolean;
+      serverInfo?: string;
+      error?: string;
+      status: ServerStatus;
+      checkedAt: string;
+    }>(`/api/servers/${id}/test`, { method: 'POST', token }),
+
+  testConnection: (
+    data: {
+      host: string;
+      port?: number;
+      username: string;
+      password?: string;
+      privateKey?: string;
+    },
+    token: string
+  ) =>
+    api<{
+      connected: boolean;
+      serverInfo?: string;
+      error?: string;
+    }>('/api/servers/test', { method: 'POST', body: data, token }),
+
+  connect: (
+    id: string,
+    data: { name?: string; password?: string; privateKey?: string },
+    token: string
+  ) =>
+    api<{
+      terminal: {
+        id: string;
+        name: string;
+        type: string;
+        status: string;
+        sshHost?: string;
+        sshPort?: number;
+        sshUsername?: string;
+        createdAt: string;
+      };
+    }>(`/api/servers/${id}/connect`, { method: 'POST', body: data, token }),
+
+  getConnections: (id: string, token: string) =>
+    api<{ connections: ServerConnection[]; total: number }>(
+      `/api/servers/${id}/connections`,
+      { token }
+    ),
+};
+
+// ========================
+// Team Collaboration Types
+// ========================
 
 export interface TeamTerminalShare {
   id: string;
@@ -1900,19 +2198,6 @@ export const taskCommandsApi = {
 // Personal Tasks
 // ========================
 
-export interface PersonalTaskBoard {
-  id: string;
-  userId: string;
-  name: string;
-  color: string;
-  icon: string | null;
-  position: number;
-  isDefault: boolean;
-  _count?: { tasks: number };
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface PersonalTask {
   id: string;
   userId: string;
@@ -1922,7 +2207,7 @@ export interface PersonalTask {
   priority: TaskPriority;
   position: number;
   dueDate: string | null;
-  boardId: string | null;
+  workspaceId: string | null;
   commands: string | null; // JSON array of commands
   terminalQueueId: string | null;
   executedAt: string | null;
@@ -1930,48 +2215,11 @@ export interface PersonalTask {
   updatedAt: string;
 }
 
-export const personalTaskBoardsApi = {
-  list: (token: string) =>
-    api<{ boards: PersonalTaskBoard[] }>('/api/personal-task-boards', { token }),
-
-  get: (id: string, token: string) =>
-    api<PersonalTaskBoard>(`/api/personal-task-boards/${id}`, { token }),
-
-  create: (
-    data: {
-      name: string;
-      color?: string;
-      icon?: string | null;
-      isDefault?: boolean;
-    },
-    token: string
-  ) =>
-    api<PersonalTaskBoard>('/api/personal-task-boards', { method: 'POST', body: data, token }),
-
-  update: (
-    id: string,
-    data: {
-      name?: string;
-      color?: string;
-      icon?: string | null;
-      isDefault?: boolean;
-    },
-    token: string
-  ) =>
-    api<PersonalTaskBoard>(`/api/personal-task-boards/${id}`, { method: 'PATCH', body: data, token }),
-
-  delete: (id: string, token: string) =>
-    api<void>(`/api/personal-task-boards/${id}`, { method: 'DELETE', token }),
-
-  reorder: (data: { boardIds: string[] }, token: string) =>
-    api<void>('/api/personal-task-boards/reorder', { method: 'POST', body: data, token }),
-};
-
 export const personalTasksApi = {
-  list: (token: string, boardId?: string | null) => {
+  list: (token: string, workspaceId?: string | null) => {
     const params = new URLSearchParams();
-    if (boardId !== undefined) {
-      params.set('boardId', boardId === null ? 'null' : boardId);
+    if (workspaceId !== undefined) {
+      params.set('workspaceId', workspaceId === null ? 'null' : workspaceId);
     }
     const query = params.toString();
     return api<{ tasks: PersonalTask[] }>(
@@ -1990,7 +2238,7 @@ export const personalTasksApi = {
       status?: TaskStatus;
       priority?: TaskPriority;
       dueDate?: string | null;
-      boardId?: string | null;
+      workspaceId?: string | null;
       commands?: string[] | null;
     },
     token: string
@@ -2006,7 +2254,7 @@ export const personalTasksApi = {
       priority?: TaskPriority;
       position?: number;
       dueDate?: string | null;
-      boardId?: string | null;
+      workspaceId?: string | null;
       commands?: string[] | null;
     },
     token: string
@@ -2115,6 +2363,100 @@ export const terminalQueueApi = {
     api<void>(`/api/terminals/${terminalId}/queue/reorder`, {
       method: 'POST',
       body: { queueIds },
+      token,
+    }),
+};
+
+// ========================
+// Task Status Config API
+// ========================
+
+export const taskStatusApi = {
+  // Personal task statuses
+  list: (token: string) =>
+    api<{ statuses: TaskStatusConfig[] }>('/api/task-statuses', { token }),
+
+  create: (
+    data: {
+      key: string;
+      name: string;
+      color: string;
+      position?: number;
+      isDefault?: boolean;
+    },
+    token: string
+  ) =>
+    api<TaskStatusConfig>('/api/task-statuses', { method: 'POST', body: data, token }),
+
+  update: (
+    id: string,
+    data: {
+      name?: string;
+      color?: string;
+      position?: number;
+      isDefault?: boolean;
+    },
+    token: string
+  ) =>
+    api<TaskStatusConfig>(`/api/task-statuses/${id}`, { method: 'PATCH', body: data, token }),
+
+  delete: (id: string, moveToStatusId?: string, token?: string) => {
+    const url = moveToStatusId
+      ? `/api/task-statuses/${id}?moveToStatusId=${moveToStatusId}`
+      : `/api/task-statuses/${id}`;
+    return api<void>(url, { method: 'DELETE', token });
+  },
+
+  reorder: (statusIds: string[], token: string) =>
+    api<void>('/api/task-statuses/reorder', {
+      method: 'POST',
+      body: { statusIds },
+      token,
+    }),
+};
+
+export const teamTaskStatusApi = {
+  // Team task statuses
+  list: (teamId: string, token: string) =>
+    api<{ statuses: TaskStatusConfig[] }>(`/api/teams/${teamId}/task-statuses`, { token }),
+
+  create: (
+    teamId: string,
+    data: {
+      key: string;
+      name: string;
+      color: string;
+      position?: number;
+      isDefault?: boolean;
+    },
+    token: string
+  ) =>
+    api<TaskStatusConfig>(`/api/teams/${teamId}/task-statuses`, { method: 'POST', body: data, token }),
+
+  update: (
+    teamId: string,
+    statusId: string,
+    data: {
+      name?: string;
+      color?: string;
+      position?: number;
+      isDefault?: boolean;
+    },
+    token: string
+  ) =>
+    api<TaskStatusConfig>(`/api/teams/${teamId}/task-statuses/${statusId}`, { method: 'PATCH', body: data, token }),
+
+  delete: (teamId: string, statusId: string, moveToStatusId?: string, token?: string) => {
+    const url = moveToStatusId
+      ? `/api/teams/${teamId}/task-statuses/${statusId}?moveToStatusId=${moveToStatusId}`
+      : `/api/teams/${teamId}/task-statuses/${statusId}`;
+    return api<void>(url, { method: 'DELETE', token });
+  },
+
+  reorder: (teamId: string, statusIds: string[], token: string) =>
+    api<void>(`/api/teams/${teamId}/task-statuses/reorder`, {
+      method: 'POST',
+      body: { statusIds },
       token,
     }),
 };

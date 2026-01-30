@@ -5,11 +5,11 @@ import { useSession } from 'next-auth/react';
 import { personalTasksApi, PersonalTask, TaskStatus, TaskPriority, TerminalTaskQueue } from '@/lib/api';
 
 interface UsePersonalTasksOptions {
-  boardId?: string | null; // undefined = all tasks, null = tasks without board, string = specific board
+  workspaceId?: string | null; // undefined = all tasks, null = tasks without workspace, string = specific workspace
 }
 
 export function usePersonalTasks(options: UsePersonalTasksOptions = {}) {
-  const { boardId } = options;
+  const { workspaceId } = options;
   const { data: session } = useSession();
   const accessToken = (session as any)?.accessToken as string | undefined;
   const [tasks, setTasks] = useState<PersonalTask[]>([]);
@@ -27,7 +27,7 @@ export function usePersonalTasks(options: UsePersonalTasksOptions = {}) {
     setError(null);
 
     try {
-      const response = await personalTasksApi.list(accessToken, boardId);
+      const response = await personalTasksApi.list(accessToken, workspaceId);
       if (response.success && response.data) {
         setTasks(response.data.tasks);
       } else {
@@ -39,7 +39,7 @@ export function usePersonalTasks(options: UsePersonalTasksOptions = {}) {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, boardId]);
+  }, [accessToken, workspaceId]);
 
   const createTask = useCallback(async (data: {
     title: string;
@@ -47,7 +47,7 @@ export function usePersonalTasks(options: UsePersonalTasksOptions = {}) {
     status?: TaskStatus;
     priority?: TaskPriority;
     dueDate?: string | null;
-    boardId?: string | null;
+    workspaceId?: string | null;
     commands?: string[] | null;
   }) => {
     if (!accessToken) return null;
@@ -72,7 +72,7 @@ export function usePersonalTasks(options: UsePersonalTasksOptions = {}) {
     priority?: TaskPriority;
     position?: number;
     dueDate?: string | null;
-    boardId?: string | null;
+    workspaceId?: string | null;
     commands?: string[] | null;
   }) => {
     if (!accessToken) return null;
@@ -177,7 +177,7 @@ export function usePersonalTasks(options: UsePersonalTasksOptions = {}) {
     return grouped;
   }, [tasks]);
 
-  // Fetch tasks on mount or when boardId changes
+  // Fetch tasks on mount or when workspaceId changes
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);

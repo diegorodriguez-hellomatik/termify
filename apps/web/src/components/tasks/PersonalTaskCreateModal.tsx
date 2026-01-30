@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { Loader2, X, Plus, Trash2, Terminal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { PersonalTask, TaskPriority, PersonalTaskBoard } from '@/lib/api';
+import { PersonalTask, TaskPriority, Workspace } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 interface PersonalTaskCreateModalProps {
@@ -16,11 +16,11 @@ interface PersonalTaskCreateModalProps {
     description?: string;
     priority?: TaskPriority;
     dueDate?: string | null;
-    boardId?: string | null;
+    workspaceId?: string | null;
     commands?: string[] | null;
   }) => Promise<PersonalTask | null>;
-  boards?: PersonalTaskBoard[];
-  defaultBoardId?: string | null;
+  workspaces?: Workspace[];
+  defaultWorkspaceId?: string | null;
 }
 
 const PRIORITIES: { value: TaskPriority; label: string; color: string }[] = [
@@ -34,14 +34,14 @@ export function PersonalTaskCreateModal({
   open,
   onOpenChange,
   onCreate,
-  boards = [],
-  defaultBoardId,
+  workspaces = [],
+  defaultWorkspaceId,
 }: PersonalTaskCreateModalProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('MEDIUM');
   const [dueDate, setDueDate] = useState('');
-  const [boardId, setBoardId] = useState<string | null>(defaultBoardId ?? null);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(defaultWorkspaceId ?? null);
   const [commands, setCommands] = useState<string[]>([]);
   const [newCommand, setNewCommand] = useState('');
   const [loading, setLoading] = useState(false);
@@ -56,9 +56,9 @@ export function PersonalTaskCreateModal({
 
   useEffect(() => {
     if (open) {
-      setBoardId(defaultBoardId ?? null);
+      setWorkspaceId(defaultWorkspaceId ?? null);
     }
-  }, [open, defaultBoardId]);
+  }, [open, defaultWorkspaceId]);
 
   const handleAddCommand = () => {
     if (newCommand.trim()) {
@@ -87,7 +87,7 @@ export function PersonalTaskCreateModal({
         description: description.trim() || undefined,
         priority,
         dueDate: dueDate || undefined,
-        boardId,
+        workspaceId,
         commands: commands.length > 0 ? commands : null,
       });
 
@@ -96,7 +96,7 @@ export function PersonalTaskCreateModal({
         setDescription('');
         setPriority('MEDIUM');
         setDueDate('');
-        setBoardId(null);
+        setWorkspaceId(null);
         setCommands([]);
         setNewCommand('');
         setShowCommands(false);
@@ -162,42 +162,42 @@ export function PersonalTaskCreateModal({
               />
             </div>
 
-            {/* Board selection */}
-            {boards.length > 0 && (
+            {/* Workspace selection */}
+            {workspaces.length > 0 && (
               <div>
-                <label className="block text-sm font-medium mb-1.5">Board</label>
+                <label className="block text-sm font-medium mb-1.5">Workspace</label>
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     className={cn(
                       'px-3 py-1.5 rounded-lg text-sm border transition-colors',
-                      boardId === null
+                      workspaceId === null
                         ? 'border-primary bg-primary/10'
                         : 'border-muted hover:border-muted-foreground'
                     )}
-                    onClick={() => setBoardId(null)}
+                    onClick={() => setWorkspaceId(null)}
                     disabled={loading}
                   >
-                    No Board
+                    Independent
                   </button>
-                  {boards.map((board) => (
+                  {workspaces.map((workspace) => (
                     <button
-                      key={board.id}
+                      key={workspace.id}
                       type="button"
                       className={cn(
                         'px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-1',
-                        boardId === board.id
+                        workspaceId === workspace.id
                           ? 'text-white'
                           : 'border border-muted hover:border-muted-foreground'
                       )}
                       style={{
-                        backgroundColor: boardId === board.id ? board.color : undefined,
+                        backgroundColor: workspaceId === workspace.id ? (workspace.color || '#6366f1') : undefined,
                       }}
-                      onClick={() => setBoardId(board.id)}
+                      onClick={() => setWorkspaceId(workspace.id)}
                       disabled={loading}
                     >
-                      {board.icon && <span>{board.icon}</span>}
-                      {board.name}
+                      {workspace.icon && <span>{workspace.icon}</span>}
+                      {workspace.name}
                     </button>
                   ))}
                 </div>

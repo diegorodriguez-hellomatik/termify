@@ -1,31 +1,34 @@
 'use client';
 
-import { Plus, CheckSquare, Trash2 } from 'lucide-react';
+import { Plus, CheckSquare } from 'lucide-react';
 import { useState } from 'react';
 import { PageLayout, PageHeader, PageContent } from '@/components/ui/page-layout';
 import { Button } from '@/components/ui/button';
 import { PersonalTaskBoard as TaskBoardComponent } from '@/components/tasks/PersonalTaskBoard';
 import { PersonalTaskCreateModal } from '@/components/tasks/PersonalTaskCreateModal';
-import { BoardTabs } from '@/components/tasks/BoardTabs';
-import { BoardCreateModal } from '@/components/tasks/BoardCreateModal';
+import { WorkspaceTabs } from '@/components/tasks/WorkspaceTabs';
 import { usePersonalTasks } from '@/hooks/usePersonalTasks';
-import { usePersonalTaskBoards } from '@/hooks/usePersonalTaskBoards';
-import { TaskPriority, PersonalTaskBoard } from '@/lib/api';
+import { useTaskStatuses } from '@/hooks/useTaskStatuses';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { TaskPriority } from '@/lib/api';
 
 export default function TasksPage() {
-  const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
-  const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [boardModalOpen, setBoardModalOpen] = useState(false);
-  const [editingBoard, setEditingBoard] = useState<PersonalTaskBoard | null>(null);
-  const [deleteConfirmBoard, setDeleteConfirmBoard] = useState<PersonalTaskBoard | null>(null);
+  // null = all tasks, 'independent' = tasks without workspace, string = specific workspace
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
 
-  const {
-    boards,
-    loading: boardsLoading,
-    createBoard,
-    updateBoard,
-    deleteBoard,
-  } = usePersonalTaskBoards();
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+
+  const { workspaces, loadingWorkspaces } = useWorkspace();
+
+  // Convert selectedWorkspaceId for the hook:
+  // null -> undefined (all tasks)
+  // 'independent' -> null (tasks without workspace)
+  // string -> string (specific workspace)
+  const workspaceIdForHook = selectedWorkspaceId === null
+    ? undefined
+    : selectedWorkspaceId === 'independent'
+      ? null
+      : selectedWorkspaceId;
 
   const {
     loading: tasksLoading,
@@ -35,42 +38,36 @@ export default function TasksPage() {
     deleteTask,
     reorderTasks,
     fetchTasks,
-  } = usePersonalTasks({ boardId: selectedBoardId });
+  } = usePersonalTasks({ workspaceId: workspaceIdForHook });
 
-  const loading = boardsLoading || tasksLoading;
+  const {
+    statuses,
+    isLoading: statusesLoading,
+    refetch: refetchStatuses,
+  } = useTaskStatuses();
+
+  const loading = loadingWorkspaces || tasksLoading || statusesLoading;
 
   const handleCreateTask = async (data: {
     title: string;
     description?: string;
     priority?: TaskPriority;
     dueDate?: string | null;
-    boardId?: string | null;
+    workspaceId?: string | null;
     commands?: string[] | null;
   }) => {
+    // If creating from a specific workspace tab, use that workspace
+    const finalWorkspaceId = data.workspaceId !== undefined
+      ? data.workspaceId
+      : selectedWorkspaceId === 'independent'
+        ? null
+        : selectedWorkspaceId;
+
     return createTask({
       ...data,
       status: 'TODO',
-      boardId: data.boardId ?? selectedBoardId,
+      workspaceId: finalWorkspaceId,
     });
-  };
-
-  const handleEditBoard = (board: PersonalTaskBoard) => {
-    setEditingBoard(board);
-    setBoardModalOpen(true);
-  };
-
-  const handleDeleteBoard = (board: PersonalTaskBoard) => {
-    setDeleteConfirmBoard(board);
-  };
-
-  const confirmDeleteBoard = async () => {
-    if (deleteConfirmBoard) {
-      const success = await deleteBoard(deleteConfirmBoard.id);
-      if (success && selectedBoardId === deleteConfirmBoard.id) {
-        setSelectedBoardId(null);
-      }
-      setDeleteConfirmBoard(null);
-    }
   };
 
   const totalTasks = Object.values(tasksByStatus()).flat().length;
@@ -104,17 +101,11 @@ export default function TasksPage() {
         }
       />
       <PageContent>
-        {/* Board Tabs */}
-        <BoardTabs
-          boards={boards}
-          selectedBoardId={selectedBoardId}
-          onSelectBoard={setSelectedBoardId}
-          onCreateBoard={() => {
-            setEditingBoard(null);
-            setBoardModalOpen(true);
-          }}
-          onEditBoard={handleEditBoard}
-          onDeleteBoard={handleDeleteBoard}
+        {/* Workspace Tabs */}
+        <WorkspaceTabs
+          workspaces={workspaces}
+          selectedWorkspaceId={selectedWorkspaceId}
+          onSelectWorkspace={setSelectedWorkspaceId}
         />
 
         {totalTasks === 0 ? (
@@ -124,18 +115,25 @@ export default function TasksPage() {
             </div>
             <h3 className="text-lg font-semibold mb-1">No tasks yet</h3>
             <p className="text-sm text-muted-foreground text-center">
-              {selectedBoardId
-                ? 'Create a task in this board to get started.'
-                : 'Create a task to get started organizing your work.'}
+              {selectedWorkspaceId === 'independent'
+                ? 'Create an independent task to get started.'
+                : selectedWorkspaceId
+                  ? 'Create a task in this workspace to get started.'
+                  : 'Create a task to get started organizing your work.'}
             </p>
           </div>
         ) : (
           <TaskBoardComponent
             tasksByStatus={tasksByStatus()}
+            statuses={statuses}
             onCreateTask={createTask}
             onUpdateTask={updateTask}
             onDeleteTask={deleteTask}
             onReorderTasks={reorderTasks}
+            onStatusesChange={() => {
+              refetchStatuses();
+              fetchTasks();
+            }}
           />
         )}
       </PageContent>
@@ -145,55 +143,9 @@ export default function TasksPage() {
         open={createModalOpen}
         onOpenChange={setCreateModalOpen}
         onCreate={handleCreateTask}
-        boards={boards}
-        defaultBoardId={selectedBoardId}
+        workspaces={workspaces}
+        defaultWorkspaceId={selectedWorkspaceId === 'independent' ? null : selectedWorkspaceId}
       />
-
-      {/* Create/Edit Board Modal */}
-      <BoardCreateModal
-        open={boardModalOpen}
-        onOpenChange={(open) => {
-          setBoardModalOpen(open);
-          if (!open) setEditingBoard(null);
-        }}
-        onCreate={createBoard}
-        editBoard={editingBoard}
-        onUpdate={updateBoard}
-      />
-
-      {/* Delete Board Confirmation */}
-      {deleteConfirmBoard && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setDeleteConfirmBoard(null)}
-          />
-          <div className="relative bg-background border rounded-lg shadow-xl w-full max-w-sm p-6 z-[101] animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 rounded-full bg-destructive/10">
-                <Trash2 className="h-5 w-5 text-destructive" />
-              </div>
-              <div>
-                <h3 className="font-semibold">Delete Board</h3>
-                <p className="text-sm text-muted-foreground">
-                  Are you sure you want to delete &quot;{deleteConfirmBoard.name}&quot;?
-                </p>
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Tasks in this board will be kept but unassigned from the board.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteConfirmBoard(null)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={confirmDeleteBoard}>
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </PageLayout>
   );
 }

@@ -13,6 +13,7 @@ import profilesRoutes from './api/profiles.js';
 import auditlogsRoutes from './api/auditlogs.js';
 import apikeysRoutes from './api/apikeys.js';
 import shareRoutes from './api/share.js';
+import workspaceShareRoutes from './api/workspace-share.js';
 import notificationsRoutes from './api/notifications.js';
 import workspacesRoutes from './api/workspaces.js';
 import teamsRoutes from './api/teams.js';
@@ -27,9 +28,11 @@ import teamPresenceRoutes from './api/team-presence.js';
 import teamRolesRoutes from './api/team-roles.js';
 import taskCommandsRoutes from './api/task-commands.js';
 import personalTasksRoutes from './api/personal-tasks.js';
-import personalTaskBoardsRoutes from './api/personal-task-boards.js';
 import usersRoutes from './api/users.js';
 import terminalQueueRoutes from './api/terminal-queue.js';
+import taskStatusRoutes from './api/task-status.js';
+import teamTaskStatusRoutes from './api/team-task-status.js';
+import serversRoutes from './api/servers.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',');
@@ -56,6 +59,7 @@ app.get('/health', (req, res) => {
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api', shareRoutes); // Must be before terminalsRoutes to handle /terminals/shared
+app.use('/api', workspaceShareRoutes); // Must be before workspacesRoutes to handle /workspaces/shared
 app.use('/api/terminals', terminalsRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/snippets', snippetsRoutes);
@@ -75,10 +79,12 @@ app.use('/api/teams', teamRolesRoutes);
 app.use('/api/tasks', tasksRoutes);
 app.use('/api/tasks', taskCommandsRoutes);
 app.use('/api/personal-tasks', personalTasksRoutes);
-app.use('/api/personal-task-boards', personalTaskBoardsRoutes);
 app.use('/api', pushRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api', terminalQueueRoutes);
+app.use('/api/task-statuses', taskStatusRoutes);
+app.use('/api/teams', teamTaskStatusRoutes);
+app.use('/api/servers', serversRoutes);
 
 // Stats endpoint
 app.get('/api/stats', (req, res) => {

@@ -2,59 +2,78 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware } from '../auth/middleware.js';
-import { TaskStatus, TaskPriority } from '@termify/shared';
+import { TaskPriority } from '@termify/shared';
 import { getWebSocketServer } from '../websocket/WebSocketServer.js';
 import { getTerminalQueueService } from '../services/TerminalQueueService.js';
+import { createDefaultStatusesForUser } from './task-status.js';
 
 const router = Router();
 
 // All routes require authentication
 router.use(authMiddleware);
 
-// Validation schemas
+// Helper to get default status key for a user
+async function getDefaultStatusKey(userId: string): Promise<string> {
+  await createDefaultStatusesForUser(userId);
+  const defaultStatus = await prisma.taskStatusConfig.findFirst({
+    where: { userId, isDefault: true },
+  });
+  return defaultStatus?.key || 'backlog';
+}
+
+// Helper to validate status exists for user
+async function validateStatusKey(userId: string, statusKey: string): Promise<boolean> {
+  await createDefaultStatusesForUser(userId);
+  const status = await prisma.taskStatusConfig.findUnique({
+    where: { userId_key: { userId, key: statusKey } },
+  });
+  return !!status;
+}
+
+// Validation schemas - status is now a string (custom status key)
 const createPersonalTaskSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(5000).optional(),
-  status: z.enum(['BACKLOG', 'TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE']).optional().default('BACKLOG'),
+  status: z.string().min(1).max(50).optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional().default('MEDIUM'),
   dueDate: z.string().datetime().optional().nullable(),
-  boardId: z.string().optional().nullable(),
+  workspaceId: z.string().optional().nullable(),
   commands: z.array(z.string()).optional().nullable(),
 });
 
 const updatePersonalTaskSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(5000).optional().nullable(),
-  status: z.enum(['BACKLOG', 'TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE']).optional(),
+  status: z.string().min(1).max(50).optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
   position: z.number().int().min(0).optional(),
   dueDate: z.string().datetime().optional().nullable(),
-  boardId: z.string().optional().nullable(),
+  workspaceId: z.string().optional().nullable(),
   commands: z.array(z.string()).optional().nullable(),
 });
 
 const reorderTasksSchema = z.object({
   taskIds: z.array(z.string()),
-  status: z.enum(['BACKLOG', 'TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE']),
+  status: z.string().min(1).max(50),
 });
 
 /**
  * GET /api/personal-tasks
  * List all personal tasks for the current user
  * Query params:
- *   - boardId: Filter by board (use "null" for tasks without a board)
+ *   - workspaceId: Filter by workspace (use "null" for tasks without a workspace)
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const boardIdParam = req.query.boardId as string | undefined;
+    const workspaceIdParam = req.query.workspaceId as string | undefined;
 
     // Build where clause
-    const where: { userId: string; boardId?: string | null } = { userId };
-    if (boardIdParam === 'null') {
-      where.boardId = null;
-    } else if (boardIdParam) {
-      where.boardId = boardIdParam;
+    const where: { userId: string; workspaceId?: string | null } = { userId };
+    if (workspaceIdParam === 'null') {
+      where.workspaceId = null;
+    } else if (workspaceIdParam) {
+      where.workspaceId = workspaceIdParam;
     }
 
     const tasks = await prisma.personalTask.findMany({
@@ -81,9 +100,18 @@ router.post('/', async (req: Request, res: Response) => {
     const userId = req.user!.userId;
     const data = createPersonalTaskSchema.parse(req.body);
 
+    // Get default status if not provided
+    const statusKey = data.status || await getDefaultStatusKey(userId);
+
+    // Validate the status exists
+    if (!(await validateStatusKey(userId, statusKey))) {
+      res.status(400).json({ success: false, error: `Invalid status: ${statusKey}` });
+      return;
+    }
+
     // Get the highest position for this status
     const lastTask = await prisma.personalTask.findFirst({
-      where: { userId, status: data.status as TaskStatus },
+      where: { userId, status: statusKey },
       orderBy: { position: 'desc' },
     });
     const position = (lastTask?.position ?? -1) + 1;
@@ -94,11 +122,11 @@ router.post('/', async (req: Request, res: Response) => {
         userId,
         title: data.title,
         description: data.description,
-        status: data.status as TaskStatus,
+        status: statusKey,
         priority: data.priority as TaskPriority,
         position,
         dueDate: data.dueDate ? new Date(data.dueDate) : null,
-        boardId: data.boardId,
+        workspaceId: data.workspaceId,
         commands: data.commands ? JSON.stringify(data.commands) : null,
       },
     });
@@ -177,13 +205,19 @@ router.patch('/:id', async (req: Request, res: Response) => {
       return;
     }
 
+    // Validate the new status if provided
+    if (data.status && !(await validateStatusKey(userId, data.status))) {
+      res.status(400).json({ success: false, error: `Invalid status: ${data.status}` });
+      return;
+    }
+
     const statusChanged = data.status && data.status !== existingTask.status;
 
     // If status changed, update position
     let position = data.position;
     if (statusChanged && position === undefined) {
       const lastTask = await prisma.personalTask.findFirst({
-        where: { userId, status: data.status as TaskStatus },
+        where: { userId, status: data.status },
         orderBy: { position: 'desc' },
       });
       position = (lastTask?.position ?? -1) + 1;
@@ -195,11 +229,11 @@ router.patch('/:id', async (req: Request, res: Response) => {
       data: {
         title: data.title,
         description: data.description,
-        status: data.status as TaskStatus,
+        status: data.status,
         priority: data.priority as TaskPriority,
         position,
         dueDate: data.dueDate === null ? null : data.dueDate ? new Date(data.dueDate) : undefined,
-        boardId: data.boardId === null ? null : data.boardId,
+        workspaceId: data.workspaceId === null ? null : data.workspaceId,
         commands: data.commands === null ? null : data.commands ? JSON.stringify(data.commands) : undefined,
       },
     });
@@ -278,6 +312,12 @@ router.post('/reorder', async (req: Request, res: Response) => {
       return;
     }
 
+    // Validate the status exists
+    if (!(await validateStatusKey(userId, data.status))) {
+      res.status(400).json({ success: false, error: `Invalid status: ${data.status}` });
+      return;
+    }
+
     // Update positions and status
     await prisma.$transaction(
       data.taskIds.map((id, index) =>
@@ -285,7 +325,7 @@ router.post('/reorder', async (req: Request, res: Response) => {
           where: { id },
           data: {
             position: index,
-            status: data.status as TaskStatus,
+            status: data.status,
           },
         })
       )
