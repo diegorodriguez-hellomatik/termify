@@ -1,7 +1,8 @@
 import { Client, ConnectConfig } from 'ssh2';
+import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
-import * as si from 'systeminformation';
-import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs';
 import { prisma } from '../lib/prisma.js';
 
 export interface ServerStats {
@@ -53,7 +54,7 @@ interface SSHCollector {
 
 interface LocalCollector {
   type: 'local';
-  interval: NodeJS.Timeout;
+  process: ChildProcess;
   serverId: string;
   userId: string;
 }
@@ -108,86 +109,110 @@ class ServerStatsService extends EventEmitter {
   }
 
   /**
-   * Start collecting stats locally (for localhost)
+   * Start collecting stats locally (for localhost) using stats-agent process
    */
   private async startLocalCollecting(serverId: string, userId: string): Promise<void> {
     console.log(`[ServerStats] Starting local collection for ${serverId}`);
 
-    // Emit connected immediately
-    this.emit('connected', { serverId });
+    // Find stats-agent binary
+    const agentPath = this.findLocalAgent();
+    if (!agentPath) {
+      const error = 'stats-agent not found. Please compile and place it at ~/.termify/stats-agent or in the tools/stats-agent/target/release directory.';
+      console.error(`[ServerStats] ${error}`);
+      this.emit('error', { serverId, error });
+      return;
+    }
 
-    // Collect stats immediately
-    const stats = await this.collectLocalStats();
-    this.emit('stats', { serverId, userId, stats });
+    console.log(`[ServerStats] Using local agent: ${agentPath}`);
 
-    // Set up interval for continuous collection
-    const interval = setInterval(async () => {
-      try {
-        const stats = await this.collectLocalStats();
-        this.emit('stats', { serverId, userId, stats });
-      } catch (error: any) {
-        console.error(`[ServerStats] Local collection error:`, error.message);
+    // Spawn the stats-agent daemon process
+    const proc = spawn(agentPath, ['daemon', String(this.agentInterval)], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let buffer = '';
+
+    proc.stdout.on('data', (data: Buffer) => {
+      buffer += data.toString();
+
+      // Process complete lines
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.trim()) {
+          try {
+            const stats = this.parseStats(line);
+            this.emit('stats', { serverId, userId, stats });
+          } catch (e) {
+            console.error(`[ServerStats] Failed to parse local stats:`, line);
+          }
+        }
       }
-    }, this.agentInterval * 1000);
+    });
+
+    proc.stderr.on('data', (data: Buffer) => {
+      console.error(`[ServerStats] Local agent stderr:`, data.toString().trim());
+    });
+
+    proc.on('error', (err) => {
+      console.error(`[ServerStats] Local agent error:`, err.message);
+      this.emit('error', { serverId, error: err.message });
+      this.collectors.delete(serverId);
+    });
+
+    proc.on('close', (code) => {
+      console.log(`[ServerStats] Local agent exited with code ${code}`);
+      this.collectors.delete(serverId);
+      this.emit('disconnected', { serverId });
+
+      // Schedule reconnect if not intentionally stopped
+      if (code !== 0) {
+        this.scheduleReconnect(serverId, userId);
+      }
+    });
 
     this.collectors.set(serverId, {
       type: 'local',
-      interval,
+      process: proc,
       serverId,
       userId,
     });
 
+    this.emit('connected', { serverId });
     console.log(`[ServerStats] Started local collecting for ${serverId}`);
   }
 
   /**
-   * Collect stats from the local machine using systeminformation
+   * Find the local stats-agent binary
    */
-  private async collectLocalStats(): Promise<ServerStats> {
-    const [cpu, mem, disks, network, osInfo] = await Promise.all([
-      si.currentLoad(),
-      si.mem(),
-      si.fsSize(),
-      si.networkStats(),
-      si.osInfo(),
-    ]);
+  private findLocalAgent(): string | null {
+    const possiblePaths = [
+      // User's home directory
+      path.join(process.env.HOME || '', '.termify', 'stats-agent'),
+      // Project tools directory (release build)
+      path.join(process.cwd(), '..', '..', 'tools', 'stats-agent', 'target', 'release', 'stats-agent'),
+      // Project tools directory (debug build)
+      path.join(process.cwd(), '..', '..', 'tools', 'stats-agent', 'target', 'debug', 'stats-agent'),
+      // Relative to server directory
+      path.join(process.cwd(), 'tools', 'stats-agent', 'target', 'release', 'stats-agent'),
+      // In PATH
+      'stats-agent',
+    ];
 
-    return {
-      cpu: cpu.cpus.map(c => Math.round(c.load * 100) / 100),
-      cpuAvg: Math.round(cpu.currentLoad * 100) / 100,
-      memory: {
-        total: mem.total,
-        used: mem.used,
-        swapTotal: mem.swaptotal,
-        swapUsed: mem.swapused,
-      },
-      disks: disks
-        .filter(d => d.size > 0)
-        .map(d => ({
-          name: d.fs,
-          available: d.available,
-          total: d.size,
-        })),
-      network: network
-        .filter(n => n.rx_bytes > 0 || n.tx_bytes > 0)
-        .map(n => ({
-          interface: n.iface,
-          rxBytes: n.rx_bytes,
-          txBytes: n.tx_bytes,
-          rxPackets: n.rx_sec !== null ? Math.round(n.rx_sec) : 0,
-          txPackets: n.tx_sec !== null ? Math.round(n.tx_sec) : 0,
-          rxErrors: n.rx_errors,
-          txErrors: n.tx_errors,
-        })),
-      processes: [],
-      os: {
-        name: osInfo.distro || os.type(),
-        kernel: osInfo.kernel,
-        version: osInfo.release,
-        arch: osInfo.arch,
-      },
-      timestamp: Date.now(),
-    };
+    for (const p of possiblePaths) {
+      try {
+        if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+          // Check if executable
+          fs.accessSync(p, fs.constants.X_OK);
+          return p;
+        }
+      } catch {
+        // Continue to next path
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -298,7 +323,7 @@ class ServerStatsService extends EventEmitter {
         collector.stream?.close();
         collector.conn?.end();
       } else if (collector.type === 'local') {
-        clearInterval(collector.interval);
+        collector.process.kill('SIGTERM');
       }
       this.collectors.delete(serverId);
     }
