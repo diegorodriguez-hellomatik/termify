@@ -133,7 +133,8 @@ export function usePersonalTasks(options: UsePersonalTasksOptions = {}) {
     try {
       const response = await personalTasksApi.create(data, accessToken);
       if (response.success && response.data) {
-        setTasks((prev) => [...prev, response.data!]);
+        // Don't update local state here - the WebSocket onTaskCreated callback handles it
+        // This prevents duplicate tasks when both the API response and WebSocket event arrive
         return response.data;
       }
       return null;
