@@ -1,7 +1,7 @@
 'use client';
 
 import { Plus, CheckSquare } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { PageLayout, PageHeader, PageContent } from '@/components/ui/page-layout';
 import { Button } from '@/components/ui/button';
 import { PersonalTaskBoard as TaskBoardComponent } from '@/components/tasks/PersonalTaskBoard';
@@ -11,14 +11,40 @@ import { usePersonalTasks } from '@/hooks/usePersonalTasks';
 import { useTaskStatuses } from '@/hooks/useTaskStatuses';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { TaskPriority } from '@/lib/api';
+import { cn } from '@/lib/utils';
 
 export default function TasksPage() {
   // null = all tasks, 'independent' = tasks without workspace, string = specific workspace
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
-
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const prevWorkspaceRef = useRef<string | null>(null);
 
   const { workspaces, loadingWorkspaces } = useWorkspace();
+
+  // Handle workspace change with transition
+  const handleWorkspaceChange = (workspaceId: string | null) => {
+    if (workspaceId === selectedWorkspaceId) return;
+
+    setIsTransitioning(true);
+
+    // Small delay to allow fade out
+    setTimeout(() => {
+      setSelectedWorkspaceId(workspaceId);
+      prevWorkspaceRef.current = workspaceId;
+    }, 150);
+  };
+
+  // Reset transition state when tasks load
+  useEffect(() => {
+    if (!isTransitioning) return;
+
+    const timer = setTimeout(() => {
+      setIsTransitioning(false);
+    }, 50);
+
+    return () => clearTimeout(timer);
+  }, [selectedWorkspaceId]);
 
   // Convert selectedWorkspaceId for the hook:
   // null -> undefined (all tasks)
@@ -105,37 +131,47 @@ export default function TasksPage() {
         <WorkspaceTabs
           workspaces={workspaces}
           selectedWorkspaceId={selectedWorkspaceId}
-          onSelectWorkspace={setSelectedWorkspaceId}
+          onSelectWorkspace={handleWorkspaceChange}
         />
 
-        {totalTasks === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 px-4">
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-              <CheckSquare className="h-8 w-8 text-muted-foreground" />
+        {/* Content with transition */}
+        <div
+          className={cn(
+            'transition-all duration-200 ease-out',
+            isTransitioning
+              ? 'opacity-0 translate-y-2'
+              : 'opacity-100 translate-y-0'
+          )}
+        >
+          {totalTasks === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 px-4">
+              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                <CheckSquare className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold mb-1">No tasks yet</h3>
+              <p className="text-sm text-muted-foreground text-center">
+                {selectedWorkspaceId === 'independent'
+                  ? 'Create an independent task to get started.'
+                  : selectedWorkspaceId
+                    ? 'Create a task in this workspace to get started.'
+                    : 'Create a task to get started organizing your work.'}
+              </p>
             </div>
-            <h3 className="text-lg font-semibold mb-1">No tasks yet</h3>
-            <p className="text-sm text-muted-foreground text-center">
-              {selectedWorkspaceId === 'independent'
-                ? 'Create an independent task to get started.'
-                : selectedWorkspaceId
-                  ? 'Create a task in this workspace to get started.'
-                  : 'Create a task to get started organizing your work.'}
-            </p>
-          </div>
-        ) : (
-          <TaskBoardComponent
-            tasksByStatus={tasksByStatus()}
-            statuses={statuses}
-            onCreateTask={createTask}
-            onUpdateTask={updateTask}
-            onDeleteTask={deleteTask}
-            onReorderTasks={reorderTasks}
-            onStatusesChange={() => {
-              refetchStatuses();
-              fetchTasks();
-            }}
-          />
-        )}
+          ) : (
+            <TaskBoardComponent
+              tasksByStatus={tasksByStatus()}
+              statuses={statuses}
+              onCreateTask={createTask}
+              onUpdateTask={updateTask}
+              onDeleteTask={deleteTask}
+              onReorderTasks={reorderTasks}
+              onStatusesChange={() => {
+                refetchStatuses();
+                fetchTasks();
+              }}
+            />
+          )}
+        </div>
       </PageContent>
 
       {/* Create Task Modal */}
