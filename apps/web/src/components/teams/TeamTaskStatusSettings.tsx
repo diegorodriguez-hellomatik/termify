@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   DndContext,
   closestCenter,
@@ -242,7 +243,7 @@ export function TeamTaskStatusSettings({
     })
   );
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -301,18 +302,18 @@ export function TeamTaskStatusSettings({
 
   const canDeleteStatuses = statuses.length > 1;
 
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+        className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm"
         onClick={() => onOpenChange(false)}
       />
 
       {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+      <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 pointer-events-none">
         <div
-          className="relative bg-background border rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] overflow-hidden pointer-events-auto animate-in fade-in zoom-in-95 duration-200"
+          className="relative bg-background border rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200 pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -450,10 +451,10 @@ export function TeamTaskStatusSettings({
       {deleteConfirm && (
         <>
           <div
-            className="fixed inset-0 z-[60] bg-black/60"
+            className="fixed inset-0 z-[110] bg-black/60"
             onClick={() => setDeleteConfirm(null)}
           />
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 pointer-events-none">
+          <div className="fixed inset-0 z-[111] flex items-center justify-center p-4 pointer-events-none">
             <div className="bg-background border rounded-lg shadow-xl w-full max-w-sm p-4 pointer-events-auto">
               <h3 className="font-semibold mb-2">Delete Status</h3>
               <p className="text-sm text-muted-foreground mb-4">
@@ -506,6 +507,7 @@ export function TeamTaskStatusSettings({
           </div>
         </>
       )}
-    </>
+    </>,
+    document.body
   );
 }
