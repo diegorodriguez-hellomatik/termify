@@ -103,27 +103,26 @@ export function PersonalTaskDetailModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-background border rounded-lg shadow-xl w-full max-w-2xl p-6 z-[101] max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-end mb-2">
-          {isOverdue && (
-            <div className="flex items-center gap-1 text-red-500 text-sm mr-auto">
-              <AlertCircle className="h-4 w-4" />
-              Overdue
-            </div>
-          )}
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        {/* Close button - absolute positioned */}
+        <Button variant="ghost" size="icon" onClick={onClose} className="absolute top-3 right-3">
+          <X className="h-4 w-4" />
+        </Button>
 
-        <div className="space-y-6">
-          {/* Title */}
-          <div>
+        <div className="space-y-4">
+          {/* Title + Overdue indicator */}
+          <div className="pr-10">
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="text-lg font-semibold border-0 px-0 focus-visible:ring-0"
+              className="text-xl font-semibold border-0 px-0 focus-visible:ring-0 h-auto"
               placeholder="Task title"
             />
+            {isOverdue && (
+              <div className="flex items-center gap-1 text-red-500 text-sm mt-1">
+                <AlertCircle className="h-4 w-4" />
+                Overdue
+              </div>
+            )}
           </div>
 
           {/* Status & Priority */}
