@@ -44,17 +44,33 @@ const reorderTerminalsSchema = z.object({
 
 /**
  * GET /api/workspaces
- * List all workspaces for the current user
+ * List all workspaces for the current user (including team workspaces)
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
 
-    const workspaces = await prisma.workspace.findMany({
+    // Get user's team memberships
+    const teamMemberships = await prisma.teamMember.findMany({
       where: { userId },
+      select: { teamId: true },
+    });
+    const teamIds = teamMemberships.map((m) => m.teamId);
+
+    // Get workspaces that belong to user OR to teams user is member of
+    const workspaces = await prisma.workspace.findMany({
+      where: {
+        OR: [
+          { userId }, // User's own workspaces
+          { teamId: { in: teamIds } }, // Team workspaces
+        ],
+      },
       include: {
         _count: {
           select: { terminals: true },
+        },
+        team: {
+          select: { id: true, name: true, color: true },
         },
       },
       orderBy: { position: 'asc' },
@@ -164,8 +180,22 @@ router.get('/:id', async (req: Request, res: Response) => {
     const userId = req.user!.userId;
     const id = req.params.id as string;
 
+    // Get user's team memberships
+    const teamMemberships = await prisma.teamMember.findMany({
+      where: { userId },
+      select: { teamId: true },
+    });
+    const teamIds = teamMemberships.map((m) => m.teamId);
+
+    // Find workspace that belongs to user OR to a team user is member of
     const workspace = await prisma.workspace.findFirst({
-      where: { id, userId },
+      where: {
+        id,
+        OR: [
+          { userId }, // User's own workspace
+          { teamId: { in: teamIds } }, // Team workspace
+        ],
+      },
       include: {
         terminals: {
           include: {
