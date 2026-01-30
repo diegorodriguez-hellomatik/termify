@@ -1,8 +1,10 @@
 'use client';
 
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Calendar, AlertCircle, Terminal, Play } from 'lucide-react';
+import { Calendar, AlertCircle, Terminal, Play, Edit2, Trash2, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PersonalTask, TaskPriority } from '@/lib/api';
 import { formatDistanceToNow } from 'date-fns';
@@ -12,6 +14,8 @@ interface PersonalTaskCardProps {
   onClick?: () => void;
   isOverlay?: boolean;
   onExecute?: (taskId: string) => void;
+  onDelete?: (taskId: string) => void;
+  onDuplicate?: (task: PersonalTask) => void;
 }
 
 const PRIORITY_COLORS: Record<TaskPriority, string> = {
@@ -28,7 +32,9 @@ const PRIORITY_LABELS: Record<TaskPriority, string> = {
   URGENT: 'Urgent',
 };
 
-export function PersonalTaskCard({ task, onClick, isOverlay, onExecute }: PersonalTaskCardProps) {
+export function PersonalTaskCard({ task, onClick, isOverlay, onExecute, onDelete, onDuplicate }: PersonalTaskCardProps) {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
   const {
     attributes,
     listeners,
@@ -47,6 +53,16 @@ export function PersonalTaskCard({ task, onClick, isOverlay, onExecute }: Person
       };
 
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== 'DONE';
+
+  // Handle right-click context menu
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (isOverlay) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const closeContextMenu = () => setContextMenu(null);
 
   // Parse commands if they exist
   const commands = task.commands ? (() => {
@@ -67,12 +83,14 @@ export function PersonalTaskCard({ task, onClick, isOverlay, onExecute }: Person
   };
 
   return (
+    <>
     <div
       ref={isOverlay ? undefined : setNodeRef}
       style={style}
       {...(isOverlay ? {} : attributes)}
       {...(isOverlay ? {} : listeners)}
       onClick={isOverlay ? undefined : onClick}
+      onContextMenu={handleContextMenu}
       draggable={hasCommands && !isOverlay}
       onDragStart={hasCommands && !isOverlay ? handleDragStart : undefined}
       className={cn(
@@ -159,5 +177,69 @@ export function PersonalTaskCard({ task, onClick, isOverlay, onExecute }: Person
         </div>
       )}
     </div>
+
+    {/* Context Menu */}
+    {contextMenu && typeof document !== 'undefined' && createPortal(
+      <>
+        {/* Backdrop */}
+        <div
+          className="fixed inset-0 z-[9998]"
+          onClick={closeContextMenu}
+          onContextMenu={(e) => { e.preventDefault(); closeContextMenu(); }}
+        />
+        {/* Menu */}
+        <div
+          className="fixed z-[9999] min-w-[160px] py-1 bg-popover border border-border rounded-lg shadow-lg animate-in fade-in zoom-in-95 duration-100"
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 176),
+            top: Math.min(contextMenu.y, window.innerHeight - 120),
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              closeContextMenu();
+              onClick?.();
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
+          >
+            <Edit2 className="h-4 w-4 text-muted-foreground" />
+            Edit
+          </button>
+          {onDuplicate && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                closeContextMenu();
+                onDuplicate(task);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
+            >
+              <Copy className="h-4 w-4 text-muted-foreground" />
+              Duplicate
+            </button>
+          )}
+          {onDelete && (
+            <>
+              <div className="my-1 border-t border-border" />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeContextMenu();
+                  onDelete(task.id);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-destructive hover:bg-destructive/10 transition-colors"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </button>
+            </>
+          )}
+        </div>
+      </>,
+      document.body
+    )}
+    </>
   );
 }

@@ -99,6 +99,29 @@ export function useTeamWorkspaces(teamId: string) {
     [session?.accessToken, teamId]
   );
 
+  const createWorkspace = useCallback(
+    async (data: {
+      name: string;
+      description?: string;
+      color?: string;
+      icon?: string;
+      isTeamDefault?: boolean;
+    }) => {
+      if (!session?.accessToken) return { success: false, error: 'Not authenticated' };
+
+      try {
+        const response = await teamWorkspacesApi.create(teamId, data, session.accessToken);
+        if (response.success && response.data) {
+          setWorkspaces((prev) => [response.data!, ...prev]);
+        }
+        return response;
+      } catch (err) {
+        return { success: false, error: 'Failed to create workspace' };
+      }
+    },
+    [session?.accessToken, teamId]
+  );
+
   const defaultWorkspace = workspaces.find((w) => w.isTeamDefault);
 
   return {
@@ -108,6 +131,7 @@ export function useTeamWorkspaces(teamId: string) {
     error,
     refetch: fetchWorkspaces,
     shareWorkspace,
+    createWorkspace,
     updateWorkspace,
     removeWorkspace,
   };

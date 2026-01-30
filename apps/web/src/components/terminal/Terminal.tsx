@@ -28,11 +28,11 @@ interface TerminalProps {
   hideToolbar?: boolean;
   /** Callback to receive status updates */
   onStatusUpdate?: (status: TerminalStatus, isConnected: boolean) => void;
-  /** Override font size */
+  /** Custom font size (overrides default 14) */
   fontSize?: number;
-  /** Override font family */
+  /** Custom font family (overrides default) */
   fontFamily?: string;
-  /** Override theme */
+  /** Theme override (if set, uses this instead of global theme) */
   themeOverride?: string;
 }
 
@@ -62,8 +62,8 @@ export function Terminal({
   onClose,
   hideToolbar = false,
   onStatusUpdate,
-  fontSize,
-  fontFamily,
+  fontSize = 14,
+  fontFamily = 'JetBrains Mono, Fira Code, monospace',
   themeOverride,
 }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -73,9 +73,10 @@ export function Terminal({
   const [error, setError] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
 
-  // Get theme from context
+  // Get theme from context, but allow override
   const { terminalTheme } = useTheme();
-  const currentTheme = getTerminalTheme(terminalTheme);
+  const effectiveTheme = themeOverride || terminalTheme;
+  const currentTheme = getTerminalTheme(effectiveTheme);
 
   // Callbacks that write directly to terminal
   const handleOutput = useCallback((data: string) => {
@@ -127,12 +128,12 @@ export function Terminal({
     if (initializedRef.current) return; // Prevent double-init in StrictMode
     initializedRef.current = true;
 
-    const xtermTheme = getXtermTheme(terminalTheme);
+    const xtermTheme = getXtermTheme(effectiveTheme);
 
     const terminal = new XTerm({
       cursorBlink: true,
-      fontSize: 14,
-      fontFamily: 'JetBrains Mono, Fira Code, monospace',
+      fontSize: fontSize,
+      fontFamily: fontFamily,
       theme: xtermTheme,
       scrollback: 10000,
       convertEol: true,
@@ -171,7 +172,7 @@ export function Terminal({
       }
     });
 
-    // Connect to WebSocket
+    // Connect to WebSocket - the hook will handle the case when token is not available
     connect();
 
     // Handle window resize
@@ -215,6 +216,18 @@ export function Terminal({
     };
   }, [disconnect]);
 
+  // Retry connection when token becomes available (if initial connect failed due to missing token)
+  useEffect(() => {
+    // If we have a token, are ready, but not connected and no active connection attempt
+    if (token && isReady && !isConnected && error === 'No authentication token') {
+      setError(null);
+      if (terminalRef.current) {
+        terminalRef.current.writeln('\x1b[32mToken received, reconnecting...\x1b[0m');
+      }
+      connect();
+    }
+  }, [token, isReady, isConnected, error, connect]);
+
   // Auto-start terminal when WebSocket connects
   useEffect(() => {
     if (isConnected && isReady && !hasAutoStartedRef.current) {
@@ -237,9 +250,12 @@ export function Terminal({
     }
   }, [onReady]);
 
-  // Notify parent when terminal is RUNNING
+  // Clear terminal and notify parent when terminal is RUNNING
   useEffect(() => {
     if (status === TerminalStatus.RUNNING && fitAddonRef.current && terminalRef.current) {
+      // Clear the "Connecting..." message when terminal is ready
+      terminalRef.current.clear();
+
       setTimeout(() => {
         fitAddonRef.current?.fit();
         if (terminalRef.current) {
@@ -269,13 +285,29 @@ export function Terminal({
     return () => clearTimeout(timeoutId);
   }, [callOnReadyOnce]);
 
-  // Update theme when terminalTheme changes
+  // Update theme when effectiveTheme changes
   useEffect(() => {
     if (terminalRef.current) {
-      const xtermTheme = getXtermTheme(terminalTheme);
+      const xtermTheme = getXtermTheme(effectiveTheme);
       terminalRef.current.options.theme = xtermTheme;
     }
-  }, [terminalTheme]);
+  }, [effectiveTheme]);
+
+  // Update font size when it changes
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.fontSize = fontSize;
+      fitAddonRef.current?.fit();
+    }
+  }, [fontSize]);
+
+  // Update font family when it changes
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.fontFamily = fontFamily;
+      fitAddonRef.current?.fit();
+    }
+  }, [fontFamily]);
 
   // Refit when terminal becomes active (visible)
   useEffect(() => {

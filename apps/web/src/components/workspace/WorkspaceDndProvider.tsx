@@ -1,44 +1,65 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useRef,
+  ReactNode,
+} from 'react';
 import {
   DndContext,
-  closestCenter,
+  DragOverlay,
+  pointerWithin,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   DragEndEvent,
   DragStartEvent,
+  DragOverEvent,
 } from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  horizontalListSortingStrategy,
-} from '@dnd-kit/sortable';
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import { Terminal } from 'lucide-react';
 import { DropPosition } from './DropZoneOverlay';
 
-interface WorkspaceDndContextType {
-  activeDragId: string | null;
-  isDragging: boolean;
+interface DropPositionState {
+  paneId: string;
+  position: DropPosition;
 }
 
-const WorkspaceDndContext = createContext<WorkspaceDndContextType>({
-  activeDragId: null,
-  isDragging: false,
-});
+interface DraggedTab {
+  id: string;
+  terminalId: string;
+  name: string;
+}
+
+interface WorkspaceDndContextType {
+  dropPositionRef: React.MutableRefObject<DropPositionState | null>;
+  setDropPosition: (paneId: string, position: DropPosition) => void;
+  isDraggingTab: boolean;
+  draggedTab: DraggedTab | null;
+  activeDroppableId: string | null;
+}
+
+const WorkspaceDndContextInternal = createContext<WorkspaceDndContextType | null>(null);
 
 export function useWorkspaceDnd() {
-  return useContext(WorkspaceDndContext);
+  const context = useContext(WorkspaceDndContextInternal);
+  if (!context) {
+    throw new Error('useWorkspaceDnd must be used within WorkspaceDndProvider');
+  }
+  return context;
 }
 
 interface WorkspaceDndProviderProps {
   children: ReactNode;
   onTabDrop: (paneId: string, terminalId: string, position: DropPosition) => void;
-  onTabReorder: (fromIndex: number, toIndex: number) => void;
+  onTabReorder: (oldIndex: number, newIndex: number) => void;
   tabIds: string[];
 }
+
 
 export function WorkspaceDndProvider({
   children,
@@ -46,7 +67,10 @@ export function WorkspaceDndProvider({
   onTabReorder,
   tabIds,
 }: WorkspaceDndProviderProps) {
-  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [isDraggingTab, setIsDraggingTab] = useState(false);
+  const [draggedTab, setDraggedTab] = useState<DraggedTab | null>(null);
+  const [activeDroppableId, setActiveDroppableId] = useState<string | null>(null);
+  const dropPositionRef = useRef<DropPositionState | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -59,36 +83,124 @@ export function WorkspaceDndProvider({
     })
   );
 
+  const setDropPosition = useCallback((paneId: string, position: DropPosition) => {
+    if (position) {
+      dropPositionRef.current = { paneId, position };
+    } else {
+      if (dropPositionRef.current?.paneId === paneId) {
+        dropPositionRef.current = null;
+      }
+    }
+  }, []);
+
   const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveDragId(event.active.id as string);
+    const { active } = event;
+    const data = active.data.current;
+
+    if (data?.type === 'tab') {
+      setIsDraggingTab(true);
+      setDraggedTab({
+        id: String(active.id),
+        terminalId: data.terminalId,
+        name: data.name || 'Terminal',
+      });
+    }
+  }, []);
+
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    const { over } = event;
+
+    if (over) {
+      const overId = String(over.id);
+      if (overId.startsWith('pane-')) {
+        setActiveDroppableId(overId);
+      } else {
+        setActiveDroppableId(null);
+      }
+    } else {
+      setActiveDroppableId(null);
+    }
   }, []);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
-    setActiveDragId(null);
 
-    if (!over || active.id === over.id) return;
+    setIsDraggingTab(false);
+    setDraggedTab(null);
+    setActiveDroppableId(null);
 
-    const oldIndex = tabIds.indexOf(active.id as string);
-    const newIndex = tabIds.indexOf(over.id as string);
-
-    if (oldIndex !== -1 && newIndex !== -1) {
-      onTabReorder(oldIndex, newIndex);
+    if (!over) {
+      dropPositionRef.current = null;
+      return;
     }
-  }, [tabIds, onTabReorder]);
+
+    const activeData = active.data.current;
+    const overId = String(over.id);
+
+    // Check if dropped on a pane (for split)
+    if (overId.startsWith('pane-') && activeData?.type === 'tab') {
+      const dropPos = dropPositionRef.current;
+      const terminalId = activeData.terminalId;
+
+      if (dropPos && terminalId && dropPos.position) {
+        onTabDrop(dropPos.paneId, terminalId, dropPos.position);
+      }
+
+      dropPositionRef.current = null;
+      return;
+    }
+
+    // Handle tab reordering (dropped on another tab)
+    if (activeData?.type === 'tab' && !overId.startsWith('pane-')) {
+      const activeId = String(active.id);
+      const oldIndex = tabIds.indexOf(activeId);
+      const newIndex = tabIds.indexOf(overId);
+
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+        onTabReorder(oldIndex, newIndex);
+      }
+    }
+
+    dropPositionRef.current = null;
+  }, [tabIds, onTabReorder, onTabDrop]);
+
+  const handleDragCancel = useCallback(() => {
+    setIsDraggingTab(false);
+    setDraggedTab(null);
+    setActiveDroppableId(null);
+    dropPositionRef.current = null;
+  }, []);
 
   return (
-    <WorkspaceDndContext.Provider value={{ activeDragId, isDragging: !!activeDragId }}>
+    <WorkspaceDndContextInternal.Provider
+      value={{
+        dropPositionRef,
+        setDropPosition,
+        isDraggingTab,
+        draggedTab,
+        activeDroppableId,
+      }}
+    >
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={pointerWithin}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
       >
-        <SortableContext items={tabIds} strategy={horizontalListSortingStrategy}>
-          {children}
-        </SortableContext>
+        {children}
+
+        {/* Drag overlay - shows the tab being dragged */}
+        <DragOverlay dropAnimation={null}>
+          {draggedTab && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground shadow-lg border border-primary/50">
+              <Terminal size={14} />
+              <span className="text-sm font-medium">{draggedTab.name}</span>
+            </div>
+          )}
+        </DragOverlay>
       </DndContext>
-    </WorkspaceDndContext.Provider>
+    </WorkspaceDndContextInternal.Provider>
   );
 }

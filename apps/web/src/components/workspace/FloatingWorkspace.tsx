@@ -107,7 +107,7 @@ function getGridPosition(
 }
 
 export function FloatingWorkspace({ token, onResetLayoutReady }: FloatingWorkspaceProps) {
-  const { tabs, closeTab, floatingLayout, updateFloatingLayout } = useWorkspace();
+  const { tabs, closeTab, floatingLayout, updateFloatingLayout, getTerminalSettings } = useWorkspace();
   const [windows, setWindows] = useState<WindowState[]>([]);
   const [topZIndex, setTopZIndex] = useState(BASE_Z_INDEX);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -402,23 +402,27 @@ export function FloatingWorkspace({ token, onResetLayoutReady }: FloatingWorkspa
           </button>
         )}
 
-        {windows.map((window) => (
-          <FloatingTerminal
-            key={window.id}
-            id={window.id}
-            terminalId={window.terminalId}
-            token={token}
-            name={window.name}
-            initialPosition={window.position}
-            initialSize={window.size}
-            zIndex={window.zIndex}
-            isCustomized={window.isCustomized}
-            onFocus={() => handleFocus(window.id)}
-            onClose={() => handleClose(window.id)}
-            onPositionChange={(pos) => handlePositionChange(window.id, pos)}
-            onSizeChange={(size) => handleSizeChange(window.id, size)}
-          />
-        ))}
+        {windows.map((window) => {
+          const settings = getTerminalSettings(window.terminalId);
+          return (
+            <FloatingTerminal
+              key={window.id}
+              id={window.id}
+              terminalId={window.terminalId}
+              token={token}
+              name={window.name}
+              initialPosition={window.position}
+              initialSize={window.size}
+              zIndex={window.zIndex}
+              isCustomized={window.isCustomized}
+              initialSettings={settings}
+              onFocus={() => handleFocus(window.id)}
+              onClose={() => handleClose(window.id)}
+              onPositionChange={(pos) => handlePositionChange(window.id, pos)}
+              onSizeChange={(size) => handleSizeChange(window.id, size)}
+            />
+          );
+        })}
       </div>
     </div>
   );

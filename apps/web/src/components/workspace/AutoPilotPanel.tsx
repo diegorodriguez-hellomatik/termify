@@ -2,11 +2,22 @@
 
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Zap, Play, Pause, RefreshCw, Terminal, Loader2, CheckCircle2, Circle, AlertCircle } from 'lucide-react';
+import { X, Zap, Play, Pause, RefreshCw, Terminal, Loader2, CheckCircle2, Circle, AlertCircle, Bot, Code } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAutoPilot } from '@/hooks/useAutoPilot';
-import { TaskPriority } from '@/lib/api';
+import { TaskPriority, PersonalTask } from '@/lib/api';
 import { useWorkspace, Tab } from '@/contexts/WorkspaceContext';
+
+// Helper to check if task has commands
+function hasTaskCommands(task: PersonalTask): boolean {
+  if (!task.commands) return false;
+  try {
+    const commands = JSON.parse(task.commands) as string[];
+    return commands.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 interface AutoPilotPanelProps {
   isOpen: boolean;
@@ -181,8 +192,8 @@ export function AutoPilotPanel({ isOpen, onClose, position }: AutoPilotPanelProp
         </button>
         <p className="text-[11px] text-muted-foreground mt-2 text-center">
           {enabled
-            ? 'Tasks will be executed automatically by priority'
-            : 'Click to automatically execute tasks on available terminals'
+            ? 'Tasks are executed via Claude Code by priority'
+            : 'Auto-execute tasks via Claude Code on terminals'
           }
         </p>
       </div>
@@ -225,20 +236,30 @@ export function AutoPilotPanel({ isOpen, onClose, position }: AutoPilotPanelProp
         </h4>
         {availableTasks.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-3">
-            No tasks with commands available
+            No pending tasks available
           </p>
         ) : (
           <div className="space-y-1.5">
-            {availableTasks.slice(0, 10).map((task, index) => (
-              <div
-                key={task.id}
-                className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/50 transition-colors"
-              >
-                <span className="text-[10px] text-muted-foreground w-4">{index + 1}.</span>
-                <PriorityBadge priority={task.priority as TaskPriority} />
-                <span className="text-sm truncate flex-1">{task.title}</span>
-              </div>
-            ))}
+            {availableTasks.slice(0, 10).map((task, index) => {
+              const hasCommands = hasTaskCommands(task);
+              return (
+                <div
+                  key={task.id}
+                  className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/50 transition-colors"
+                >
+                  <span className="text-[10px] text-muted-foreground w-4">{index + 1}.</span>
+                  <PriorityBadge priority={task.priority as TaskPriority} />
+                  <span className="text-sm truncate flex-1">{task.title}</span>
+                  <span title={hasCommands ? 'Has commands' : 'Claude Code'}>
+                    {hasCommands ? (
+                      <Code className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                    ) : (
+                      <Bot className="h-3 w-3 text-primary flex-shrink-0" />
+                    )}
+                  </span>
+                </div>
+              );
+            })}
             {availableTasks.length > 10 && (
               <p className="text-[10px] text-muted-foreground text-center py-1">
                 +{availableTasks.length - 10} more tasks
@@ -249,14 +270,19 @@ export function AutoPilotPanel({ isOpen, onClose, position }: AutoPilotPanelProp
       </div>
 
       {/* Terminals */}
-      <div className="px-4 py-3">
+      <div className="px-4 py-3 border-b">
         <h4 className="text-xs font-medium text-muted-foreground mb-2">
           Terminals ({terminalTabs.length})
         </h4>
         {terminalTabs.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-2">
-            No terminals open
-          </p>
+          <div className="text-center py-2">
+            <p className="text-xs text-muted-foreground">
+              No terminals open
+            </p>
+            <p className="text-[10px] text-muted-foreground/70 mt-1">
+              Terminals will be created automatically when needed
+            </p>
+          </div>
         ) : (
           <div className="space-y-1">
             {terminalTabs.map((terminal) => {
@@ -287,6 +313,20 @@ export function AutoPilotPanel({ isOpen, onClose, position }: AutoPilotPanelProp
             })}
           </div>
         )}
+      </div>
+
+      {/* Legend */}
+      <div className="px-4 py-2 bg-muted/20">
+        <div className="flex items-center justify-center gap-4 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Code className="h-3 w-3" />
+            Commands
+          </span>
+          <span className="flex items-center gap-1">
+            <Bot className="h-3 w-3 text-primary" />
+            Claude Code
+          </span>
+        </div>
       </div>
     </div>
   );

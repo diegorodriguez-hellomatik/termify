@@ -2,87 +2,93 @@
 
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
-interface TaskExecutionInfo {
+export interface ExecutingTaskInfo {
   taskId: string;
+  taskTitle: string;
+  queueId: string;
   terminalId: string;
   terminalName: string;
-  commandsCompleted: number;
   commandsTotal: number;
+  commandsCompleted: number;
+  startedAt: Date;
 }
 
-interface TerminalTasksContextType {
-  executingTasks: Map<string, TaskExecutionInfo>;
-  startTaskExecution: (info: TaskExecutionInfo) => void;
-  updateTaskProgress: (taskId: string, commandsCompleted: number) => void;
-  endTaskExecution: (taskId: string) => void;
-  getTerminalForTask: (taskId: string) => TaskExecutionInfo | null;
-  getTasksForTerminal: (terminalId: string) => TaskExecutionInfo[];
+interface TerminalTasksContextValue {
+  // Map of terminalId -> ExecutingTaskInfo
+  executingTasks: Map<string, ExecutingTaskInfo>;
+  // Register a task execution
+  registerExecution: (info: ExecutingTaskInfo) => void;
+  // Update command progress
+  updateProgress: (queueId: string, commandsCompleted: number) => void;
+  // Clear a task execution (when completed/failed/cancelled)
+  clearExecution: (queueId: string) => void;
+  // Get which terminal is executing a specific task
+  getTerminalForTask: (taskId: string) => ExecutingTaskInfo | undefined;
+  // Get the task being executed by a specific terminal
+  getTaskForTerminal: (terminalId: string) => ExecutingTaskInfo | undefined;
 }
 
-const TerminalTasksContext = createContext<TerminalTasksContextType | null>(null);
+const TerminalTasksContext = createContext<TerminalTasksContextValue | null>(null);
 
-interface TerminalTasksProviderProps {
-  children: ReactNode;
-}
+export function TerminalTasksProvider({ children }: { children: ReactNode }) {
+  const [executingTasks, setExecutingTasks] = useState<Map<string, ExecutingTaskInfo>>(new Map());
 
-export function TerminalTasksProvider({ children }: TerminalTasksProviderProps) {
-  const [executingTasks, setExecutingTasks] = useState<Map<string, TaskExecutionInfo>>(new Map());
-
-  const startTaskExecution = useCallback((info: TaskExecutionInfo) => {
-    setExecutingTasks((prev) => {
+  const registerExecution = useCallback((info: ExecutingTaskInfo) => {
+    setExecutingTasks(prev => {
       const next = new Map(prev);
-      next.set(info.taskId, info);
+      next.set(info.terminalId, info);
       return next;
     });
   }, []);
 
-  const updateTaskProgress = useCallback((taskId: string, commandsCompleted: number) => {
-    setExecutingTasks((prev) => {
-      const info = prev.get(taskId);
-      if (!info) return prev;
+  const updateProgress = useCallback((queueId: string, commandsCompleted: number) => {
+    setExecutingTasks(prev => {
       const next = new Map(prev);
-      next.set(taskId, { ...info, commandsCompleted });
-      return next;
-    });
-  }, []);
-
-  const endTaskExecution = useCallback((taskId: string) => {
-    setExecutingTasks((prev) => {
-      const next = new Map(prev);
-      next.delete(taskId);
-      return next;
-    });
-  }, []);
-
-  const getTerminalForTask = useCallback(
-    (taskId: string): TaskExecutionInfo | null => {
-      return executingTasks.get(taskId) || null;
-    },
-    [executingTasks]
-  );
-
-  const getTasksForTerminal = useCallback(
-    (terminalId: string): TaskExecutionInfo[] => {
-      const tasks: TaskExecutionInfo[] = [];
-      executingTasks.forEach((info) => {
-        if (info.terminalId === terminalId) {
-          tasks.push(info);
+      for (const [terminalId, task] of next) {
+        if (task.queueId === queueId) {
+          next.set(terminalId, { ...task, commandsCompleted });
+          break;
         }
-      });
-      return tasks;
-    },
-    [executingTasks]
-  );
+      }
+      return next;
+    });
+  }, []);
+
+  const clearExecution = useCallback((queueId: string) => {
+    setExecutingTasks(prev => {
+      const next = new Map(prev);
+      for (const [terminalId, task] of next) {
+        if (task.queueId === queueId) {
+          next.delete(terminalId);
+          break;
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const getTerminalForTask = useCallback((taskId: string): ExecutingTaskInfo | undefined => {
+    for (const task of executingTasks.values()) {
+      if (task.taskId === taskId) {
+        return task;
+      }
+    }
+    return undefined;
+  }, [executingTasks]);
+
+  const getTaskForTerminal = useCallback((terminalId: string): ExecutingTaskInfo | undefined => {
+    return executingTasks.get(terminalId);
+  }, [executingTasks]);
 
   return (
     <TerminalTasksContext.Provider
       value={{
         executingTasks,
-        startTaskExecution,
-        updateTaskProgress,
-        endTaskExecution,
+        registerExecution,
+        updateProgress,
+        clearExecution,
         getTerminalForTask,
-        getTasksForTerminal,
+        getTaskForTerminal,
       }}
     >
       {children}
@@ -90,7 +96,7 @@ export function TerminalTasksProvider({ children }: TerminalTasksProviderProps) 
   );
 }
 
-export function useTerminalTasks(): TerminalTasksContextType {
+export function useTerminalTasks() {
   const context = useContext(TerminalTasksContext);
   if (!context) {
     throw new Error('useTerminalTasks must be used within a TerminalTasksProvider');
@@ -98,6 +104,7 @@ export function useTerminalTasks(): TerminalTasksContextType {
   return context;
 }
 
-export function useTerminalTasksOptional(): TerminalTasksContextType | null {
+// Optional hook that returns null instead of throwing if context is not available
+export function useTerminalTasksOptional() {
   return useContext(TerminalTasksContext);
 }

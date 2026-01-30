@@ -6,8 +6,10 @@ import { useRouter } from 'next/navigation';
 import { Plus, Search, X, LayoutGrid, Grid3x3, List } from 'lucide-react';
 import { PageLayout, PageHeader, PageContent } from '@/components/ui/page-layout';
 import { Button } from '@/components/ui/button';
+import { BlankAreaContextMenu } from '@/components/ui/BlankAreaContextMenu';
 import { useTeams } from '@/hooks/useTeams';
 import { useTasks } from '@/hooks/useTasks';
+import { useTaskStatuses } from '@/hooks/useTaskStatuses';
 import { useTeamSocket } from '@/hooks/useTeamSocket';
 import { useTheme } from '@/context/ThemeContext';
 import { TeamList, TeamDetail, TaskBoard, CreateTeamModal } from '@/components/teams';
@@ -85,7 +87,17 @@ export default function TeamsPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, [role="button"], [data-no-context-menu]')) {
+      return;
+    }
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
 
   // Register keyboard shortcuts
   useEffect(() => {
@@ -129,7 +141,14 @@ export default function TeamsPage() {
     handleTaskUpdated,
     handleTaskDeleted,
     handleTaskStatusChanged,
+    fetchTasks,
   } = useTasks(selectedTeamId);
+
+  const {
+    statuses: teamStatuses,
+    isLoading: statusesLoading,
+    refetch: refetchStatuses,
+  } = useTaskStatuses({ teamId: selectedTeamId || undefined });
 
   // WebSocket for real-time updates
   useTeamSocket({
@@ -297,6 +316,7 @@ export default function TeamsPage() {
             }
           />
           <PageContent>
+          <div onContextMenu={handleContextMenu} className="min-h-[calc(100vh-220px)]">
             {/* Search bar */}
             {teams.length > 0 && (
               <div className="relative max-w-md mb-4">
@@ -329,6 +349,18 @@ export default function TeamsPage() {
               onSelectTeam={handleSelectTeam}
               viewMode={cardViewMode}
             />
+          </div>
+
+          {/* Context Menu */}
+          {contextMenu && (
+            <BlankAreaContextMenu
+              x={contextMenu.x}
+              y={contextMenu.y}
+              onClose={() => setContextMenu(null)}
+              onAction={() => setCreateModalOpen(true)}
+              actionLabel="New Team"
+            />
+          )}
           </PageContent>
           <CreateTeamModal
             open={createModalOpen}
@@ -361,13 +393,26 @@ export default function TeamsPage() {
           <PageContent className="flex-1 overflow-hidden">
             <TaskBoard
               tasksByStatus={tasksByStatus()}
+              statuses={teamStatuses}
+              teamId={selectedTeam.id}
               teamMembers={selectedTeam.members || []}
+              canManageStatuses={
+                selectedTeam.members?.some(
+                  (m) =>
+                    m.userId === session?.user?.id &&
+                    (m.role === 'OWNER' || m.role === 'ADMIN')
+                ) ?? false
+              }
               onCreateTask={createTask}
               onUpdateTask={updateTask}
               onDeleteTask={deleteTask}
               onAssignTask={assignTask}
               onUnassignTask={unassignTask}
               onReorderTasks={reorderTasks}
+              onStatusesChange={() => {
+                refetchStatuses();
+                fetchTasks();
+              }}
             />
           </PageContent>
         </div>

@@ -21,6 +21,7 @@ import {
   MousePointer2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { TermifyLogo } from '@/components/ui/TermifyLogo';
 
 // ============================================================================
 // HOOKS
@@ -514,7 +515,7 @@ function HeroSection() {
               <ArrowRight className="w-5 h-5" />
             </Link>
             <Link
-              href="https://github.com"
+              href="https://github.com/diegorodriguez-hellomatik/termify"
               className="inline-flex items-center gap-2.5 px-8 py-4 border border-border rounded-xl font-semibold text-lg hover:bg-muted/50 hover:border-primary/30 transition-all duration-300"
             >
               <Github className="w-5 h-5" />
@@ -610,9 +611,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
           <nav className="flex items-center justify-between h-16">
             <Link href="/" className="flex items-center gap-3 group">
-              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center group-hover:scale-105 transition-transform duration-300 group-hover:shadow-lg group-hover:shadow-primary/25">
-                <Terminal className="w-5 h-5 text-primary-foreground" />
-              </div>
+              <TermifyLogo size={40} className="text-foreground group-hover:scale-105 transition-transform duration-300" />
               <span className="text-xl font-bold tracking-tight">Termify</span>
             </Link>
             <div className="flex items-center gap-4">
@@ -765,16 +764,14 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 py-16">
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="flex items-center gap-3 group">
-              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center group-hover:scale-105 transition-transform duration-300">
-                <Terminal className="w-5 h-5 text-primary-foreground" />
-              </div>
+              <TermifyLogo size={40} className="text-foreground group-hover:scale-105 transition-transform duration-300" />
               <span className="text-xl font-bold">Termify</span>
             </div>
             <div className="flex items-center gap-8 text-sm">
               <Link href="/docs/api" className="text-muted-foreground hover:text-foreground transition-colors duration-200">
                 API Docs
               </Link>
-              <Link href="https://github.com" className="text-muted-foreground hover:text-foreground transition-colors duration-200 flex items-center gap-2">
+              <Link href="https://github.com/diegorodriguez-hellomatik/termify" className="text-muted-foreground hover:text-foreground transition-colors duration-200 flex items-center gap-2">
                 <Github className="w-4 h-4" />
                 GitHub
               </Link>

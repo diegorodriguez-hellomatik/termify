@@ -16,7 +16,13 @@ import {
   FileJson,
   Check,
   Copy,
+  Type,
+  RotateCcw,
+  Shield,
+  Lock,
+  Mail,
 } from 'lucide-react';
+import { PageLayout, PageHeader, PageContent } from '@/components/ui/page-layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -26,12 +32,17 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { useTheme, ViewMode } from '@/context/ThemeContext';
+import { useTheme, ViewMode, FONT_OPTIONS, FONT_SIZE_OPTIONS, FontFamily, FontSize } from '@/context/ThemeContext';
 import { terminalThemes } from '@/lib/terminal-themes';
 import { snippetsApi, profilesApi } from '@/lib/api';
 import { ActivityLog } from '@/components/settings/ActivityLog';
 import { EnvironmentVariablesManager } from '@/components/settings/EnvironmentVariablesManager';
+import { PushNotificationsSettings } from '@/components/settings/PushNotificationsSettings';
+import { AvatarUpload } from '@/components/settings/AvatarUpload';
+import { ChangePasswordForm } from '@/components/settings/ChangePasswordForm';
+import { ChangeEmailForm } from '@/components/settings/ChangeEmailForm';
 import { cn } from '@/lib/utils';
+import { usersApi } from '@/lib/api';
 
 const KEYBOARD_SHORTCUTS = [
   { key: 'Ctrl+N', action: 'Create new terminal' },
@@ -49,9 +60,11 @@ const VIEW_MODES: { value: ViewMode; label: string; icon: typeof LayoutGrid }[] 
 ];
 
 export default function SettingsPage() {
-  const { data: session } = useSession();
-  const { isDark, terminalTheme, setTerminalTheme, viewMode, setViewMode } = useTheme();
+  const { data: session, update: updateSession } = useSession();
+  const { isDark, terminalTheme, setTerminalTheme, viewMode, setViewMode, fontFamily, setFontFamily, fontSize, setFontSize } = useTheme();
   const [name, setName] = useState(session?.user?.name || '');
+  const [userImage, setUserImage] = useState(session?.user?.image || null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [cols, setCols] = useState(120);
   const [rows, setRows] = useState(30);
   const [cwd, setCwd] = useState('~');
@@ -177,16 +190,37 @@ export default function SettingsPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  return (
-    <div className="p-8 max-w-4xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-muted-foreground mt-1">
-          Manage your account and preferences
-        </p>
-      </div>
+  // Save profile
+  const handleSaveProfile = useCallback(async () => {
+    if (!session?.accessToken) return;
 
-      <div className="space-y-6">
+    setIsSavingProfile(true);
+    try {
+      const result = await usersApi.updateProfile({ name }, session.accessToken);
+      if (result.success) {
+        // Profile saved successfully
+      }
+    } catch (error) {
+      console.error('Failed to save profile:', error);
+    } finally {
+      setIsSavingProfile(false);
+    }
+  }, [session?.accessToken, name]);
+
+  // Handle avatar change
+  const handleAvatarChange = useCallback(async (newImageUrl: string | null) => {
+    setUserImage(newImageUrl);
+    // Update NextAuth session with new image
+    await updateSession({ image: newImageUrl });
+  }, [updateSession]);
+
+  return (
+    <PageLayout>
+      <PageHeader
+        title="Settings"
+        description="Manage your account and preferences"
+      />
+      <PageContent className="space-y-6">
         {/* Profile Section */}
         <Card id="profile" className="scroll-mt-8">
           <CardHeader>
@@ -200,7 +234,19 @@ export default function SettingsPage() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
+            {/* Avatar Upload */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Avatar</label>
+              <AvatarUpload
+                currentImage={userImage}
+                userName={session?.user?.name}
+                token={session?.accessToken || null}
+                onAvatarChange={handleAvatarChange}
+              />
+            </div>
+
+            {/* Name and Email */}
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Name</label>
@@ -219,7 +265,147 @@ export default function SettingsPage() {
                 />
               </div>
             </div>
-            <Button>Save Changes</Button>
+            <Button onClick={handleSaveProfile} disabled={isSavingProfile}>
+              {isSavingProfile ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Security Section */}
+        <Card id="security" className="scroll-mt-8">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <Shield className="h-5 w-5 text-primary" />
+              <div>
+                <CardTitle>Security</CardTitle>
+                <CardDescription>
+                  Manage your password and email
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-8">
+            {/* Change Password */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Lock className="h-4 w-4 text-muted-foreground" />
+                <h3 className="font-medium">Change Password</h3>
+              </div>
+              <ChangePasswordForm token={session?.accessToken || null} />
+            </div>
+
+            <div className="border-t border-border" />
+
+            {/* Change Email */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Mail className="h-4 w-4 text-muted-foreground" />
+                <h3 className="font-medium">Change Email</h3>
+              </div>
+              <ChangeEmailForm
+                currentEmail={session?.user?.email || ''}
+                token={session?.accessToken || null}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Font Settings */}
+        <Card id="font-settings" className="scroll-mt-8">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <Type className="h-5 w-5 text-primary" />
+              <div>
+                <CardTitle>Font Settings</CardTitle>
+                <CardDescription>
+                  Customize the application font and size
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Font Family */}
+            <div className="space-y-3">
+              <label className="text-sm font-medium">Font Family</label>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {FONT_OPTIONS.map((font) => (
+                  <button
+                    key={font.value}
+                    onClick={() => setFontFamily(font.value)}
+                    className={cn(
+                      'p-3 rounded-lg border-2 transition-all text-left',
+                      fontFamily === font.value
+                        ? 'border-primary ring-2 ring-primary/20 bg-primary/5'
+                        : 'border-border hover:border-primary/50'
+                    )}
+                  >
+                    <div
+                      className="font-medium mb-1"
+                      style={{
+                        fontFamily: font.value === 'inter'
+                          ? 'var(--font-inter), Inter, sans-serif'
+                          : `var(--font-${font.value}), ${font.label}, monospace`
+                      }}
+                    >
+                      {font.label}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {font.description}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Font Size */}
+            <div className="space-y-3">
+              <label className="text-sm font-medium">Font Size</label>
+              <div className="flex flex-wrap gap-2">
+                {FONT_SIZE_OPTIONS.map((size) => (
+                  <button
+                    key={size.value}
+                    onClick={() => setFontSize(size.value)}
+                    className={cn(
+                      'px-4 py-2 rounded-lg border-2 transition-all',
+                      fontSize === size.value
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border hover:border-primary/50'
+                    )}
+                  >
+                    {size.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Preview */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Preview</label>
+              <div className="p-4 rounded-lg border border-border bg-muted/50">
+                <p className="mb-2">The quick brown fox jumps over the lazy dog.</p>
+                <p className="text-muted-foreground text-sm">
+                  ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789
+                </p>
+                <code className="block mt-2 text-sm bg-background p-2 rounded">
+                  const greeting = "Hello, World!";
+                </code>
+              </div>
+            </div>
+
+            {/* Reset Button */}
+            <div className="flex justify-end pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setFontFamily('jetbrains');
+                  setFontSize('16');
+                }}
+                className="gap-2"
+              >
+                <RotateCcw size={14} />
+                Reset to Defaults
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
@@ -475,139 +661,10 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Notifications */}
-        <Card id="notifications" className="scroll-mt-8">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <Bell className="h-5 w-5 text-primary" />
-              <div>
-                <CardTitle>Notifications</CardTitle>
-                <CardDescription>
-                  Configure notification preferences for browser and desktop alerts
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              {/* Enable Browser Notifications */}
-              <div className="p-4 rounded-lg border border-primary/20 bg-primary/5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Enable Browser Notifications</p>
-                    <p className="text-sm text-muted-foreground">
-                      Allow Termify to send you desktop notifications
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if ('Notification' in window) {
-                        Notification.requestPermission().then((permission) => {
-                          if (permission === 'granted') {
-                            new Notification('Notifications Enabled', {
-                              body: 'You will now receive notifications from Termify',
-                              icon: '/favicon.ico',
-                            });
-                          }
-                        });
-                      }
-                    }}
-                  >
-                    Enable
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Terminal Events</h4>
-
-                <div className="flex items-center justify-between py-2">
-                  <div>
-                    <p className="font-medium">Task Completed</p>
-                    <p className="text-sm text-muted-foreground">
-                      Notify when a terminal finishes a long-running task (Claude Code, builds, etc.)
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" defaultChecked className="sr-only peer" />
-                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                  </label>
-                </div>
-
-                <div className="flex items-center justify-between py-2">
-                  <div>
-                    <p className="font-medium">Terminal Started</p>
-                    <p className="text-sm text-muted-foreground">
-                      Notify when a terminal successfully starts
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" />
-                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                  </label>
-                </div>
-
-                <div className="flex items-center justify-between py-2">
-                  <div>
-                    <p className="font-medium">Terminal Crashed</p>
-                    <p className="text-sm text-muted-foreground">
-                      Notify when a terminal unexpectedly crashes or stops
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" defaultChecked className="sr-only peer" />
-                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                  </label>
-                </div>
-
-                <div className="flex items-center justify-between py-2">
-                  <div>
-                    <p className="font-medium">Command Completed</p>
-                    <p className="text-sm text-muted-foreground">
-                      Notify when a command finishes execution (after idle for 3 seconds)
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" defaultChecked className="sr-only peer" />
-                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                  </label>
-                </div>
-              </div>
-
-              <div className="border-t border-border pt-4 space-y-4">
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Other Notifications</h4>
-
-                <div className="flex items-center justify-between py-2">
-                  <div>
-                    <p className="font-medium">Shared Terminal Activity</p>
-                    <p className="text-sm text-muted-foreground">
-                      Notify when someone joins or leaves a shared terminal
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" defaultChecked className="sr-only peer" />
-                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                  </label>
-                </div>
-
-                <div className="flex items-center justify-between py-2">
-                  <div>
-                    <p className="font-medium">Usage Alerts</p>
-                    <p className="text-sm text-muted-foreground">
-                      Notify when approaching usage limits
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" defaultChecked className="sr-only peer" />
-                    <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                  </label>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Push Notifications */}
+        <div id="notifications" className="scroll-mt-8">
+          <PushNotificationsSettings token={session?.accessToken || null} />
+        </div>
 
         {/* Danger Zone */}
         <Card className="border-destructive/50">
@@ -642,7 +699,7 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
-    </div>
+      </PageContent>
+    </PageLayout>
   );
 }

@@ -1,170 +1,383 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X, Folder, Briefcase, Rocket, Home, Code, Database, Server, Cloud, Zap } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Workspace } from '@/lib/api';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  X,
+  Layers,
+  Check,
+  Folder,
+  Briefcase,
+  Wrench,
+  Rocket,
+  Home,
+  Settings,
+  Laptop,
+  Globe,
+  Star,
+  Flame,
+  Lightbulb,
+  Code,
+  Database,
+  Server,
+  Cloud,
+  Terminal,
+  Box,
+  Zap,
+  Shield,
+  Lock,
+  Key,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
-
-const WORKSPACE_ICONS = [
-  { name: 'folder', icon: Folder },
-  { name: 'briefcase', icon: Briefcase },
-  { name: 'rocket', icon: Rocket },
-  { name: 'home', icon: Home },
-  { name: 'code', icon: Code },
-  { name: 'database', icon: Database },
-  { name: 'server', icon: Server },
-  { name: 'cloud', icon: Cloud },
-  { name: 'zap', icon: Zap },
-];
-
-const WORKSPACE_COLORS = [
-  '#6366f1', '#8b5cf6', '#ec4899', '#ef4444',
-  '#f97316', '#eab308', '#22c55e', '#14b8a6',
-  '#06b6d4', '#3b82f6',
-];
+import { Workspace } from '@/lib/api';
 
 interface WorkspaceEditModalProps {
   isOpen: boolean;
   onClose: () => void;
-  workspace?: Workspace | null;
+  workspace?: Workspace | null; // null = create mode, workspace = edit mode
 }
+
+// Predefined colors
+const COLORS = [
+  '#ef4444', // red
+  '#f97316', // orange
+  '#eab308', // yellow
+  '#22c55e', // green
+  '#14b8a6', // teal
+  '#06b6d4', // cyan
+  '#3b82f6', // blue
+  '#6366f1', // indigo
+  '#8b5cf6', // violet
+  '#a855f7', // purple
+  '#ec4899', // pink
+  '#64748b', // slate
+];
+
+// Predefined icons using Lucide icon names
+const ICON_OPTIONS: { name: string | null; Icon: React.FC<{ className?: string; size?: number; style?: React.CSSProperties }> | null }[] = [
+  { name: null, Icon: null }, // No icon (use default Layers)
+  { name: 'folder', Icon: Folder },
+  { name: 'briefcase', Icon: Briefcase },
+  { name: 'wrench', Icon: Wrench },
+  { name: 'rocket', Icon: Rocket },
+  { name: 'home', Icon: Home },
+  { name: 'settings', Icon: Settings },
+  { name: 'laptop', Icon: Laptop },
+  { name: 'globe', Icon: Globe },
+  { name: 'star', Icon: Star },
+  { name: 'flame', Icon: Flame },
+  { name: 'lightbulb', Icon: Lightbulb },
+  { name: 'code', Icon: Code },
+  { name: 'database', Icon: Database },
+  { name: 'server', Icon: Server },
+  { name: 'cloud', Icon: Cloud },
+  { name: 'terminal', Icon: Terminal },
+  { name: 'box', Icon: Box },
+  { name: 'zap', Icon: Zap },
+  { name: 'shield', Icon: Shield },
+  { name: 'lock', Icon: Lock },
+  { name: 'key', Icon: Key },
+];
+
+// Get icon component from name
+const getIconComponent = (iconName: string | null) => {
+  if (!iconName) return null;
+  const found = ICON_OPTIONS.find((opt) => opt.name === iconName);
+  return found?.Icon || null;
+};
 
 export function WorkspaceEditModal({
   isOpen,
   onClose,
   workspace,
 }: WorkspaceEditModalProps) {
-  const { createWorkspace, updateWorkspace } = useWorkspace();
+  const { createWorkspace, updateWorkspace, switchWorkspace } = useWorkspace();
+
+  const isEditMode = !!workspace;
+
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [color, setColor] = useState(WORKSPACE_COLORS[0]);
-  const [icon, setIcon] = useState('folder');
-  const [loading, setLoading] = useState(false);
+  const [color, setColor] = useState('#6366f1');
+  const [icon, setIcon] = useState<string | null>(null);
+  const [isDefault, setIsDefault] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [mounted, setMounted] = useState(false);
 
-  const isEditing = !!workspace;
-
+  // Track if component is mounted for portal
   useEffect(() => {
-    if (workspace) {
-      setName(workspace.name);
-      setDescription(workspace.description || '');
-      setColor(workspace.color || WORKSPACE_COLORS[0]);
-      setIcon(workspace.icon || 'folder');
-    } else {
-      setName('');
-      setDescription('');
-      setColor(WORKSPACE_COLORS[0]);
-      setIcon('folder');
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
+
+  // Reset form when modal opens/closes or workspace changes
+  useEffect(() => {
+    if (isOpen) {
+      if (workspace) {
+        setName(workspace.name);
+        setDescription(workspace.description || '');
+        setColor(workspace.color || '#6366f1');
+        setIcon(workspace.icon || null);
+        setIsDefault(workspace.isDefault);
+      } else {
+        setName('');
+        setDescription('');
+        setColor('#6366f1');
+        setIcon(null);
+        setIsDefault(false);
+      }
+      setError('');
     }
-  }, [workspace, isOpen]);
+  }, [isOpen, workspace]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
 
-    setLoading(true);
+    if (!name.trim()) {
+      setError('Name is required');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+
     try {
-      if (isEditing && workspace) {
-        await updateWorkspace(workspace.id, { name, description, color, icon });
+      if (isEditMode && workspace) {
+        await updateWorkspace(workspace.id, {
+          name: name.trim(),
+          description: description.trim() || null,
+          color,
+          icon,
+          isDefault,
+        });
       } else {
-        await createWorkspace({ name, description, color, icon });
+        const newWorkspace = await createWorkspace({
+          name: name.trim(),
+          description: description.trim() || undefined,
+          color,
+          icon: icon || undefined,
+        });
+
+        // If created successfully and isDefault, update it
+        if (newWorkspace && isDefault) {
+          await updateWorkspace(newWorkspace.id, { isDefault: true });
+        }
+
+        // Switch to the new workspace
+        if (newWorkspace) {
+          await switchWorkspace(newWorkspace.id);
+        }
       }
+
       onClose();
-    } catch (error) {
-      console.error('Failed to save workspace:', error);
+    } catch (err) {
+      setError('Failed to save workspace');
+      console.error(err);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-background border border-border rounded-lg shadow-lg w-full max-w-md p-6">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-1 rounded-md hover:bg-muted"
-        >
-          <X size={18} />
-        </button>
+  const modalContent = (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center">
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-100"
+        onClick={onClose}
+      />
 
-        <h2 className="text-lg font-semibold mb-4">
-          {isEditing ? 'Edit Workspace' : 'Create Workspace'}
-        </h2>
+      {/* Modal */}
+      <div className="relative z-10 w-full max-w-md mx-4 bg-card border border-border rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-150">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <h2 className="text-lg font-semibold">
+            {isEditMode ? 'Edit Workspace' : 'Create Workspace'}
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-muted rounded-lg transition-colors"
+          >
+            <X className="h-5 w-5 text-muted-foreground" />
+          </button>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My Workspace"
-              className="w-full px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:border-primary"
-              autoFocus
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Description</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description..."
-              rows={2}
-              className="w-full px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:border-primary resize-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Color</label>
-            <div className="flex gap-2 flex-wrap">
-              {WORKSPACE_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={`w-8 h-8 rounded-full transition-all ${
-                    color === c ? 'ring-2 ring-offset-2 ring-primary' : ''
-                  }`}
-                  style={{ backgroundColor: c }}
+        {/* Form */}
+        <form onSubmit={handleSubmit}>
+          <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+            {/* Name & Description row */}
+            <div className="flex gap-3">
+              {/* Preview */}
+              <div
+                className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: color + '20' }}
+              >
+                {(() => {
+                  const IconComp = getIconComponent(icon);
+                  return IconComp ? (
+                    <IconComp className="h-6 w-6" style={{ color }} />
+                  ) : (
+                    <Layers className="h-6 w-6" style={{ color }} />
+                  );
+                })()}
+              </div>
+              <div className="flex-1 space-y-2">
+                <input
+                  id="workspace-name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Workspace name *"
+                  className={cn(
+                    'w-full px-3 py-2 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground text-sm',
+                    'focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary',
+                    error && 'border-destructive'
+                  )}
+                  autoFocus
                 />
-              ))}
+                <input
+                  id="workspace-description"
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Description (optional)"
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                />
+              </div>
             </div>
+
+            {/* Color */}
+            <div>
+              <label className="block text-xs font-medium mb-1.5 text-muted-foreground">Color</label>
+              <div className="flex flex-wrap gap-1.5 items-center">
+                {COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setColor(c)}
+                    className={cn(
+                      'w-7 h-7 rounded-md transition-all flex items-center justify-center',
+                      color === c && 'ring-2 ring-offset-1 ring-offset-card'
+                    )}
+                    style={{ backgroundColor: c, '--tw-ring-color': c } as React.CSSProperties}
+                  >
+                    {color === c && <Check className="h-3.5 w-3.5 text-white" />}
+                  </button>
+                ))}
+                {/* Custom color picker */}
+                <div className="relative">
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    className="absolute inset-0 w-7 h-7 opacity-0 cursor-pointer"
+                  />
+                  <div
+                    className={cn(
+                      'w-7 h-7 rounded-md border-2 border-dashed flex items-center justify-center transition-all',
+                      !COLORS.includes(color) ? 'ring-2 ring-offset-1 ring-offset-card border-transparent' : 'border-border'
+                    )}
+                    style={{
+                      backgroundColor: !COLORS.includes(color) ? color : 'transparent',
+                      '--tw-ring-color': color
+                    } as React.CSSProperties}
+                  >
+                    {!COLORS.includes(color) ? (
+                      <Check className="h-3.5 w-3.5 text-white" />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">+</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Icon */}
+            <div>
+              <label className="block text-xs font-medium mb-1.5 text-muted-foreground">Icon</label>
+              <div className="flex flex-wrap gap-1.5">
+                {ICON_OPTIONS.map((opt, index) => {
+                  const IconComp = opt.Icon;
+                  return (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => setIcon(opt.name)}
+                      className={cn(
+                        'w-8 h-8 rounded-md border transition-all flex items-center justify-center',
+                        icon === opt.name
+                          ? 'border-primary bg-primary/10'
+                          : 'border-border hover:border-muted-foreground/50 hover:bg-muted'
+                      )}
+                    >
+                      {IconComp ? (
+                        <IconComp className="h-4 w-4" style={{ color: icon === opt.name ? color : undefined }} />
+                      ) : (
+                        <Layers className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Default workspace toggle */}
+            <div className="flex items-center justify-between pt-2">
+              <div>
+                <p className="text-sm font-medium">Default workspace</p>
+                <p className="text-xs text-muted-foreground">Opens automatically</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDefault(!isDefault)}
+                className={cn(
+                  'relative w-10 h-5 rounded-full transition-colors',
+                  isDefault ? 'bg-primary' : 'bg-muted'
+                )}
+              >
+                <span
+                  className={cn(
+                    'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+                    isDefault && 'translate-x-5'
+                  )}
+                />
+              </button>
+            </div>
+
+            {/* Error message */}
+            {error && (
+              <p className="text-sm text-destructive">{error}</p>
+            )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-2">Icon</label>
-            <div className="flex gap-2 flex-wrap">
-              {WORKSPACE_ICONS.map(({ name: iconName, icon: IconComp }) => (
-                <button
-                  key={iconName}
-                  type="button"
-                  onClick={() => setIcon(iconName)}
-                  className={`p-2 rounded-md transition-all ${
-                    icon === iconName
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted hover:bg-muted/80'
-                  }`}
-                >
-                  <IconComp size={18} />
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4">
-            <Button type="button" variant="outline" onClick={onClose}>
+          {/* Footer */}
+          <div className="px-6 py-4 border-t border-border bg-muted/30 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              disabled={saving}
+            >
               Cancel
-            </Button>
-            <Button type="submit" disabled={loading || !name.trim()}>
-              {loading ? 'Saving...' : isEditing ? 'Save Changes' : 'Create'}
-            </Button>
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !name.trim()}
+              className={cn(
+                'px-4 py-2 text-sm font-medium rounded-lg transition-all',
+                'bg-primary text-primary-foreground hover:opacity-90',
+                'disabled:opacity-50 disabled:cursor-not-allowed'
+              )}
+            >
+              {saving ? 'Saving...' : isEditMode ? 'Save changes' : 'Create workspace'}
+            </button>
           </div>
         </form>
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

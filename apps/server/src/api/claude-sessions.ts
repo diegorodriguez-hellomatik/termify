@@ -194,7 +194,8 @@ router.get('/', async (req: Request, res: Response) => {
  */
 router.get('/:projectPath/:sessionId', async (req: Request, res: Response) => {
   try {
-    const { projectPath, sessionId } = req.params;
+    const projectPath = req.params.projectPath as string;
+    const sessionId = req.params.sessionId as string;
     const sessionsDir = getClaudeSessionsDir();
     const sessionFile = path.join(sessionsDir, projectPath, `${sessionId}.jsonl`);
 

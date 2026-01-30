@@ -328,18 +328,28 @@ export default function LoginPage() {
             </div>
 
             <div style={{ marginBottom: '24px' }}>
-              <label
-                htmlFor="password"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  marginBottom: '6px',
-                  color: isDark ? '#ccc' : '#444',
-                }}
-              >
-                Password
-              </label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label
+                  htmlFor="password"
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    color: isDark ? '#ccc' : '#444',
+                  }}
+                >
+                  Password
+                </label>
+                <Link
+                  href="/forgot-password"
+                  style={{
+                    fontSize: '13px',
+                    color: isDark ? '#60a5fa' : '#2563eb',
+                    textDecoration: 'none',
+                  }}
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <input
                 id="password"
                 type="password"

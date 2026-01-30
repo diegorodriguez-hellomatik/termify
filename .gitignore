@@ -43,3 +43,6 @@ prisma/*.db-journal
 
 # Misc
 *.tsbuildinfo
+
+# Claude Code
+*.pre-compact

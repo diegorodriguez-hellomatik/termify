@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import {
   DndContext,
   closestCorners,
@@ -13,21 +13,23 @@ import {
   DragStartEvent,
 } from '@dnd-kit/core';
 import {
-  SortableContext,
   sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { Plus } from 'lucide-react';
+import { Plus, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Task, TaskStatus, TaskPriority, TeamMember } from '@/lib/api';
+import { Task, TaskStatus, TaskPriority, TeamMember, TaskStatusConfig } from '@/lib/api';
 import { TaskCard } from './TaskCard';
 import { TaskColumn } from './TaskColumn';
 import { TaskCreateModal } from './TaskCreateModal';
 import { TaskDetailModal } from './TaskDetailModal';
+import { TeamTaskStatusSettings } from './TeamTaskStatusSettings';
 
 interface TaskBoardProps {
   tasksByStatus: Record<TaskStatus, Task[]>;
+  statuses: TaskStatusConfig[];
+  teamId: string;
   teamMembers: TeamMember[];
+  canManageStatuses: boolean;
   onCreateTask: (data: {
     title: string;
     description?: string;
@@ -47,30 +49,37 @@ interface TaskBoardProps {
   onAssignTask: (taskId: string, teamMemberId: string) => Promise<any>;
   onUnassignTask: (taskId: string, assigneeId: string) => Promise<boolean>;
   onReorderTasks: (taskIds: string[], status: TaskStatus) => Promise<boolean>;
+  onStatusesChange?: () => void;
 }
-
-const COLUMNS: { status: TaskStatus; title: string; color: string }[] = [
-  { status: 'BACKLOG', title: 'Backlog', color: 'bg-gray-500' },
-  { status: 'TODO', title: 'To Do', color: 'bg-blue-500' },
-  { status: 'IN_PROGRESS', title: 'In Progress', color: 'bg-yellow-500' },
-  { status: 'IN_REVIEW', title: 'In Review', color: 'bg-purple-500' },
-  { status: 'DONE', title: 'Done', color: 'bg-green-500' },
-];
 
 export function TaskBoard({
   tasksByStatus,
+  statuses,
+  teamId,
   teamMembers,
+  canManageStatuses,
   onCreateTask,
   onUpdateTask,
   onDeleteTask,
   onAssignTask,
   onUnassignTask,
   onReorderTasks,
+  onStatusesChange,
 }: TaskBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [createModalStatus, setCreateModalStatus] = useState<TaskStatus>('TODO');
+  const [createModalStatus, setCreateModalStatus] = useState<TaskStatus>('todo');
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Create columns from statuses
+  const columns = useMemo(() => {
+    return statuses.map((status) => ({
+      status: status.key,
+      title: status.name,
+      color: status.color,
+    }));
+  }, [statuses]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -108,15 +117,15 @@ export function TaskBoard({
     if (!task) return;
 
     // Check if dropped on a column
-    const targetColumn = COLUMNS.find((col) => col.status === overId);
-    if (targetColumn) {
+    const targetCol = columns.find((col) => col.status === overId);
+    if (targetCol) {
       // Moving to a different column
-      if (task.status !== targetColumn.status) {
-        await onUpdateTask(task.id, { status: targetColumn.status });
+      if (task.status !== targetCol.status) {
+        await onUpdateTask(task.id, { status: targetCol.status });
         // Reorder the target column with the new task at the end
-        const targetTasks = tasksByStatus[targetColumn.status];
+        const targetTasks = tasksByStatus[targetCol.status] || [];
         const newOrder = [...targetTasks.map((t) => t.id), task.id];
-        await onReorderTasks(newOrder, targetColumn.status);
+        await onReorderTasks(newOrder, targetCol.status);
       }
       return;
     }
@@ -171,14 +180,30 @@ export function TaskBoard({
     });
   };
 
+  // Get default status for new tasks
+  const defaultStatus = statuses.find((s) => s.isDefault)?.key || statuses[0]?.key || 'todo';
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold">Task Board</h2>
-        <Button onClick={() => handleOpenCreateModal('TODO')}>
-          <Plus className="h-4 w-4 mr-2" />
-          New Task
-        </Button>
+        <div className="flex items-center gap-2">
+          {canManageStatuses && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSettingsOpen(true)}
+              className="gap-2"
+            >
+              <Settings className="h-4 w-4" />
+              Customize Columns
+            </Button>
+          )}
+          <Button onClick={() => handleOpenCreateModal(defaultStatus)}>
+            <Plus className="h-4 w-4 mr-2" />
+            New Task
+          </Button>
+        </div>
       </div>
 
       <DndContext
@@ -188,7 +213,7 @@ export function TaskBoard({
         onDragEnd={handleDragEnd}
       >
         <div className="flex gap-4 overflow-x-auto pb-4 flex-1">
-          {COLUMNS.map((column) => (
+          {columns.map((column) => (
             <TaskColumn
               key={column.status}
               status={column.status}
@@ -224,6 +249,13 @@ export function TaskBoard({
           onUnassign={onUnassignTask}
         />
       )}
+
+      <TeamTaskStatusSettings
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        teamId={teamId}
+        onStatusesChange={onStatusesChange}
+      />
     </div>
   );
 }

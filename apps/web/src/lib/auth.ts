@@ -67,6 +67,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           id: response.data.user.id,
           email: response.data.user.email,
           name: response.data.user.name,
+          image: response.data.user.image,
           accessToken: response.data.accessToken,
           refreshToken: response.data.refreshToken,
         };
@@ -95,10 +96,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           });
 
           if (response.success && response.data) {
-            // Store the tokens for later use
+            // Store the tokens and user data for later use
             (user as any).id = response.data.user.id;
             (user as any).accessToken = response.data.accessToken;
             (user as any).refreshToken = response.data.refreshToken;
+            // Use the image from our backend (in case user has custom avatar)
+            // Falls back to OAuth provider image if not set in backend
+            (user as any).image = response.data.user.image || user.image;
           }
         } catch (error) {
           console.error('OAuth sync error:', error);
@@ -107,12 +111,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       return true;
     },
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger, session: updateSession }) {
       // Initial sign in
       if (user) {
         token.id = (user as any).id || user.id;
         token.accessToken = (user as any).accessToken;
         token.refreshToken = (user as any).refreshToken;
+        token.image = user.image;
+      }
+
+      // Handle session update (e.g., after avatar change)
+      if (trigger === 'update' && updateSession?.image !== undefined) {
+        token.image = updateSession.image;
       }
 
       return token;
@@ -120,6 +130,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async session({ session, token }) {
       if (token) {
         session.user.id = token.id as string;
+        session.user.image = token.image as string | null;
         (session as any).accessToken = token.accessToken;
       }
       return session;

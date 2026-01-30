@@ -142,6 +142,7 @@ export function TeamTerminalsList({
         <CreateTeamTerminalModal
           open={createModalOpen}
           onOpenChange={setCreateModalOpen}
+          teamId={teamId}
           onCreate={handleCreate}
         />
         <ShareTerminalWithTeamModal
@@ -257,6 +258,7 @@ export function TeamTerminalsList({
       <CreateTeamTerminalModal
         open={createModalOpen}
         onOpenChange={setCreateModalOpen}
+        teamId={teamId}
         onCreate={handleCreate}
       />
 

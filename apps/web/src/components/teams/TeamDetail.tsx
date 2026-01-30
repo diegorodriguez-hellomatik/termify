@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Users,
   ListTodo,
@@ -35,6 +36,7 @@ import { TeamTerminalsList } from './TeamTerminalsList';
 import { TeamWorkspacesList } from './TeamWorkspacesList';
 import { TeamSnippetsList } from './TeamSnippetsList';
 import { TeamServersList } from './TeamServersList';
+import { TeamTasksList } from './TeamTasksList';
 import { TeamHistoryPage } from './TeamHistoryPage';
 import { TeamAuditLogs } from './TeamAuditLogs';
 import { TeamNotificationSettings } from './TeamNotificationSettings';
@@ -60,7 +62,7 @@ const TEAM_COLORS = [
 ];
 
 type TabType = 'overview' | 'resources' | 'members' | 'activity' | 'settings';
-type ResourceSubTab = 'terminals' | 'workspaces' | 'snippets' | 'servers';
+type ResourceSubTab = 'terminals' | 'workspaces' | 'snippets' | 'servers' | 'tasks';
 
 export function TeamDetail({
   team,
@@ -87,6 +89,8 @@ export function TeamDetail({
   const [resourceSubTab, setResourceSubTab] = useState<ResourceSubTab>('terminals');
   const [showAuditLogs, setShowAuditLogs] = useState(false);
 
+  const router = useRouter();
+
   // Fetch presence and recent activity for overview
   const { presence } = useTeamPresence(team.id);
   const { history } = useTeamHistory(team.id);
@@ -94,6 +98,10 @@ export function TeamDetail({
   const canEdit = team.role === 'OWNER' || team.role === 'ADMIN';
   const canDelete = team.role === 'OWNER';
   const canInvite = team.role === 'OWNER' || team.role === 'ADMIN';
+
+  const handleOpenWorkspace = (workspaceId: string) => {
+    router.push(`/workspace/${workspaceId}`);
+  };
 
   const onlineMembers = presence.filter(p => p.status === 'online');
   const recentActivity = history.slice(0, 5);
@@ -453,6 +461,13 @@ export function TeamDetail({
               >
                 Servers
               </SubTabButton>
+              <SubTabButton
+                active={resourceSubTab === 'tasks'}
+                onClick={() => handleResourceSubTabChange('tasks')}
+                icon={<ListTodo className="h-4 w-4" />}
+              >
+                Tasks
+              </SubTabButton>
             </div>
 
             {/* Resource Content */}
@@ -464,13 +479,16 @@ export function TeamDetail({
                 <TeamTerminalsList teamId={team.id} canManage={canEdit} />
               )}
               {resourceSubTab === 'workspaces' && (
-                <TeamWorkspacesList teamId={team.id} canManage={canEdit} />
+                <TeamWorkspacesList teamId={team.id} canManage={canEdit} onOpen={handleOpenWorkspace} />
               )}
               {resourceSubTab === 'snippets' && (
                 <TeamSnippetsList teamId={team.id} canManage={canEdit} />
               )}
               {resourceSubTab === 'servers' && (
                 <TeamServersList teamId={team.id} canManage={canEdit} />
+              )}
+              {resourceSubTab === 'tasks' && (
+                <TeamTasksList teamId={team.id} teamMembers={team.members || []} canManage={canEdit} />
               )}
             </div>
           </div>

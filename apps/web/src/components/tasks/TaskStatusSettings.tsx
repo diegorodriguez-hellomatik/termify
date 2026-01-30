@@ -1,11 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X, Plus, GripVertical, Trash2, Pencil, Check, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { TaskStatusConfig } from '@/lib/api';
-import { cn } from '@/lib/utils';
-import { useTaskStatuses } from '@/hooks/useTaskStatuses';
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   DndContext,
   closestCenter,
@@ -19,47 +15,50 @@ import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
   useSortable,
+  verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-
-const PRESET_COLORS = [
-  '#6B7280', '#EF4444', '#F59E0B', '#22C55E', '#3B82F6',
-  '#8B5CF6', '#EC4899', '#14B8A6', '#F97316', '#06B6D4',
-];
+import { GripVertical, Plus, Trash2, X, Check, Star } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
+import { useTaskStatuses } from '@/hooks/useTaskStatuses';
+import { TaskStatusConfig } from '@/lib/api';
 
 interface TaskStatusSettingsProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  teamId?: string;
   onStatusesChange?: () => void;
 }
 
+// Preset colors for quick selection
+const PRESET_COLORS = [
+  '#6b7280', // gray
+  '#3b82f6', // blue
+  '#22c55e', // green
+  '#eab308', // yellow
+  '#f97316', // orange
+  '#ef4444', // red
+  '#a855f7', // purple
+  '#ec4899', // pink
+  '#06b6d4', // cyan
+  '#14b8a6', // teal
+];
+
 interface SortableStatusItemProps {
   status: TaskStatusConfig;
-  onEdit: () => void;
-  onDelete: () => void;
-  isEditing: boolean;
-  editName: string;
-  editColor: string;
-  onEditNameChange: (name: string) => void;
-  onEditColorChange: (color: string) => void;
-  onSaveEdit: () => void;
-  onCancelEdit: () => void;
+  onUpdate: (id: string, data: { name?: string; color?: string; isDefault?: boolean }) => void;
+  onDelete: (id: string) => void;
+  canDelete: boolean;
 }
 
-function SortableStatusItem({
-  status,
-  onEdit,
-  onDelete,
-  isEditing,
-  editName,
-  editColor,
-  onEditNameChange,
-  onEditColorChange,
-  onSaveEdit,
-  onCancelEdit,
-}: SortableStatusItemProps) {
+function SortableStatusItem({ status, onUpdate, onDelete, canDelete }: SortableStatusItemProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(status.name);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+
   const {
     attributes,
     listeners,
@@ -74,75 +73,144 @@ function SortableStatusItem({
     transition,
   };
 
+  const handleSaveName = () => {
+    if (editName.trim() && editName !== status.name) {
+      onUpdate(status.id, { name: editName.trim() });
+    }
+    setIsEditing(false);
+  };
+
+  const handleColorChange = (color: string) => {
+    onUpdate(status.id, { color });
+    setShowColorPicker(false);
+  };
+
+  const handleSetDefault = () => {
+    if (!status.isDefault) {
+      onUpdate(status.id, { isDefault: true });
+    }
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex items-center gap-2 p-2 bg-muted rounded-md",
-        isDragging && "opacity-50"
+        'flex items-center gap-3 p-3 bg-card border rounded-lg',
+        isDragging && 'opacity-50 shadow-lg'
       )}
     >
       <button
         {...attributes}
         {...listeners}
-        className="cursor-grab active:cursor-grabbing p-1 hover:bg-accent rounded"
+        className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
       >
-        <GripVertical className="h-4 w-4 text-muted-foreground" />
+        <GripVertical className="h-4 w-4" />
       </button>
 
-      {isEditing ? (
-        <div className="flex-1 flex items-center gap-2">
-          <input
-            type="text"
-            value={editName}
-            onChange={(e) => onEditNameChange(e.target.value)}
-            className="flex-1 px-2 py-1 text-sm border border-border rounded bg-background"
-            autoFocus
-          />
-          <div className="flex gap-1">
-            {PRESET_COLORS.map((color) => (
-              <button
-                key={color}
-                className={cn(
-                  "w-5 h-5 rounded-full border-2",
-                  editColor === color ? "border-foreground" : "border-transparent"
-                )}
-                style={{ backgroundColor: color }}
-                onClick={() => onEditColorChange(color)}
-              />
-            ))}
-          </div>
-          <Button size="sm" variant="ghost" onClick={onSaveEdit}>
-            <Check className="h-4 w-4" />
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onCancelEdit}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      ) : (
-        <>
-          <div
-            className="w-3 h-3 rounded-full flex-shrink-0"
-            style={{ backgroundColor: status.color }}
-          />
-          <span className="flex-1 text-sm">{status.name}</span>
-          <button
-            className="p-1 hover:bg-accent rounded"
-            onClick={onEdit}
-          >
-            <Pencil className="h-4 w-4 text-muted-foreground" />
-          </button>
-          {!status.isDefault && (
-            <button
-              className="p-1 hover:bg-accent rounded"
-              onClick={onDelete}
+      {/* Color picker */}
+      <div className="relative">
+        <button
+          onClick={() => setShowColorPicker(!showColorPicker)}
+          className="w-6 h-6 rounded-full border-2 border-border hover:border-primary transition-colors"
+          style={{ backgroundColor: status.color }}
+        />
+        {showColorPicker && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setShowColorPicker(false)}
+            />
+            <div className="absolute top-8 left-0 z-50 p-2 bg-popover border rounded-lg shadow-lg grid grid-cols-5 gap-1">
+              {PRESET_COLORS.map((color) => (
+                <button
+                  key={color}
+                  onClick={() => handleColorChange(color)}
+                  className={cn(
+                    'w-6 h-6 rounded-full border-2 transition-all',
+                    status.color === color
+                      ? 'border-primary ring-2 ring-primary/30'
+                      : 'border-transparent hover:border-border'
+                  )}
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Name */}
+      <div className="flex-1">
+        {isEditing ? (
+          <div className="flex items-center gap-2">
+            <Input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="h-7 text-sm"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveName();
+                if (e.key === 'Escape') {
+                  setEditName(status.name);
+                  setIsEditing(false);
+                }
+              }}
+            />
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={handleSaveName}>
+              <Check className="h-4 w-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => {
+                setEditName(status.name);
+                setIsEditing(false);
+              }}
             >
-              <Trash2 className="h-4 w-4 text-muted-foreground" />
-            </button>
-          )}
-        </>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setIsEditing(true)}
+            className="text-sm font-medium hover:underline"
+          >
+            {status.name}
+          </button>
+        )}
+        <p className="text-xs text-muted-foreground">Key: {status.key}</p>
+      </div>
+
+      {/* Default indicator / Set as default */}
+      {status.isDefault ? (
+        <span className="text-xs text-primary flex items-center gap-1">
+          <Star className="h-3 w-3 fill-current" />
+          Default
+        </span>
+      ) : (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-xs"
+          onClick={handleSetDefault}
+        >
+          Set Default
+        </Button>
       )}
+
+      {/* Delete button */}
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+        onClick={() => onDelete(status.id)}
+        disabled={!canDelete || status.isDefault}
+        title={status.isDefault ? 'Cannot delete default status' : 'Delete status'}
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
     </div>
   );
 }
@@ -150,6 +218,7 @@ function SortableStatusItem({
 export function TaskStatusSettings({
   open,
   onOpenChange,
+  teamId,
   onStatusesChange,
 }: TaskStatusSettingsProps) {
   const {
@@ -159,167 +228,286 @@ export function TaskStatusSettings({
     updateStatus,
     deleteStatus,
     reorderStatuses,
-  } = useTaskStatuses();
+  } = useTaskStatuses({ teamId });
 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editColor, setEditColor] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
+  const [newStatusName, setNewStatusName] = useState('');
+  const [newStatusKey, setNewStatusKey] = useState('');
+  const [newStatusColor, setNewStatusColor] = useState('#6b7280');
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; moveToId?: string } | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    }),
+    useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
 
+  if (!open || typeof document === 'undefined') return null;
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
-    if (!over || active.id === over.id) return;
 
-    const oldIndex = statuses.findIndex((s) => s.id === active.id);
-    const newIndex = statuses.findIndex((s) => s.id === over.id);
-    const newOrder = arrayMove(statuses, oldIndex, newIndex);
-    await reorderStatuses(newOrder.map((s) => s.id));
-    onStatusesChange?.();
+    if (over && active.id !== over.id) {
+      const oldIndex = statuses.findIndex((s) => s.id === active.id);
+      const newIndex = statuses.findIndex((s) => s.id === over.id);
+      const newOrder = arrayMove(statuses, oldIndex, newIndex);
+      await reorderStatuses(newOrder.map((s) => s.id));
+      onStatusesChange?.();
+    }
   };
 
-  const handleEdit = (status: TaskStatusConfig) => {
-    setEditingId(status.id);
-    setEditName(status.name);
-    setEditColor(status.color);
-  };
+  const handleCreateStatus = async () => {
+    if (!newStatusName.trim() || !newStatusKey.trim()) return;
 
-  const handleSaveEdit = async () => {
-    if (!editingId || !editName.trim()) return;
-    await updateStatus(editingId, { name: editName.trim(), color: editColor });
-    setEditingId(null);
-    onStatusesChange?.();
-  };
-
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditName('');
-    setEditColor('');
-  };
-
-  const handleCreate = async () => {
-    if (!newName.trim()) return;
-    const key = newName.toLowerCase().replace(/\s+/g, '_');
-    await createStatus({
-      key,
-      name: newName.trim(),
-      color: newColor,
-      position: statuses.length,
+    const result = await createStatus({
+      key: newStatusKey.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''),
+      name: newStatusName.trim(),
+      color: newStatusColor,
     });
-    setIsCreating(false);
-    setNewName('');
-    setNewColor(PRESET_COLORS[0]);
+
+    if (result) {
+      setNewStatusName('');
+      setNewStatusKey('');
+      setNewStatusColor('#6b7280');
+      setShowAddForm(false);
+      onStatusesChange?.();
+    }
+  };
+
+  const handleUpdateStatus = async (
+    id: string,
+    data: { name?: string; color?: string; isDefault?: boolean }
+  ) => {
+    await updateStatus(id, data);
     onStatusesChange?.();
   };
 
-  const handleDelete = async (id: string) => {
-    await deleteStatus(id);
+  const handleDeleteStatus = async (id: string, moveToId?: string) => {
+    await deleteStatus(id, moveToId);
+    setDeleteConfirm(null);
     onStatusesChange?.();
   };
 
-  if (!open) return null;
+  const handleDeleteClick = async (statusId: string) => {
+    // Check if there might be tasks with this status
+    // For simplicity, we'll always show the migration dialog
+    const otherStatuses = statuses.filter((s) => s.id !== statusId && !s.isDefault);
+    if (otherStatuses.length > 0) {
+      setDeleteConfirm({ id: statusId });
+    } else {
+      await handleDeleteStatus(statusId);
+    }
+  };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={() => onOpenChange(false)} />
-      <div className="relative bg-background border border-border rounded-lg shadow-lg w-full max-w-md p-6">
-        <button
-          onClick={() => onOpenChange(false)}
-          className="absolute top-4 right-4 p-1 rounded-md hover:bg-muted"
+  const canDeleteStatuses = statuses.length > 1;
+
+  return createPortal(
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm"
+        onClick={() => onOpenChange(false)}
+      />
+
+      {/* Modal */}
+      <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 pointer-events-none">
+        <div
+          className="relative bg-background border rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200 pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
         >
-          <X size={18} />
-        </button>
-
-        <h2 className="text-lg font-semibold mb-4">Task Status Settings</h2>
-
-        {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b">
+            <h2 className="text-lg font-semibold">Customize Task Statuses</h2>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
-        ) : (
-          <>
-            <div className="space-y-2 mb-4">
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-              >
-                <SortableContext
-                  items={statuses.map((s) => s.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {statuses.map((status) => (
-                    <SortableStatusItem
-                      key={status.id}
-                      status={status}
-                      onEdit={() => handleEdit(status)}
-                      onDelete={() => handleDelete(status.id)}
-                      isEditing={editingId === status.id}
-                      editName={editName}
-                      editColor={editColor}
-                      onEditNameChange={setEditName}
-                      onEditColorChange={setEditColor}
-                      onSaveEdit={handleSaveEdit}
-                      onCancelEdit={handleCancelEdit}
-                    />
-                  ))}
-                </SortableContext>
-              </DndContext>
-            </div>
 
-            {isCreating ? (
-              <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
-                <input
-                  type="text"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Status name"
-                  className="flex-1 px-2 py-1 text-sm border border-border rounded bg-background"
-                  autoFocus
-                />
-                <div className="flex gap-1">
-                  {PRESET_COLORS.slice(0, 5).map((color) => (
-                    <button
-                      key={color}
-                      className={cn(
-                        "w-5 h-5 rounded-full border-2",
-                        newColor === color ? "border-foreground" : "border-transparent"
-                      )}
-                      style={{ backgroundColor: color }}
-                      onClick={() => setNewColor(color)}
-                    />
-                  ))}
-                </div>
-                <Button size="sm" onClick={handleCreate}>
-                  Add
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setIsCreating(false)}>
-                  <X className="h-4 w-4" />
-                </Button>
+          {/* Content */}
+          <div className="p-4 overflow-y-auto max-h-[calc(80vh-8rem)]">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
               </div>
             ) : (
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => setIsCreating(true)}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Status
-              </Button>
+              <>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Drag to reorder. Click on a name to edit it. The default status is used for new tasks.
+                </p>
+
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={statuses.map((s) => s.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="space-y-2">
+                      {statuses.map((status) => (
+                        <SortableStatusItem
+                          key={status.id}
+                          status={status}
+                          onUpdate={handleUpdateStatus}
+                          onDelete={handleDeleteClick}
+                          canDelete={canDeleteStatuses}
+                        />
+                      ))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
+
+                {/* Add new status */}
+                {showAddForm ? (
+                  <div className="mt-4 p-3 border rounded-lg space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <button
+                          className="w-6 h-6 rounded-full border-2 border-border"
+                          style={{ backgroundColor: newStatusColor }}
+                          onClick={() => {
+                            const colors = PRESET_COLORS;
+                            const currentIndex = colors.indexOf(newStatusColor);
+                            setNewStatusColor(colors[(currentIndex + 1) % colors.length]);
+                          }}
+                        />
+                      </div>
+                      <Input
+                        placeholder="Status name"
+                        value={newStatusName}
+                        onChange={(e) => {
+                          setNewStatusName(e.target.value);
+                          // Auto-generate key from name
+                          setNewStatusKey(
+                            e.target.value
+                              .toLowerCase()
+                              .replace(/\s+/g, '_')
+                              .replace(/[^a-z0-9_]/g, '')
+                          );
+                        }}
+                        className="flex-1"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">Key:</span>
+                      <Input
+                        placeholder="status_key"
+                        value={newStatusKey}
+                        onChange={(e) =>
+                          setNewStatusKey(
+                            e.target.value
+                              .toLowerCase()
+                              .replace(/\s+/g, '_')
+                              .replace(/[^a-z0-9_]/g, '')
+                          )
+                        }
+                        className="flex-1 font-mono text-sm"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={handleCreateStatus}
+                        disabled={!newStatusName.trim() || !newStatusKey.trim()}
+                      >
+                        Add Status
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setShowAddForm(false);
+                          setNewStatusName('');
+                          setNewStatusKey('');
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="w-full mt-4 gap-2"
+                    onClick={() => setShowAddForm(true)}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Status
+                  </Button>
+                )}
+              </>
             )}
-          </>
-        )}
+          </div>
+        </div>
       </div>
-    </div>
+
+      {/* Delete confirmation dialog */}
+      {deleteConfirm && (
+        <>
+          <div
+            className="fixed inset-0 z-[110] bg-black/60"
+            onClick={() => setDeleteConfirm(null)}
+          />
+          <div className="fixed inset-0 z-[111] flex items-center justify-center p-4">
+            <div className="bg-background border rounded-lg shadow-xl w-full max-w-sm p-4">
+              <h3 className="font-semibold mb-2">Delete Status</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Tasks with this status will be moved to:
+              </p>
+              <div className="space-y-2 mb-4">
+                {statuses
+                  .filter((s) => s.id !== deleteConfirm.id)
+                  .map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() =>
+                        setDeleteConfirm({ ...deleteConfirm, moveToId: s.id })
+                      }
+                      className={cn(
+                        'w-full flex items-center gap-2 p-2 rounded border text-left',
+                        deleteConfirm.moveToId === s.id
+                          ? 'border-primary bg-primary/10'
+                          : 'hover:bg-muted'
+                      )}
+                    >
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: s.color }}
+                      />
+                      <span className="text-sm">{s.name}</span>
+                    </button>
+                  ))}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() =>
+                    handleDeleteStatus(deleteConfirm.id, deleteConfirm.moveToId)
+                  }
+                  disabled={!deleteConfirm.moveToId}
+                >
+                  Delete
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDeleteConfirm(null)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </>,
+    document.body
   );
 }

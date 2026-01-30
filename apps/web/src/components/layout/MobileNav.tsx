@@ -16,14 +16,24 @@ import {
 import { cn } from '@/lib/utils';
 import { signOutAction } from '@/lib/actions/auth';
 import { NotificationsDropdown } from '@/components/notifications/NotificationsDropdown';
+import { TermifyLogo } from '@/components/ui/TermifyLogo';
 
-export interface MobileNavProps {
+interface MobileNavProps {
   userName?: string | null;
   userEmail?: string | null;
   userImage?: string | null;
 }
 
 export function MobileNav({ userName, userEmail, userImage }: MobileNavProps) {
+  // Get initials for avatar fallback
+  const userInitials = userName
+    ? userName
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    : userEmail?.[0]?.toUpperCase() || 'U';
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
 
@@ -39,7 +49,7 @@ export function MobileNav({ userName, userEmail, userImage }: MobileNavProps) {
       <header className="md:hidden fixed top-0 left-0 right-0 z-40 bg-card border-b border-border">
         <div className="flex items-center justify-between px-4 py-3">
           <Link href="/terminals" className="flex items-center gap-2">
-            <Terminal className="h-6 w-6 text-primary" />
+            <TermifyLogo size={24} className="text-foreground" />
             <span className="font-semibold">Termify</span>
           </Link>
           <div className="flex items-center gap-1">
@@ -72,18 +82,30 @@ export function MobileNav({ userName, userEmail, userImage }: MobileNavProps) {
               </button>
             </div>
 
-            {/* User info */}
-            <div className="p-4 border-b border-border">
+            {/* User info - Clickable to Settings */}
+            <Link
+              href="/settings#profile"
+              onClick={() => setIsOpen(false)}
+              className="block p-4 border-b border-border hover:bg-muted transition-colors"
+            >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <User className="h-5 w-5 text-primary" />
+                <div className="w-10 h-10 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  {userImage ? (
+                    <img
+                      src={userImage}
+                      alt={userName || 'Avatar'}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-sm font-medium text-primary">{userInitials}</span>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{userName || userEmail}</p>
+                  <p className="font-medium truncate">{userName || 'User'}</p>
                   <p className="text-sm text-muted-foreground truncate">{userEmail}</p>
                 </div>
               </div>
-            </div>
+            </Link>
 
             {/* Navigation */}
             <nav className="p-4">

@@ -111,6 +111,7 @@ import { WorkspaceModal } from '@/components/workspaces/WorkspaceModal';
 import { WorkspaceEditModal } from '@/components/workspaces/WorkspaceEditModal';
 import { ShareWorkspaceModal } from '@/components/workspaces/ShareWorkspaceModal';
 import { usePersonalTasks } from '@/hooks/usePersonalTasks';
+import { TerminalTasksProvider } from '@/contexts/TerminalTasksContext';
 import { cn } from '@/lib/utils';
 
 interface TerminalData {
@@ -1558,5 +1559,9 @@ function WorkspaceContent() {
 }
 
 export default function WorkspacePage() {
-  return <WorkspaceContent />;
+  return (
+    <TerminalTasksProvider>
+      <WorkspaceContent />
+    </TerminalTasksProvider>
+  );
 }

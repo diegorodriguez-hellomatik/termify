@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Terminal, Server, Eye, EyeOff, Key, Loader2, CheckCircle, AlertCircle, Sparkles } from 'lucide-react';
+import { X, Terminal, Server, Eye, EyeOff, Key, Loader2, CheckCircle, AlertCircle, Database, Lock, ChevronRight, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { terminalsApi } from '@/lib/api';
+import { terminalsApi, serversApi, Server as ServerType, ServerAuthMethod } from '@/lib/api';
 
 interface CreateTerminalModalProps {
   isOpen: boolean;
@@ -25,7 +25,7 @@ export interface SSHConfig {
   name?: string;
 }
 
-type TerminalType = 'local' | 'ssh' | null;
+type TerminalType = 'local' | 'ssh' | 'saved' | null;
 type AuthMethod = 'password' | 'key';
 type ConnectionStatus = 'idle' | 'testing' | 'success' | 'error';
 
@@ -55,6 +55,14 @@ export function CreateTerminalModal({
   const [connectionMessage, setConnectionMessage] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
+  // Saved servers state
+  const [savedServers, setSavedServers] = useState<ServerType[]>([]);
+  const [loadingServers, setLoadingServers] = useState(false);
+  const [selectedServer, setSelectedServer] = useState<ServerType | null>(null);
+  const [serverPassword, setServerPassword] = useState('');
+  const [serverPrivateKey, setServerPrivateKey] = useState('');
+  const [showServerPassword, setShowServerPassword] = useState(false);
+
   const resetForm = () => {
     setTerminalType(null);
     setAuthMethod('password');
@@ -67,6 +75,79 @@ export function CreateTerminalModal({
     setConnectionStatus('idle');
     setConnectionMessage('');
     setIsCreating(false);
+    setSelectedServer(null);
+    setServerPassword('');
+    setServerPrivateKey('');
+    setShowServerPassword(false);
+  };
+
+  // Load saved servers when "saved" type is selected
+  useEffect(() => {
+    if (terminalType === 'saved' && token) {
+      loadSavedServers();
+    }
+  }, [terminalType, token]);
+
+  const loadSavedServers = async () => {
+    if (!token) return;
+    setLoadingServers(true);
+    try {
+      const response = await serversApi.list(token);
+      if (response.success && response.data) {
+        setSavedServers(response.data.servers);
+      }
+    } catch (error) {
+      console.error('Failed to load servers:', error);
+    } finally {
+      setLoadingServers(false);
+    }
+  };
+
+  const handleConnectToServer = async () => {
+    if (!selectedServer || !token) return;
+
+    setIsCreating(true);
+    setConnectionStatus('idle');
+
+    try {
+      const credentials: { password?: string; privateKey?: string } = {};
+
+      // For non-localhost servers, include credentials
+      if (!selectedServer.isDefault) {
+        if (selectedServer.authMethod === 'PASSWORD') {
+          credentials.password = serverPassword;
+        } else if (selectedServer.authMethod === 'KEY') {
+          credentials.privateKey = serverPrivateKey;
+        }
+      }
+
+      const response = await serversApi.connect(selectedServer.id, credentials, token);
+
+      if (response.success && response.data) {
+        // Call the SSH callback with the config
+        onCreateSSH({
+          host: selectedServer.host,
+          port: selectedServer.port,
+          username: selectedServer.username || '',
+          password: credentials.password,
+          privateKey: credentials.privateKey,
+          name: selectedServer.name,
+        });
+        handleClose();
+      } else {
+        setConnectionStatus('error');
+        setConnectionMessage(
+          typeof response.error === 'string'
+            ? response.error
+            : 'Failed to connect to server'
+        );
+      }
+    } catch (error) {
+      setConnectionStatus('error');
+      setConnectionMessage(error instanceof Error ? error.message : 'Failed to connect to server');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const handleClose = () => {
@@ -275,43 +356,38 @@ export function CreateTerminalModal({
                 </div>
               </button>
 
-              {/* Import Claude Session */}
-              {onImportClaude && (
-                <button
-                  onClick={() => {
-                    handleClose();
-                    onImportClaude();
-                  }}
-                  className={cn(
-                    'w-full flex items-center gap-4 p-4 rounded-lg border-2 transition-all duration-75 text-left',
-                    'hover:border-purple-500 hover:bg-purple-500/5',
-                    isDark ? 'border-gray-700' : 'border-gray-200'
-                  )}
+              {/* Saved server */}
+              <button
+                onClick={() => setTerminalType('saved')}
+                className={cn(
+                  'w-full flex items-center gap-4 p-4 rounded-lg border-2 transition-all duration-75 text-left',
+                  'hover:border-primary hover:bg-primary/5',
+                  isDark ? 'border-gray-700' : 'border-gray-200'
+                )}
+              >
+                <div
+                  className="w-12 h-12 rounded-lg flex items-center justify-center"
+                  style={{ backgroundColor: isDark ? '#333' : '#f0f0f0' }}
                 >
-                  <div
-                    className="w-12 h-12 rounded-lg flex items-center justify-center"
-                    style={{ backgroundColor: isDark ? '#333' : '#f0f0f0' }}
+                  <Database size={24} className="text-blue-500" />
+                </div>
+                <div>
+                  <h3
+                    className="font-medium"
+                    style={{ color: isDark ? '#fff' : '#1a1a1a' }}
                   >
-                    <Sparkles size={24} className="text-purple-500" />
-                  </div>
-                  <div>
-                    <h3
-                      className="font-medium"
-                      style={{ color: isDark ? '#fff' : '#1a1a1a' }}
-                    >
-                      Import Claude Session
-                    </h3>
-                    <p
-                      className="text-sm"
-                      style={{ color: isDark ? '#888' : '#666' }}
-                    >
-                      Create terminal from existing Claude Code session
-                    </p>
-                  </div>
-                </button>
-              )}
+                    Saved Server
+                  </h3>
+                  <p
+                    className="text-sm"
+                    style={{ color: isDark ? '#888' : '#666' }}
+                  >
+                    Connect to a previously saved server
+                  </p>
+                </div>
+              </button>
             </div>
-          ) : (
+          ) : terminalType === 'ssh' ? (
             /* SSH form */
             <div className="space-y-4">
               {/* Connection name */}
@@ -595,7 +671,290 @@ export function CreateTerminalModal({
                 </button>
               </div>
             </div>
-          )}
+          ) : terminalType === 'saved' ? (
+            /* Saved servers list */
+            <div className="space-y-4">
+              {!selectedServer ? (
+                <>
+                  {/* Server list header */}
+                  <div className="flex items-center justify-between">
+                    <p
+                      className="text-sm"
+                      style={{ color: isDark ? '#888' : '#666' }}
+                    >
+                      Select a saved server:
+                    </p>
+                    <button
+                      onClick={loadSavedServers}
+                      disabled={loadingServers}
+                      className={cn(
+                        'p-1.5 rounded-md transition-colors',
+                        isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'
+                      )}
+                      title="Refresh servers"
+                    >
+                      <RefreshCw
+                        size={14}
+                        className={cn(
+                          isDark ? 'text-gray-400' : 'text-gray-600',
+                          loadingServers && 'animate-spin'
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Server list */}
+                  {loadingServers ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 size={24} className="animate-spin text-primary" />
+                    </div>
+                  ) : savedServers.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Database size={32} className="mx-auto mb-2 text-muted-foreground" />
+                      <p
+                        className="text-sm"
+                        style={{ color: isDark ? '#888' : '#666' }}
+                      >
+                        No saved servers yet
+                      </p>
+                      <p
+                        className="text-xs mt-1"
+                        style={{ color: isDark ? '#666' : '#888' }}
+                      >
+                        Go to Servers page to add servers
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {savedServers.map((server) => (
+                        <button
+                          key={server.id}
+                          onClick={() => setSelectedServer(server)}
+                          className={cn(
+                            'w-full flex items-center gap-3 p-3 rounded-lg border transition-all duration-75 text-left',
+                            'hover:border-primary hover:bg-primary/5',
+                            isDark ? 'border-gray-700' : 'border-gray-200'
+                          )}
+                        >
+                          <div
+                            className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                            style={{ backgroundColor: isDark ? '#333' : '#f0f0f0' }}
+                          >
+                            {server.isDefault ? (
+                              <Terminal size={20} className="text-primary" />
+                            ) : (
+                              <Server size={20} className="text-orange-500" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h4
+                                className="font-medium text-sm truncate"
+                                style={{ color: isDark ? '#fff' : '#1a1a1a' }}
+                              >
+                                {server.name}
+                              </h4>
+                              {server.isDefault && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-primary/10 text-primary">
+                                  Default
+                                </span>
+                              )}
+                            </div>
+                            <p
+                              className="text-xs truncate"
+                              style={{ color: isDark ? '#888' : '#666' }}
+                            >
+                              {server.host}:{server.port}
+                              {server.username && ` • ${server.username}`}
+                            </p>
+                          </div>
+                          <ChevronRight
+                            size={16}
+                            className={isDark ? 'text-gray-500' : 'text-gray-400'}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Back button */}
+                  <button
+                    onClick={() => setTerminalType(null)}
+                    className={cn(
+                      'px-4 py-2 rounded-lg text-sm transition-colors duration-75',
+                      isDark ? 'bg-white/5 hover:bg-white/10' : 'bg-black/5 hover:bg-black/10'
+                    )}
+                    style={{ color: isDark ? '#ccc' : '#444' }}
+                  >
+                    Back
+                  </button>
+                </>
+              ) : (
+                /* Selected server - credentials form */
+                <>
+                  {/* Server info */}
+                  <div
+                    className="flex items-center gap-3 p-3 rounded-lg"
+                    style={{ backgroundColor: isDark ? '#333' : '#f0f0f0' }}
+                  >
+                    <div
+                      className="w-10 h-10 rounded-lg flex items-center justify-center"
+                      style={{ backgroundColor: isDark ? '#444' : '#e0e0e0' }}
+                    >
+                      {selectedServer.isDefault ? (
+                        <Terminal size={20} className="text-primary" />
+                      ) : (
+                        <Server size={20} className="text-orange-500" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4
+                        className="font-medium text-sm"
+                        style={{ color: isDark ? '#fff' : '#1a1a1a' }}
+                      >
+                        {selectedServer.name}
+                      </h4>
+                      <p
+                        className="text-xs"
+                        style={{ color: isDark ? '#888' : '#666' }}
+                      >
+                        {selectedServer.host}:{selectedServer.port}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Credentials form (only for non-default servers) */}
+                  {!selectedServer.isDefault && (
+                    <>
+                      {selectedServer.authMethod === 'PASSWORD' ? (
+                        <div>
+                          <label
+                            className="block text-sm font-medium mb-1"
+                            style={{ color: isDark ? '#ccc' : '#444' }}
+                          >
+                            <Lock size={14} className="inline mr-1" />
+                            Password
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showServerPassword ? 'text' : 'password'}
+                              value={serverPassword}
+                              onChange={(e) => setServerPassword(e.target.value)}
+                              placeholder="Enter password"
+                              className={cn(
+                                'w-full px-3 py-2 pr-10 rounded-lg text-sm font-mono',
+                                isDark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/10',
+                                'border focus:outline-none focus:ring-2 focus:ring-primary/50'
+                              )}
+                              style={{ color: isDark ? '#fff' : '#1a1a1a' }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowServerPassword(!showServerPassword)}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1"
+                            >
+                              {showServerPassword ? (
+                                <EyeOff size={16} className={isDark ? 'text-gray-400' : 'text-gray-600'} />
+                              ) : (
+                                <Eye size={16} className={isDark ? 'text-gray-400' : 'text-gray-600'} />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      ) : selectedServer.authMethod === 'KEY' ? (
+                        <div>
+                          <label
+                            className="block text-sm font-medium mb-1"
+                            style={{ color: isDark ? '#ccc' : '#444' }}
+                          >
+                            <Key size={14} className="inline mr-1" />
+                            Private Key
+                          </label>
+                          <textarea
+                            value={serverPrivateKey}
+                            onChange={(e) => setServerPrivateKey(e.target.value)}
+                            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
+                            rows={4}
+                            className={cn(
+                              'w-full px-3 py-2 rounded-lg text-sm font-mono',
+                              isDark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/10',
+                              'border focus:outline-none focus:ring-2 focus:ring-primary/50'
+                            )}
+                            style={{ color: isDark ? '#fff' : '#1a1a1a' }}
+                          />
+                        </div>
+                      ) : (
+                        <p
+                          className="text-sm"
+                          style={{ color: isDark ? '#888' : '#666' }}
+                        >
+                          Using SSH agent for authentication
+                        </p>
+                      )}
+                    </>
+                  )}
+
+                  {/* Connection status message */}
+                  {connectionStatus === 'error' && (
+                    <div
+                      className={cn(
+                        'flex items-center gap-2 p-3 rounded-lg text-sm',
+                        isDark ? 'bg-red-500/10 text-red-400' : 'bg-red-50 text-red-600'
+                      )}
+                    >
+                      <AlertCircle size={16} />
+                      <span>{connectionMessage}</span>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => {
+                        setSelectedServer(null);
+                        setServerPassword('');
+                        setServerPrivateKey('');
+                        setConnectionStatus('idle');
+                      }}
+                      className={cn(
+                        'px-4 py-2 rounded-lg text-sm transition-colors duration-75',
+                        isDark ? 'bg-white/5 hover:bg-white/10' : 'bg-black/5 hover:bg-black/10'
+                      )}
+                      style={{ color: isDark ? '#ccc' : '#444' }}
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={handleConnectToServer}
+                      disabled={
+                        isCreating ||
+                        (!selectedServer.isDefault &&
+                          selectedServer.authMethod === 'PASSWORD' &&
+                          !serverPassword) ||
+                        (!selectedServer.isDefault &&
+                          selectedServer.authMethod === 'KEY' &&
+                          !serverPrivateKey)
+                      }
+                      className={cn(
+                        'flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-75',
+                        'bg-primary text-primary-foreground hover:bg-primary/90',
+                        'disabled:opacity-50 disabled:cursor-not-allowed'
+                      )}
+                    >
+                      {isCreating ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <Loader2 size={16} className="animate-spin" />
+                          Connecting...
+                        </span>
+                      ) : (
+                        'Connect'
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>,

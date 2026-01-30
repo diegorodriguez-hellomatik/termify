@@ -36,7 +36,7 @@ export function DropZoneOverlay({ isActive, position, isDark }: DropZoneOverlayP
       <div
         className={cn(
           'absolute transition-all duration-200 rounded-lg',
-          isDark ? 'bg-primary/30 border-2 border-primary' : 'bg-primary/20 border-2 border-primary'
+          'bg-gray-500/30 border-2 border-gray-400'
         )}
         style={getPreviewStyle()}
       />

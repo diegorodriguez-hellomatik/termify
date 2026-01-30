@@ -2,42 +2,37 @@
 
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { useTheme } from '@/context/ThemeContext';
+import { TERMINAL_THEMES, THEME_IDS, getTerminalTheme } from '@/lib/terminal-themes';
+import { cn } from '@/lib/utils';
 
 export interface TerminalSettings {
   fontSize: number;
   fontFamily: string;
-  theme?: string;
+  theme?: string; // If set, overrides global theme for this terminal
 }
+
+const FONT_SIZES = [10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24];
+
+const FONT_FAMILIES = [
+  { value: 'JetBrains Mono, monospace', label: 'JetBrains Mono' },
+  { value: 'Fira Code, monospace', label: 'Fira Code' },
+  { value: 'Source Code Pro, monospace', label: 'Source Code Pro' },
+  { value: 'Cascadia Code, monospace', label: 'Cascadia Code' },
+  { value: 'SF Mono, monospace', label: 'SF Mono' },
+  { value: 'Monaco, monospace', label: 'Monaco' },
+  { value: 'Consolas, monospace', label: 'Consolas' },
+  { value: 'Ubuntu Mono, monospace', label: 'Ubuntu Mono' },
+  { value: 'monospace', label: 'System Monospace' },
+];
 
 interface TerminalSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  terminalName?: string;
+  terminalName: string;
   settings: TerminalSettings;
   onSave: (settings: TerminalSettings) => void;
 }
-
-const FONT_FAMILIES = [
-  'JetBrains Mono',
-  'Fira Code',
-  'Source Code Pro',
-  'Consolas',
-  'Monaco',
-  'Menlo',
-  'monospace',
-];
-
-const THEMES = [
-  { id: 'default', name: 'Default' },
-  { id: 'dark', name: 'Dark' },
-  { id: 'light', name: 'Light' },
-  { id: 'dracula', name: 'Dracula' },
-  { id: 'monokai', name: 'Monokai' },
-  { id: 'nord', name: 'Nord' },
-  { id: 'solarized-dark', name: 'Solarized Dark' },
-  { id: 'solarized-light', name: 'Solarized Light' },
-];
 
 export function TerminalSettingsModal({
   isOpen,
@@ -46,92 +41,134 @@ export function TerminalSettingsModal({
   settings,
   onSave,
 }: TerminalSettingsModalProps) {
+  const { terminalTheme: globalTheme } = useTheme();
   const [localSettings, setLocalSettings] = useState<TerminalSettings>(settings);
 
+  // Sync with props when modal opens
   useEffect(() => {
-    setLocalSettings(settings);
-  }, [settings]);
+    if (isOpen) {
+      setLocalSettings(settings);
+    }
+  }, [isOpen, settings]);
+
+  if (!isOpen) return null;
 
   const handleSave = () => {
     onSave(localSettings);
     onClose();
   };
 
-  if (!isOpen) return null;
+  const currentThemeId = localSettings.theme || globalTheme;
+  const currentTheme = getTerminalTheme(currentThemeId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-background border border-border rounded-lg shadow-lg w-full max-w-md p-6">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-1 rounded-md hover:bg-muted"
-        >
-          <X size={18} />
-        </button>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
 
-        <h2 className="text-lg font-semibold mb-4">Terminal Settings</h2>
-
-        <div className="space-y-4">
+      {/* Modal - Compact */}
+      <div className="relative bg-background border border-border rounded-lg shadow-xl w-full max-w-sm z-10 animate-in fade-in zoom-in-95 duration-200">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
           <div>
-            <label className="block text-sm font-medium mb-1">Font Size</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="range"
-                min="10"
-                max="24"
-                value={localSettings.fontSize}
-                onChange={(e) =>
-                  setLocalSettings({ ...localSettings, fontSize: parseInt(e.target.value) })
-                }
-                className="flex-1"
-              />
-              <span className="text-sm text-muted-foreground w-8">
-                {localSettings.fontSize}px
-              </span>
-            </div>
+            <h2 className="text-sm font-semibold">Terminal Settings</h2>
+            <p className="text-xs text-muted-foreground truncate max-w-[200px]">{terminalName}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded hover:bg-muted transition-colors"
+          >
+            <X size={16} className="text-muted-foreground" />
+          </button>
+        </div>
+
+        {/* Content - Compact */}
+        <div className="p-4 space-y-4">
+          {/* Font Size */}
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-sm font-medium whitespace-nowrap">Font Size</label>
+            <select
+              value={localSettings.fontSize}
+              onChange={(e) => setLocalSettings({ ...localSettings, fontSize: parseInt(e.target.value) })}
+              className="flex-1 max-w-[120px] px-3 py-1.5 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              {FONT_SIZES.map((size) => (
+                <option key={size} value={size}>{size}px</option>
+              ))}
+            </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Font Family</label>
+          {/* Font Family */}
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-sm font-medium whitespace-nowrap">Font</label>
             <select
               value={localSettings.fontFamily}
-              onChange={(e) =>
-                setLocalSettings({ ...localSettings, fontFamily: e.target.value })
-              }
-              className="w-full px-3 py-2 border border-border rounded-md bg-background"
+              onChange={(e) => setLocalSettings({ ...localSettings, fontFamily: e.target.value })}
+              className="flex-1 max-w-[180px] px-3 py-1.5 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
               {FONT_FAMILIES.map((font) => (
-                <option key={font} value={font}>
-                  {font}
-                </option>
+                <option key={font.value} value={font.value}>{font.label}</option>
               ))}
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Theme</label>
+          {/* Theme */}
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-sm font-medium whitespace-nowrap">Theme</label>
             <select
-              value={localSettings.theme}
-              onChange={(e) =>
-                setLocalSettings({ ...localSettings, theme: e.target.value })
-              }
-              className="w-full px-3 py-2 border border-border rounded-md bg-background"
+              value={localSettings.theme || ''}
+              onChange={(e) => setLocalSettings({ ...localSettings, theme: e.target.value || undefined })}
+              className="flex-1 max-w-[180px] px-3 py-1.5 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
-              {THEMES.map((theme) => (
-                <option key={theme.id} value={theme.id}>
-                  {theme.name}
-                </option>
-              ))}
+              <option value="">Use Global Theme</option>
+              {THEME_IDS.map((themeId) => {
+                const theme = TERMINAL_THEMES[themeId];
+                return (
+                  <option key={themeId} value={themeId}>
+                    {theme.name} ({theme.isDark ? 'Dark' : 'Light'})
+                  </option>
+                );
+              })}
             </select>
+          </div>
+
+          {/* Preview - Compact */}
+          <div
+            className="rounded-md border border-border p-2 overflow-hidden"
+            style={{
+              backgroundColor: currentTheme.colors.background,
+              fontFamily: localSettings.fontFamily,
+              fontSize: Math.min(localSettings.fontSize, 14), // Cap preview size
+            }}
+          >
+            <div style={{ color: currentTheme.colors.foreground }}>
+              <span style={{ color: currentTheme.colors.green }}>user</span>
+              <span style={{ color: currentTheme.colors.foreground }}>:</span>
+              <span style={{ color: currentTheme.colors.blue }}>~</span>
+              <span style={{ color: currentTheme.colors.foreground }}>$ </span>
+              <span style={{ color: currentTheme.colors.yellow }}>echo</span>
+              <span style={{ color: currentTheme.colors.foreground }}> "Hello"</span>
+            </div>
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 mt-6">
-          <Button variant="outline" onClick={onClose}>
+        {/* Footer - Compact */}
+        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm font-medium rounded-md hover:bg-muted transition-colors"
+          >
             Cancel
-          </Button>
-          <Button onClick={handleSave}>Save Changes</Button>
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-md hover:opacity-90 transition-colors"
+          >
+            Save
+          </button>
         </div>
       </div>
     </div>

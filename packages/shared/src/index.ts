@@ -147,13 +147,27 @@ export const DEFAULT_MEMBER_PERMISSIONS: TeamPermission[] = [
   TeamPermission.VIEW_ACTIVITY,
 ];
 
-// Task Status
-export enum TaskStatus {
-  BACKLOG = 'BACKLOG',
-  TODO = 'TODO',
-  IN_PROGRESS = 'IN_PROGRESS',
-  IN_REVIEW = 'IN_REVIEW',
-  DONE = 'DONE',
+// Task Status - Now using custom statuses from TaskStatusConfig
+// Status values are now lowercase strings: "backlog", "todo", "in_progress", "in_review", "done"
+// TaskStatus is now a string type to support custom statuses
+export type TaskStatus = string;
+
+// Default task status keys (lowercase)
+export const DEFAULT_TASK_STATUS_KEYS = ['backlog', 'todo', 'in_progress', 'in_review', 'done'] as const;
+export type TaskStatusKey = typeof DEFAULT_TASK_STATUS_KEYS[number] | string;
+
+// TaskStatusConfig model
+export interface TaskStatusConfig {
+  id: string;
+  userId?: string | null;
+  teamId?: string | null;
+  key: string;
+  name: string;
+  color: string;
+  position: number;
+  isDefault: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // Task Priority
@@ -162,6 +176,24 @@ export enum TaskPriority {
   MEDIUM = 'MEDIUM',
   HIGH = 'HIGH',
   URGENT = 'URGENT',
+}
+
+// Queue Status
+export enum QueueStatus {
+  PENDING = 'PENDING',
+  RUNNING = 'RUNNING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  CANCELLED = 'CANCELLED',
+}
+
+// Command Status
+export enum CommandStatus {
+  PENDING = 'PENDING',
+  RUNNING = 'RUNNING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  SKIPPED = 'SKIPPED',
 }
 
 // Server Auth Method
@@ -441,6 +473,35 @@ export interface TaskCommand {
   updatedAt: Date;
 }
 
+// Terminal Task Queue model
+export interface TerminalTaskQueue {
+  id: string;
+  terminalId: string;
+  userId: string;
+  name: string;
+  status: QueueStatus;
+  position: number;
+  commands?: TerminalQueueCommand[];
+  createdAt: Date;
+  updatedAt: Date;
+  startedAt: Date | null;
+  completedAt: Date | null;
+}
+
+// Terminal Queue Command model
+export interface TerminalQueueCommand {
+  id: string;
+  queueId: string;
+  command: string;
+  status: CommandStatus;
+  position: number;
+  output: string | null;
+  exitCode: number | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  createdAt: Date;
+}
+
 // Team Presence model (in-memory)
 export interface TeamPresence {
   userId: string;
@@ -546,6 +607,16 @@ export type ServerMessage =
   | { type: 'task.command.updated'; teamId: string; taskId: string; command: TaskCommand }
   | { type: 'task.command.deleted'; teamId: string; taskId: string; commandId: string }
   | { type: 'task.command.executed'; teamId: string; taskId: string; commandId: string; exitCode: number }
+  // Terminal queue events
+  | { type: 'queue.created'; terminalId: string; queue: TerminalTaskQueue }
+  | { type: 'queue.updated'; terminalId: string; queue: TerminalTaskQueue }
+  | { type: 'queue.deleted'; terminalId: string; queueId: string }
+  | { type: 'queue.started'; terminalId: string; queueId: string }
+  | { type: 'queue.completed'; terminalId: string; queueId: string; name: string }
+  | { type: 'queue.failed'; terminalId: string; queueId: string; name: string; reason: string }
+  | { type: 'queue.cancelled'; terminalId: string; queueId: string; name: string }
+  | { type: 'queue.command.started'; terminalId: string; queueId: string; commandId: string }
+  | { type: 'queue.command.completed'; terminalId: string; queueId: string; commandId: string; exitCode: number }
   | { type: 'error'; message: string }
   | { type: 'pong' };
 
@@ -734,6 +805,19 @@ export interface TeamHistoryQueryParams {
   endDate?: string;
   limit?: number;
   offset?: number;
+}
+
+// Terminal Queue API Request types
+export interface CreateTerminalQueueRequest {
+  name: string;
+  commands: Array<{
+    command: string;
+    position?: number;
+  }>;
+}
+
+export interface ReorderQueuesRequest {
+  queueIds: string[];
 }
 
 // Team Notification Prefs Request

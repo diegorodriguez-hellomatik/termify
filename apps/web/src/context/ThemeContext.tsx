@@ -1,11 +1,31 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, getTerminalTheme, TerminalTheme } from '@/lib/terminal-themes';
+import { DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME } from '@/lib/terminal-themes';
 
 type Theme = 'light' | 'dark';
 export type ViewMode = 'grid' | 'compact' | 'list';
+export type FontFamily = 'jetbrains' | 'fira' | 'source' | 'ibm' | 'space' | 'inter';
+export type FontSize = '13' | '14' | '15' | '16' | '17' | '18';
 export type PanelThemeMode = 'default' | 'terminal';
+
+export const FONT_OPTIONS: { value: FontFamily; label: string; description: string }[] = [
+  { value: 'jetbrains', label: 'JetBrains Mono', description: 'Designed for developers' },
+  { value: 'fira', label: 'Fira Code', description: 'With programming ligatures' },
+  { value: 'source', label: 'Source Code Pro', description: 'Adobe\'s coding font' },
+  { value: 'ibm', label: 'IBM Plex Mono', description: 'Clean and professional' },
+  { value: 'space', label: 'Space Mono', description: 'Retro terminal style' },
+  { value: 'inter', label: 'Inter', description: 'Modern sans-serif' },
+];
+
+export const FONT_SIZE_OPTIONS: { value: FontSize; label: string }[] = [
+  { value: '13', label: 'Extra Small (13px)' },
+  { value: '14', label: 'Small (14px)' },
+  { value: '15', label: 'Medium (15px)' },
+  { value: '16', label: 'Large (16px)' },
+  { value: '17', label: 'Extra Large (17px)' },
+  { value: '18', label: 'Huge (18px)' },
+];
 
 interface ThemeContextType {
   theme: Theme;
@@ -16,56 +36,15 @@ interface ThemeContextType {
   setTerminalTheme: (themeId: string) => void;
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
+  fontFamily: FontFamily;
+  setFontFamily: (font: FontFamily) => void;
+  fontSize: FontSize;
+  setFontSize: (size: FontSize) => void;
   panelThemeMode: PanelThemeMode;
   setPanelThemeMode: (mode: PanelThemeMode) => void;
-  terminalColors: TerminalTheme['colors'] | null;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
-
-// Convert hex to HSL for Tailwind CSS variables
-function hexToHSL(hex: string): string {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result) return '0 0% 0%';
-
-  let r = parseInt(result[1], 16) / 255;
-  let g = parseInt(result[2], 16) / 255;
-  let b = parseInt(result[3], 16) / 255;
-
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  let h = 0;
-  let s = 0;
-  const l = (max + min) / 2;
-
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    switch (max) {
-      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
-      case g: h = ((b - r) / d + 2) / 6; break;
-      case b: h = ((r - g) / d + 4) / 6; break;
-    }
-  }
-
-  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
-}
-
-// Lighten or darken a hex color
-function adjustColor(hex: string, amount: number): string {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result) return hex;
-
-  let r = parseInt(result[1], 16);
-  let g = parseInt(result[2], 16);
-  let b = parseInt(result[3], 16);
-
-  r = Math.min(255, Math.max(0, r + amount));
-  g = Math.min(255, Math.max(0, g + amount));
-  b = Math.min(255, Math.max(0, b + amount));
-
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-}
 
 // Helper to apply theme to document
 function applyTheme(theme: Theme) {
@@ -77,44 +56,6 @@ function applyTheme(theme: Theme) {
     }
     document.documentElement.setAttribute('data-theme', theme);
   }
-}
-
-// Apply terminal theme colors as CSS variables
-function applyTerminalThemeToPanel(terminalThemeId: string, panelMode: PanelThemeMode) {
-  if (typeof document === 'undefined') return;
-
-  const root = document.documentElement;
-
-  if (panelMode === 'default') {
-    // Remove terminal theme variables
-    root.removeAttribute('data-terminal-theme');
-    root.style.removeProperty('--panel-background');
-    root.style.removeProperty('--panel-foreground');
-    root.style.removeProperty('--panel-card');
-    root.style.removeProperty('--panel-card-foreground');
-    root.style.removeProperty('--panel-border');
-    root.style.removeProperty('--panel-muted');
-    root.style.removeProperty('--panel-muted-foreground');
-    root.style.removeProperty('--panel-accent');
-    root.style.removeProperty('--panel-primary');
-    return;
-  }
-
-  const theme = getTerminalTheme(terminalThemeId);
-  const colors = theme.colors;
-
-  root.setAttribute('data-terminal-theme', terminalThemeId);
-
-  // Apply terminal colors as CSS variables
-  root.style.setProperty('--panel-background', hexToHSL(colors.background));
-  root.style.setProperty('--panel-foreground', hexToHSL(colors.foreground));
-  root.style.setProperty('--panel-card', hexToHSL(adjustColor(colors.background, theme.isDark ? 10 : -10)));
-  root.style.setProperty('--panel-card-foreground', hexToHSL(colors.foreground));
-  root.style.setProperty('--panel-border', hexToHSL(adjustColor(colors.background, theme.isDark ? 30 : -30)));
-  root.style.setProperty('--panel-muted', hexToHSL(adjustColor(colors.background, theme.isDark ? 20 : -20)));
-  root.style.setProperty('--panel-muted-foreground', hexToHSL(colors.brightBlack));
-  root.style.setProperty('--panel-accent', hexToHSL(colors.blue));
-  root.style.setProperty('--panel-primary', hexToHSL(colors.cyan));
 }
 
 // Get initial theme (SSR-safe)
@@ -154,22 +95,49 @@ function getInitialViewMode(): ViewMode {
   return 'grid';
 }
 
-// Get initial panel theme mode (SSR-safe)
-function getInitialPanelThemeMode(): PanelThemeMode {
+// Get initial font family (SSR-safe)
+function getInitialFontFamily(): FontFamily {
   if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem('panelThemeMode') as PanelThemeMode;
-    if (saved === 'default' || saved === 'terminal') {
+    const saved = localStorage.getItem('fontFamily') as FontFamily;
+    if (['jetbrains', 'fira', 'source', 'ibm', 'space', 'inter'].includes(saved)) {
       return saved;
     }
   }
-  return 'terminal'; // Default to terminal theme for cohesive look
+  return 'jetbrains';
+}
+
+// Get initial font size (SSR-safe)
+function getInitialFontSize(): FontSize {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('fontSize') as FontSize;
+    if (['13', '14', '15', '16', '17', '18'].includes(saved)) {
+      return saved;
+    }
+  }
+  return '16';
+}
+
+// Apply font family to document
+function applyFontFamily(font: FontFamily) {
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute('data-font', font);
+  }
+}
+
+// Apply font size to document
+function applyFontSize(size: FontSize) {
+  if (typeof document !== 'undefined') {
+    document.documentElement.style.setProperty('--font-size', `${size}px`);
+  }
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>('dark');
   const [terminalTheme, setTerminalThemeState] = useState<string>(DEFAULT_DARK_THEME);
   const [viewMode, setViewModeState] = useState<ViewMode>('grid');
-  const [panelThemeMode, setPanelThemeModeState] = useState<PanelThemeMode>('terminal');
+  const [fontFamily, setFontFamilyState] = useState<FontFamily>('jetbrains');
+  const [fontSize, setFontSizeState] = useState<FontSize>('16');
+  const [panelThemeMode, setPanelThemeModeState] = useState<PanelThemeMode>('default');
   const [mounted, setMounted] = useState(false);
 
   // Load theme from localStorage on mount
@@ -177,14 +145,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const initialTheme = getInitialTheme();
     const initialTerminalTheme = getInitialTerminalTheme(initialTheme === 'dark');
     const initialViewMode = getInitialViewMode();
-    const initialPanelThemeMode = getInitialPanelThemeMode();
+    const initialFontFamily = getInitialFontFamily();
+    const initialFontSize = getInitialFontSize();
 
     setThemeState(initialTheme);
     setTerminalThemeState(initialTerminalTheme);
     setViewModeState(initialViewMode);
-    setPanelThemeModeState(initialPanelThemeMode);
+    setFontFamilyState(initialFontFamily);
+    setFontSizeState(initialFontSize);
     applyTheme(initialTheme);
-    applyTerminalThemeToPanel(initialTerminalTheme, initialPanelThemeMode);
+    applyFontFamily(initialFontFamily);
+    applyFontSize(initialFontSize);
     setMounted(true);
   }, []);
 
@@ -200,17 +171,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (mounted) {
       localStorage.setItem('terminalTheme', terminalTheme);
-      applyTerminalThemeToPanel(terminalTheme, panelThemeMode);
     }
-  }, [terminalTheme, panelThemeMode, mounted]);
-
-  // Save panel theme mode to localStorage when it changes (after mount)
-  useEffect(() => {
-    if (mounted) {
-      localStorage.setItem('panelThemeMode', panelThemeMode);
-      applyTerminalThemeToPanel(terminalTheme, panelThemeMode);
-    }
-  }, [panelThemeMode, terminalTheme, mounted]);
+  }, [terminalTheme, mounted]);
 
   // Save view mode to localStorage when it changes (after mount)
   useEffect(() => {
@@ -218,6 +180,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('viewMode', viewMode);
     }
   }, [viewMode, mounted]);
+
+  // Save font family to localStorage when it changes (after mount)
+  useEffect(() => {
+    if (mounted) {
+      localStorage.setItem('fontFamily', fontFamily);
+      applyFontFamily(fontFamily);
+    }
+  }, [fontFamily, mounted]);
+
+  // Save font size to localStorage when it changes (after mount)
+  useEffect(() => {
+    if (mounted) {
+      localStorage.setItem('fontSize', fontSize);
+      applyFontSize(fontSize);
+    }
+  }, [fontSize, mounted]);
 
   const toggleTheme = () => {
     setThemeState(theme === 'light' ? 'dark' : 'light');
@@ -235,12 +213,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setViewModeState(mode);
   };
 
+  const setFontFamily = (font: FontFamily) => {
+    setFontFamilyState(font);
+  };
+
+  const setFontSize = (size: FontSize) => {
+    setFontSizeState(size);
+  };
+
   const setPanelThemeMode = (mode: PanelThemeMode) => {
     setPanelThemeModeState(mode);
   };
-
-  // Get current terminal colors
-  const terminalColors = mounted ? getTerminalTheme(terminalTheme).colors : null;
 
   return (
     <ThemeContext.Provider
@@ -253,9 +236,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         setTerminalTheme,
         viewMode,
         setViewMode,
+        fontFamily,
+        setFontFamily,
+        fontSize,
+        setFontSize,
         panelThemeMode,
         setPanelThemeMode,
-        terminalColors,
       }}
     >
       {children}

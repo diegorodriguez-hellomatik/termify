@@ -1,138 +1,198 @@
-'use client';
-
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { taskStatusApi, TaskStatusConfig } from '@/lib/api';
+import { taskStatusApi, teamTaskStatusApi, TaskStatusConfig } from '@/lib/api';
+
+interface UseTaskStatusesOptions {
+  teamId?: string;
+}
 
 interface UseTaskStatusesReturn {
   statuses: TaskStatusConfig[];
   isLoading: boolean;
-  error: Error | null;
+  error: string | null;
   refetch: () => Promise<void>;
   createStatus: (data: {
     key: string;
     name: string;
     color: string;
     position?: number;
+    isDefault?: boolean;
   }) => Promise<TaskStatusConfig | null>;
-  updateStatus: (id: string, data: {
-    name?: string;
-    color?: string;
-    position?: number;
-  }) => Promise<TaskStatusConfig | null>;
-  deleteStatus: (id: string, moveToStatusId?: string) => Promise<boolean>;
+  updateStatus: (
+    statusId: string,
+    data: {
+      name?: string;
+      color?: string;
+      position?: number;
+      isDefault?: boolean;
+    }
+  ) => Promise<TaskStatusConfig | null>;
+  deleteStatus: (statusId: string, moveToStatusId?: string) => Promise<boolean>;
   reorderStatuses: (statusIds: string[]) => Promise<boolean>;
+  getStatusByKey: (key: string) => TaskStatusConfig | undefined;
+  getDefaultStatus: () => TaskStatusConfig | undefined;
 }
 
-const DEFAULT_STATUSES: TaskStatusConfig[] = [
-  { id: 'default-backlog', key: 'backlog', name: 'Backlog', color: '#6B7280', position: 0, userId: null, teamId: null, isDefault: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'default-todo', key: 'todo', name: 'To Do', color: '#3B82F6', position: 1, userId: null, teamId: null, isDefault: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'default-in_progress', key: 'in_progress', name: 'In Progress', color: '#F59E0B', position: 2, userId: null, teamId: null, isDefault: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'default-in_review', key: 'in_review', name: 'In Review', color: '#8B5CF6', position: 3, userId: null, teamId: null, isDefault: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'default-done', key: 'done', name: 'Done', color: '#22C55E', position: 4, userId: null, teamId: null, isDefault: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-];
-
-export function useTaskStatuses(): UseTaskStatusesReturn {
+export function useTaskStatuses(options: UseTaskStatusesOptions = {}): UseTaskStatusesReturn {
+  const { teamId } = options;
   const { data: session } = useSession();
-  const accessToken = (session as any)?.accessToken as string | undefined;
-
-  const [statuses, setStatuses] = useState<TaskStatusConfig[]>(DEFAULT_STATUSES);
+  const token = session?.accessToken;
+  const [statuses, setStatuses] = useState<TaskStatusConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchStatuses = useCallback(async () => {
-    if (!accessToken) {
-      setIsLoading(false);
-      return;
-    }
+    if (!token) return;
+
+    setIsLoading(true);
+    setError(null);
 
     try {
-      setIsLoading(true);
-      setError(null);
-      const response = await taskStatusApi.list(accessToken);
-      if (response.success && response.data?.statuses && response.data.statuses.length > 0) {
-        setStatuses(response.data.statuses.sort((a, b) => a.position - b.position));
+      const response = teamId
+        ? await teamTaskStatusApi.list(teamId, token)
+        : await taskStatusApi.list(token);
+
+      if (response.success && response.data) {
+        setStatuses(response.data.statuses);
       } else {
-        setStatuses(DEFAULT_STATUSES);
+        setError(typeof response.error === 'string' ? response.error : 'Failed to fetch statuses');
       }
     } catch (err) {
-      console.error('Failed to fetch task statuses:', err);
-      setError(err instanceof Error ? err : new Error('Failed to fetch statuses'));
-      setStatuses(DEFAULT_STATUSES);
+      setError('Failed to fetch statuses');
+      console.error('[useTaskStatuses] Fetch error:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [accessToken]);
+  }, [token, teamId]);
 
   useEffect(() => {
     fetchStatuses();
   }, [fetchStatuses]);
 
-  const createStatus = useCallback(async (data: {
-    key: string;
-    name: string;
-    color: string;
-    position?: number;
-  }): Promise<TaskStatusConfig | null> => {
-    if (!accessToken) return null;
+  const createStatus = useCallback(
+    async (data: {
+      key: string;
+      name: string;
+      color: string;
+      position?: number;
+      isDefault?: boolean;
+    }): Promise<TaskStatusConfig | null> => {
+      if (!token) return null;
 
-    try {
-      const result = await taskStatusApi.create(data, accessToken);
-      await fetchStatuses();
-      return result.success && result.data ? result.data : null;
-    } catch (err) {
-      console.error('Failed to create status:', err);
-      return null;
-    }
-  }, [accessToken, fetchStatuses]);
+      try {
+        const response = teamId
+          ? await teamTaskStatusApi.create(teamId, data, token)
+          : await taskStatusApi.create(data, token);
 
-  const updateStatus = useCallback(async (id: string, data: {
-    name?: string;
-    color?: string;
-    position?: number;
-  }): Promise<TaskStatusConfig | null> => {
-    if (!accessToken) return null;
+        if (response.success && response.data) {
+          await fetchStatuses();
+          return response.data;
+        } else {
+          setError(typeof response.error === 'string' ? response.error : 'Failed to create status');
+          return null;
+        }
+      } catch (err) {
+        setError('Failed to create status');
+        console.error('[useTaskStatuses] Create error:', err);
+        return null;
+      }
+    },
+    [token, teamId, fetchStatuses]
+  );
 
-    try {
-      const result = await taskStatusApi.update(id, data, accessToken);
-      await fetchStatuses();
-      return result.success && result.data ? result.data : null;
-    } catch (err) {
-      console.error('Failed to update status:', err);
-      return null;
-    }
-  }, [accessToken, fetchStatuses]);
+  const updateStatus = useCallback(
+    async (
+      statusId: string,
+      data: {
+        name?: string;
+        color?: string;
+        position?: number;
+        isDefault?: boolean;
+      }
+    ): Promise<TaskStatusConfig | null> => {
+      if (!token) return null;
 
-  const deleteStatus = useCallback(async (id: string, moveToStatusId?: string): Promise<boolean> => {
-    if (!accessToken) return false;
+      try {
+        const response = teamId
+          ? await teamTaskStatusApi.update(teamId, statusId, data, token)
+          : await taskStatusApi.update(statusId, data, token);
 
-    try {
-      await taskStatusApi.delete(id, moveToStatusId, accessToken);
-      await fetchStatuses();
-      return true;
-    } catch (err) {
-      console.error('Failed to delete status:', err);
-      return false;
-    }
-  }, [accessToken, fetchStatuses]);
+        if (response.success && response.data) {
+          await fetchStatuses();
+          return response.data;
+        } else {
+          setError(typeof response.error === 'string' ? response.error : 'Failed to update status');
+          return null;
+        }
+      } catch (err) {
+        setError('Failed to update status');
+        console.error('[useTaskStatuses] Update error:', err);
+        return null;
+      }
+    },
+    [token, teamId, fetchStatuses]
+  );
 
-  const reorderStatuses = useCallback(async (statusIds: string[]): Promise<boolean> => {
-    if (!accessToken) return false;
+  const deleteStatus = useCallback(
+    async (statusId: string, moveToStatusId?: string): Promise<boolean> => {
+      if (!token) return false;
 
-    try {
-      // Update positions for each status
-      await Promise.all(
-        statusIds.map((id, index) =>
-          taskStatusApi.update(id, { position: index }, accessToken)
-        )
-      );
-      await fetchStatuses();
-      return true;
-    } catch (err) {
-      console.error('Failed to reorder statuses:', err);
-      return false;
-    }
-  }, [accessToken, fetchStatuses]);
+      try {
+        const response = teamId
+          ? await teamTaskStatusApi.delete(teamId, statusId, moveToStatusId, token)
+          : await taskStatusApi.delete(statusId, moveToStatusId, token);
+
+        if (response.success) {
+          await fetchStatuses();
+          return true;
+        } else {
+          setError(typeof response.error === 'string' ? response.error : 'Failed to delete status');
+          return false;
+        }
+      } catch (err) {
+        setError('Failed to delete status');
+        console.error('[useTaskStatuses] Delete error:', err);
+        return false;
+      }
+    },
+    [token, teamId, fetchStatuses]
+  );
+
+  const reorderStatuses = useCallback(
+    async (statusIds: string[]): Promise<boolean> => {
+      if (!token) return false;
+
+      try {
+        const response = teamId
+          ? await teamTaskStatusApi.reorder(teamId, statusIds, token)
+          : await taskStatusApi.reorder(statusIds, token);
+
+        if (response.success) {
+          await fetchStatuses();
+          return true;
+        } else {
+          setError(typeof response.error === 'string' ? response.error : 'Failed to reorder statuses');
+          return false;
+        }
+      } catch (err) {
+        setError('Failed to reorder statuses');
+        console.error('[useTaskStatuses] Reorder error:', err);
+        return false;
+      }
+    },
+    [token, teamId, fetchStatuses]
+  );
+
+  const getStatusByKey = useCallback(
+    (key: string): TaskStatusConfig | undefined => {
+      return statuses.find((s) => s.key === key);
+    },
+    [statuses]
+  );
+
+  const getDefaultStatus = useCallback((): TaskStatusConfig | undefined => {
+    return statuses.find((s) => s.isDefault) || statuses[0];
+  }, [statuses]);
 
   return {
     statuses,
@@ -143,5 +203,7 @@ export function useTaskStatuses(): UseTaskStatusesReturn {
     updateStatus,
     deleteStatus,
     reorderStatuses,
+    getStatusByKey,
+    getDefaultStatus,
   };
 }
