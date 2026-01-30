@@ -404,6 +404,7 @@ export function FloatingWorkspace({ token }: FloatingWorkspaceProps) {
             initialPosition={window.position}
             initialSize={window.size}
             zIndex={window.zIndex}
+            isCustomized={window.isCustomized}
             onFocus={() => handleFocus(window.id)}
             onClose={() => handleClose(window.id)}
             onPositionChange={(pos) => handlePositionChange(window.id, pos)}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Rnd } from 'react-rnd';
 import dynamic from 'next/dynamic';
 import { X, Minus, Maximize2, Minimize2, Loader2 } from 'lucide-react';
@@ -28,6 +28,8 @@ interface FloatingTerminalProps {
   initialPosition?: { x: number; y: number };
   initialSize?: { width: number; height: number };
   zIndex: number;
+  /** Whether user has customized position/size - if false, syncs with parent */
+  isCustomized?: boolean;
   onFocus: () => void;
   onClose: () => void;
   onPositionChange?: (position: { x: number; y: number }) => void;
@@ -47,6 +49,7 @@ export function FloatingTerminal({
   initialPosition = { x: 50, y: 50 },
   initialSize = { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT },
   zIndex,
+  isCustomized = false,
   onFocus,
   onClose,
   onPositionChange,
@@ -61,6 +64,14 @@ export function FloatingTerminal({
     size: { width: number; height: number };
   } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Sync position/size with parent when not customized (e.g., when grid recalculates)
+  useEffect(() => {
+    if (!isCustomized && !isMaximized) {
+      setPosition(initialPosition);
+      setSize(initialSize);
+    }
+  }, [initialPosition.x, initialPosition.y, initialSize.width, initialSize.height, isCustomized, isMaximized]);
 
   // Terminal status tracking
   const [terminalStatus, setTerminalStatus] = useState<TerminalStatus>(TerminalStatus.STOPPED);
