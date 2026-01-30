@@ -1562,6 +1562,40 @@ export const serversApi = {
       method: 'DELETE',
       token,
     }),
+
+  checkStatsAgent: (
+    data: {
+      host: string;
+      port?: number;
+      username: string;
+      password?: string;
+      privateKey?: string;
+    },
+    token: string
+  ) =>
+    api<{
+      connected: boolean;
+      installed: boolean;
+      version?: string;
+      error?: string;
+    }>('/api/servers/check-stats-agent', { method: 'POST', body: data, token }),
+
+  installStatsAgent: (
+    data: {
+      host: string;
+      port?: number;
+      username: string;
+      password?: string;
+      privateKey?: string;
+    },
+    token: string
+  ) =>
+    api<{
+      installed: boolean;
+      version?: string;
+      binaryName?: string;
+      manualInstructions?: string[];
+    }>('/api/servers/install-stats-agent', { method: 'POST', body: data, token }),
 };
 
 // ========================

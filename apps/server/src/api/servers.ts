@@ -824,4 +824,182 @@ router.get('/:id/connections', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /api/servers/check-stats-agent
+ * Check if stats-agent is installed on the server
+ */
+router.post('/check-stats-agent', async (req: Request, res: Response) => {
+  try {
+    const data = testConnectionSchema.parse(req.body);
+
+    const sshManager = SSHManager.getInstance();
+
+    // First test connection
+    const testResult = await sshManager.testConnection({
+      host: data.host,
+      port: data.port,
+      username: data.username,
+      password: data.password,
+      privateKey: data.privateKey,
+    });
+
+    if (!testResult.success) {
+      res.json({
+        success: true,
+        data: {
+          connected: false,
+          installed: false,
+          error: testResult.error,
+        },
+      });
+      return;
+    }
+
+    // Check if stats-agent exists
+    const checkResult = await sshManager.executeCommand({
+      host: data.host,
+      port: data.port,
+      username: data.username,
+      password: data.password,
+      privateKey: data.privateKey,
+      command: 'test -f ~/.termify/stats-agent && ~/.termify/stats-agent version || echo "NOT_INSTALLED"',
+    });
+
+    const installed = !checkResult.output.includes('NOT_INSTALLED');
+    const version = installed ? checkResult.output.trim() : undefined;
+
+    res.json({
+      success: true,
+      data: {
+        connected: true,
+        installed,
+        version,
+      },
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ success: false, error: error.errors });
+      return;
+    }
+    console.error('[API] Check stats-agent error:', error);
+    res.status(500).json({ success: false, error: 'Failed to check stats-agent' });
+  }
+});
+
+/**
+ * POST /api/servers/install-stats-agent
+ * Install stats-agent on a remote server
+ */
+router.post('/install-stats-agent', async (req: Request, res: Response) => {
+  try {
+    const data = testConnectionSchema.parse(req.body);
+
+    const sshManager = SSHManager.getInstance();
+
+    // First test connection
+    const testResult = await sshManager.testConnection({
+      host: data.host,
+      port: data.port,
+      username: data.username,
+      password: data.password,
+      privateKey: data.privateKey,
+    });
+
+    if (!testResult.success) {
+      res.json({
+        success: false,
+        error: testResult.error || 'Connection failed',
+      });
+      return;
+    }
+
+    // Detect OS and architecture
+    const archResult = await sshManager.executeCommand({
+      host: data.host,
+      port: data.port,
+      username: data.username,
+      password: data.password,
+      privateKey: data.privateKey,
+      command: 'uname -sm',
+    });
+
+    const [os, arch] = archResult.output.trim().split(' ');
+    let binaryName = '';
+
+    // Determine correct binary
+    if (os === 'Linux') {
+      binaryName = arch === 'aarch64' ? 'stats-agent-linux-arm64' : 'stats-agent-linux-x86_64';
+    } else if (os === 'Darwin') {
+      binaryName = arch === 'arm64' ? 'stats-agent-darwin-arm64' : 'stats-agent-darwin-x86_64';
+    } else {
+      res.json({
+        success: false,
+        error: `Unsupported operating system: ${os}`,
+      });
+      return;
+    }
+
+    // Create directory and download binary
+    // For now, we'll use a simple curl command to download from a hypothetical release URL
+    // In production, this would download from your release server
+    const installCommands = [
+      'mkdir -p ~/.termify',
+      // TODO: Replace with actual release URL
+      // For now, we'll create a placeholder that fails gracefully
+      `echo "stats-agent binary should be uploaded via SCP or downloaded from releases" && exit 1`,
+    ].join(' && ');
+
+    const installResult = await sshManager.executeCommand({
+      host: data.host,
+      port: data.port,
+      username: data.username,
+      password: data.password,
+      privateKey: data.privateKey,
+      command: installCommands,
+    });
+
+    if (installResult.exitCode !== 0) {
+      res.json({
+        success: false,
+        error: `Installation failed. Please manually upload the stats-agent binary to ~/.termify/stats-agent on the server. Binary needed: ${binaryName}`,
+        binaryName,
+        manualInstructions: [
+          `1. Build stats-agent for ${os} ${arch}:`,
+          `   cargo build --release --target ${os === 'Linux' ? (arch === 'aarch64' ? 'aarch64-unknown-linux-gnu' : 'x86_64-unknown-linux-gnu') : (arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin')}`,
+          '2. Copy to server:',
+          `   scp target/release/stats-agent ${data.username}@${data.host}:~/.termify/stats-agent`,
+          '3. Make executable:',
+          `   ssh ${data.username}@${data.host} "chmod +x ~/.termify/stats-agent"`,
+        ],
+      });
+      return;
+    }
+
+    // Verify installation
+    const verifyResult = await sshManager.executeCommand({
+      host: data.host,
+      port: data.port,
+      username: data.username,
+      password: data.password,
+      privateKey: data.privateKey,
+      command: '~/.termify/stats-agent version',
+    });
+
+    res.json({
+      success: true,
+      data: {
+        installed: true,
+        version: verifyResult.output.trim(),
+      },
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ success: false, error: error.errors });
+      return;
+    }
+    console.error('[API] Install stats-agent error:', error);
+    res.status(500).json({ success: false, error: 'Failed to install stats-agent' });
+  }
+});
+
 export default router;

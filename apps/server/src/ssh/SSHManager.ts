@@ -237,4 +237,79 @@ export class SSHManager extends EventEmitter {
       this.destroySession(sessionId);
     }
   }
+
+  /**
+   * Execute a command on a remote server and get output
+   */
+  async executeCommand(config: SSHConfig & { command: string }): Promise<{ output: string; exitCode: number }> {
+    return new Promise((resolve, reject) => {
+      const client = new Client();
+      const timeout = setTimeout(() => {
+        client.end();
+        reject(new Error('Command execution timeout (30s)'));
+      }, 30000);
+
+      client.on('ready', () => {
+        client.exec(config.command, (err, channel) => {
+          if (err) {
+            clearTimeout(timeout);
+            client.end();
+            reject(err);
+            return;
+          }
+
+          let output = '';
+          let stderr = '';
+
+          channel.on('data', (data: Buffer) => {
+            output += data.toString();
+          });
+
+          channel.stderr.on('data', (data: Buffer) => {
+            stderr += data.toString();
+          });
+
+          channel.on('close', (code: number) => {
+            clearTimeout(timeout);
+            client.end();
+            resolve({
+              output: output || stderr,
+              exitCode: code || 0,
+            });
+          });
+
+          channel.on('error', (err: Error) => {
+            clearTimeout(timeout);
+            client.end();
+            reject(err);
+          });
+        });
+      });
+
+      client.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+
+      const connectConfig: ConnectConfig = {
+        host: config.host,
+        port: config.port,
+        username: config.username,
+        readyTimeout: 10000,
+      };
+
+      if (config.password) {
+        connectConfig.password = config.password;
+      } else if (config.privateKey) {
+        connectConfig.privateKey = config.privateKey;
+      }
+
+      try {
+        client.connect(connectConfig);
+      } catch (err) {
+        clearTimeout(timeout);
+        reject(err);
+      }
+    });
+  }
 }
