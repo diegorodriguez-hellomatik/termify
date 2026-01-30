@@ -3,17 +3,12 @@
 import { useState } from 'react';
 import {
   Code,
-  Settings2,
   Plus,
   Search,
   Keyboard,
-  Palette,
-  History,
-  Upload,
-  Download,
   Terminal,
-  SplitSquareHorizontal,
-  SplitSquareVertical,
+  Maximize,
+  Minimize,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SnippetsModal } from '@/components/snippets/SnippetsModal';
@@ -27,9 +22,8 @@ interface QuickActionsToolbarProps {
   onUseSnippet?: (command: string) => void;
   onOpenQuickSwitcher?: () => void;
   onOpenShortcuts?: () => void;
-  onOpenThemes?: () => void;
-  onSplitHorizontal?: () => void;
-  onSplitVertical?: () => void;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
   className?: string;
 }
 
@@ -40,9 +34,8 @@ export function QuickActionsToolbar({
   onUseSnippet,
   onOpenQuickSwitcher,
   onOpenShortcuts,
-  onOpenThemes,
-  onSplitHorizontal,
-  onSplitVertical,
+  isFullscreen = false,
+  onToggleFullscreen,
   className,
 }: QuickActionsToolbarProps) {
   const [showSnippets, setShowSnippets] = useState(false);
@@ -93,24 +86,6 @@ export function QuickActionsToolbar({
 
         <div className="w-px h-5 bg-border mx-1" />
 
-        {/* Split controls */}
-        <button
-          onClick={onSplitHorizontal}
-          className="p-1.5 hover:bg-muted rounded transition-colors"
-          title="Split Horizontal"
-        >
-          <SplitSquareHorizontal size={16} />
-        </button>
-        <button
-          onClick={onSplitVertical}
-          className="p-1.5 hover:bg-muted rounded transition-colors"
-          title="Split Vertical"
-        >
-          <SplitSquareVertical size={16} />
-        </button>
-
-        <div className="w-px h-5 bg-border mx-1" />
-
         {/* Quick switcher */}
         <button
           onClick={onOpenQuickSwitcher}
@@ -118,15 +93,6 @@ export function QuickActionsToolbar({
           title="Quick Switch (Ctrl+K)"
         >
           <Search size={16} />
-        </button>
-
-        {/* Themes */}
-        <button
-          onClick={onOpenThemes}
-          className="p-1.5 hover:bg-muted rounded transition-colors"
-          title="Terminal Theme"
-        >
-          <Palette size={16} />
         </button>
 
         {/* Keyboard shortcuts */}
@@ -137,6 +103,17 @@ export function QuickActionsToolbar({
         >
           <Keyboard size={16} />
         </button>
+
+        {/* Fullscreen toggle */}
+        {onToggleFullscreen && (
+          <button
+            onClick={onToggleFullscreen}
+            className="p-1.5 hover:bg-muted rounded transition-colors"
+            title={isFullscreen ? "Exit Fullscreen (Esc)" : "Fullscreen (F11)"}
+          >
+            {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+          </button>
+        )}
       </div>
 
       {/* Modals */}

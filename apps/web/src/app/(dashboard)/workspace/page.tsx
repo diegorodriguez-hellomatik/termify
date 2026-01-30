@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
@@ -29,14 +30,12 @@ import {
   LayoutGrid,
   Grid3x3,
   List,
-  ChevronDown,
   Layers,
   ArrowLeft,
   MoreHorizontal,
   Trash2,
   Edit2,
   Star,
-  GripVertical,
   Folder,
   Briefcase,
   Wrench,
@@ -96,7 +95,9 @@ import { terminalsApi, TerminalProfile, Workspace } from '@/lib/api';
 import { useTheme } from '@/context/ThemeContext';
 import { useWorkspace, PaneNode } from '@/contexts/WorkspaceContext';
 import { TabBar } from '@/components/workspace/TabBar';
-import { SplitPane } from '@/components/workspace/SplitPane';
+import { FloatingWorkspace } from '@/components/workspace/FloatingWorkspace';
+import { WorkspaceDndProvider } from '@/components/workspace/WorkspaceDndProvider';
+import { DropPosition } from '@/components/workspace/DropZoneOverlay';
 import { QuickSwitcher } from '@/components/workspace/QuickSwitcher';
 import { QuickActionsToolbar } from '@/components/workspace/QuickActionsToolbar';
 import { TerminalThemeSelector } from '@/components/settings/TerminalThemeSelector';
@@ -521,6 +522,7 @@ function WorkspaceContent() {
     showQuickSwitcher,
     setShowQuickSwitcher,
     setSimpleLayout,
+    reorderTabs,
     // Workspace management
     workspaces,
     currentWorkspace,
@@ -611,6 +613,9 @@ function WorkspaceContent() {
   // Card view mode state
   const [cardViewMode, setCardViewMode] = useState<CardViewMode>('grid');
 
+  // Get fullscreen state from context
+  const { isFullscreen, toggleFullscreen } = useWorkspace();
+
   // Filter workspaces by search
   const filteredWorkspaces = workspaces.filter((ws) => {
     if (!searchQuery) return true;
@@ -671,15 +676,25 @@ function WorkspaceContent() {
         setShowShortcuts(true);
       }
 
-      // Escape to go back to list
-      if (e.key === 'Escape' && viewMode === 'workspace') {
-        handleBackToList();
+      // F11 to toggle fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+      }
+
+      // Escape to exit fullscreen first, then go back to list
+      if (e.key === 'Escape') {
+        if (isFullscreen) {
+          toggleFullscreen();
+        } else if (viewMode === 'workspace') {
+          handleBackToList();
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setShowQuickSwitcher, viewMode]);
+  }, [setShowQuickSwitcher, viewMode, isFullscreen, toggleFullscreen]);
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -798,6 +813,23 @@ function WorkspaceContent() {
     }
     setPendingSplit(null);
   }, [pendingSplit, findPaneId, splitPane, openTab]);
+
+  // Handle tab dropped on a pane (VS Code-style split)
+  const handleTabDrop = useCallback((paneId: string, terminalId: string, position: DropPosition) => {
+    if (!position || position === 'center') {
+      // Center drop = just focus that terminal, no split needed
+      return;
+    }
+
+    // Determine direction based on drop position
+    const direction: 'horizontal' | 'vertical' =
+      position === 'left' || position === 'right' ? 'horizontal' : 'vertical';
+
+    // For left/top drops, we need to swap the order after splitting
+    // The current splitPane puts the new terminal second
+    // TODO: For now, just split - can add swap logic later
+    splitPane(paneId, direction, terminalId);
+  }, [splitPane]);
 
   // Create new terminal for split
   const handleCreateNewForSplit = async () => {
@@ -1005,14 +1037,17 @@ function WorkspaceContent() {
                 items={filteredWorkspaces.map((w) => w.id)}
                 strategy={rectSortingStrategy}
               >
-                <div className={cn(
-                  'grid gap-4 transition-all',
-                  cardViewMode === 'list'
-                    ? 'grid-cols-1'
-                    : cardViewMode === 'compact'
-                    ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
-                    : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                )}>
+                <div
+                  key={`workspace-grid-${cardViewMode}`}
+                  className={cn(
+                    'grid gap-4',
+                    cardViewMode === 'list'
+                      ? 'grid-cols-1'
+                      : cardViewMode === 'compact'
+                      ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
+                      : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
+                    'animate-in fade-in duration-200'
+                  )}>
                   {filteredWorkspaces.map((workspace, index) => (
                     <div
                       key={workspace.id}
@@ -1062,8 +1097,8 @@ function WorkspaceContent() {
           )}
         </PageContent>
 
-        {/* Context Menu */}
-        {contextMenu && (
+        {/* Context Menu - rendered in portal to avoid transform positioning issues */}
+        {contextMenu && typeof document !== 'undefined' && createPortal(
           <div
             className="fixed z-50 bg-popover border border-border rounded-lg shadow-lg py-1 min-w-[160px] animate-in fade-in zoom-in-95 duration-100"
             style={{
@@ -1115,7 +1150,8 @@ function WorkspaceContent() {
                 </>
               );
             })()}
-          </div>
+          </div>,
+          document.body
         )}
 
         {/* Modals */}
@@ -1198,9 +1234,8 @@ function WorkspaceContent() {
               onUseSnippet={handleUseSnippet}
               onOpenQuickSwitcher={() => setShowQuickSwitcher(true)}
               onOpenShortcuts={() => setShowShortcuts(true)}
-              onOpenThemes={() => setShowThemeSelector(!showThemeSelector)}
-              onSplitHorizontal={activeTab?.type === 'terminal' && activeTab.terminalId ? () => handleSplitHorizontal(activeTab.terminalId!) : undefined}
-              onSplitVertical={activeTab?.type === 'terminal' && activeTab.terminalId ? () => handleSplitVertical(activeTab.terminalId!) : undefined}
+              isFullscreen={isFullscreen}
+              onToggleFullscreen={toggleFullscreen}
             />
           )}
 
@@ -1208,87 +1243,87 @@ function WorkspaceContent() {
         </div>
       </div>
 
-      {/* Tab bar */}
-      <TabBar onAddTab={handleAddTab} isDark={isDark} />
-
-      {/* Main content */}
-      <div
-        className="relative w-full"
-        style={{ height: 'calc(100vh - 44px - 40px)' }}
+      {/* Tab bar and Main content wrapped in DndProvider */}
+      <WorkspaceDndProvider
+        onTabDrop={handleTabDrop}
+        onTabReorder={reorderTabs}
+        tabIds={tabs.map(t => t.id)}
       >
-        {!layout || tabs.length === 0 ? (
-          <div
-            className="h-full flex flex-col items-center justify-center p-8"
-            style={{ backgroundColor: isDark ? '#0a0a0a' : '#fafafa' }}
-          >
+        {/* Tab bar */}
+        <TabBar onAddTab={handleAddTab} isDark={isDark} />
+
+        {/* Main content */}
+        <div
+          className="relative w-full"
+          style={{ height: 'calc(100vh - 44px - 40px)' }}
+        >
+          {tabs.length === 0 ? (
             <div
-              className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6"
-              style={{
-                backgroundColor: isDark ? '#1a1a1a' : '#ffffff',
-                border: `1px solid ${isDark ? '#333' : '#e0e0e0'}`,
-              }}
+              className="h-full flex flex-col items-center justify-center p-8"
+              style={{ backgroundColor: isDark ? '#0a0a0a' : '#fafafa' }}
             >
-              <TerminalIcon size={40} className="text-muted-foreground" />
-            </div>
-
-            <h2
-              className="text-xl font-semibold mb-2"
-              style={{ color: isDark ? '#fff' : '#1a1a1a' }}
-            >
-              No terminals open
-            </h2>
-            <p
-              className="text-center mb-6 max-w-md"
-              style={{ color: isDark ? '#888' : '#666' }}
-            >
-              Open a terminal to get started. You can have multiple terminals open in tabs
-              and split the view horizontally or vertically.
-            </p>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowQuickSwitcher(true)}
-                className={cn(
-                  'flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all',
-                  isDark
-                    ? 'bg-white/10 hover:bg-white/20 text-white'
-                    : 'bg-black/5 hover:bg-black/10 text-black'
-                )}
+              <div
+                className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6"
+                style={{
+                  backgroundColor: isDark ? '#1a1a1a' : '#ffffff',
+                  border: `1px solid ${isDark ? '#333' : '#e0e0e0'}`,
+                }}
               >
-                <Keyboard size={16} />
-                Open Terminal
-                <kbd
+                <TerminalIcon size={40} className="text-muted-foreground" />
+              </div>
+
+              <h2
+                className="text-xl font-semibold mb-2"
+                style={{ color: isDark ? '#fff' : '#1a1a1a' }}
+              >
+                No terminals open
+              </h2>
+              <p
+                className="text-center mb-6 max-w-md"
+                style={{ color: isDark ? '#888' : '#666' }}
+              >
+                Open a terminal to get started. You can have multiple floating terminals
+                open and arrange them as you like.
+              </p>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowQuickSwitcher(true)}
                   className={cn(
-                    'ml-2 px-1.5 py-0.5 rounded text-xs font-mono',
-                    isDark ? 'bg-white/10' : 'bg-black/5'
+                    'flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all',
+                    isDark
+                      ? 'bg-white/10 hover:bg-white/20 text-white'
+                      : 'bg-black/5 hover:bg-black/10 text-black'
                   )}
                 >
-                  ⌘K
-                </kbd>
-              </button>
+                  <Keyboard size={16} />
+                  Open Terminal
+                  <kbd
+                    className={cn(
+                      'ml-2 px-1.5 py-0.5 rounded text-xs font-mono',
+                      isDark ? 'bg-white/10' : 'bg-black/5'
+                    )}
+                  >
+                    ⌘K
+                  </kbd>
+                </button>
 
-              <button
-                onClick={handleCreateTerminal}
-                className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-all"
-              >
-                <Plus size={16} />
-                Create New
-              </button>
+                <button
+                  onClick={handleCreateTerminal}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-all"
+                >
+                  <Plus size={16} />
+                  Create New
+                </button>
+              </div>
             </div>
-          </div>
-        ) : (
-          session?.accessToken && (
-            <SplitPane
-              node={layout}
-              token={session.accessToken}
-              isDark={isDark}
-              activeTerminalId={activeTab?.type === 'terminal' ? activeTab.terminalId : tabs.find(t => t.type === 'terminal')?.terminalId}
-              onSplitHorizontal={handleSplitHorizontal}
-              onSplitVertical={handleSplitVertical}
-            />
-          )
-        )}
-      </div>
+          ) : (
+            session?.accessToken && (
+              <FloatingWorkspace token={session.accessToken} />
+            )
+          )}
+        </div>
+      </WorkspaceDndProvider>
 
       {/* Quick switcher */}
       <QuickSwitcher
