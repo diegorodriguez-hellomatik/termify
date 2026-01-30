@@ -143,6 +143,111 @@ export function FloatingTerminal({
     setIsMinimized(!isMinimized);
   }, [isMinimized]);
 
+  // Snap functions for Windows-style window management
+  const handleSnapLeft = useCallback(() => {
+    const bounds = getContainerBounds();
+    setPreMaximizeState({ position, size });
+    setPosition({ x: 0, y: 0 });
+    setSize({ width: Math.floor(bounds.width / 2), height: bounds.height });
+    setIsMaximized(false);
+    onPositionChange?.({ x: 0, y: 0 });
+    onSizeChange?.({ width: Math.floor(bounds.width / 2), height: bounds.height });
+  }, [position, size, getContainerBounds, onPositionChange, onSizeChange]);
+
+  const handleSnapRight = useCallback(() => {
+    const bounds = getContainerBounds();
+    const newWidth = Math.floor(bounds.width / 2);
+    setPreMaximizeState({ position, size });
+    setPosition({ x: newWidth, y: 0 });
+    setSize({ width: newWidth, height: bounds.height });
+    setIsMaximized(false);
+    onPositionChange?.({ x: newWidth, y: 0 });
+    onSizeChange?.({ width: newWidth, height: bounds.height });
+  }, [position, size, getContainerBounds, onPositionChange, onSizeChange]);
+
+  const handleSnapUp = useCallback(() => {
+    // Maximize
+    if (!isMaximized) {
+      setPreMaximizeState({ position, size });
+      const bounds = getContainerBounds();
+      setPosition({ x: 0, y: 0 });
+      setSize({ width: bounds.width, height: bounds.height });
+      setIsMaximized(true);
+      onPositionChange?.({ x: 0, y: 0 });
+      onSizeChange?.({ width: bounds.width, height: bounds.height });
+    }
+  }, [isMaximized, position, size, getContainerBounds, onPositionChange, onSizeChange]);
+
+  const handleSnapDown = useCallback(() => {
+    // Restore from maximized or snap, or minimize if already restored
+    if (isMaximized || preMaximizeState) {
+      if (preMaximizeState) {
+        setPosition(preMaximizeState.position);
+        setSize(preMaximizeState.size);
+        onPositionChange?.(preMaximizeState.position);
+        onSizeChange?.(preMaximizeState.size);
+      }
+      setIsMaximized(false);
+      setPreMaximizeState(null);
+    } else {
+      // Already in normal state - minimize
+      setIsMinimized(true);
+    }
+  }, [isMaximized, preMaximizeState, onPositionChange, onSizeChange]);
+
+  // Track if this window is focused
+  const [isFocused, setIsFocused] = useState(false);
+
+  // Handle keyboard shortcuts for window snapping
+  useEffect(() => {
+    if (!isFocused) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for Cmd (Mac) or Ctrl (Windows)
+      if (e.metaKey || e.ctrlKey) {
+        switch (e.key) {
+          case 'ArrowLeft':
+            e.preventDefault();
+            handleSnapLeft();
+            break;
+          case 'ArrowRight':
+            e.preventDefault();
+            handleSnapRight();
+            break;
+          case 'ArrowUp':
+            e.preventDefault();
+            handleSnapUp();
+            break;
+          case 'ArrowDown':
+            e.preventDefault();
+            handleSnapDown();
+            break;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFocused, handleSnapLeft, handleSnapRight, handleSnapUp, handleSnapDown]);
+
+  // Set focus when onFocus is called
+  const handleWindowFocus = useCallback(() => {
+    setIsFocused(true);
+    onFocus();
+  }, [onFocus]);
+
+  // Blur when clicking outside (handled by other windows gaining focus)
+  useEffect(() => {
+    const handleGlobalClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsFocused(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handleGlobalClick);
+    return () => window.removeEventListener('mousedown', handleGlobalClick);
+  }, []);
+
   const handleDragStop = useCallback(
     (_e: any, d: { x: number; y: number }) => {
       if (!isMaximized) {
@@ -191,7 +296,7 @@ export function FloatingTerminal({
         style={{ zIndex }}
         onClick={() => {
           setIsMinimized(false);
-          onFocus();
+          handleWindowFocus();
         }}
       >
         <div className="flex items-center gap-2 px-3 py-2">
@@ -235,9 +340,9 @@ export function FloatingTerminal({
       dragHandleClassName="floating-terminal-handle"
       enableResizing={!isMaximized}
       disableDragging={isMaximized}
-      onDragStart={() => { setIsAnimating(false); onFocus(); }}
+      onDragStart={() => { setIsAnimating(false); handleWindowFocus(); }}
       onDragStop={handleDragStop}
-      onResizeStart={() => { setIsAnimating(false); onFocus(); }}
+      onResizeStart={() => { setIsAnimating(false); handleWindowFocus(); }}
       onResizeStop={handleResizeStop}
       style={{
         zIndex,
@@ -277,7 +382,7 @@ export function FloatingTerminal({
           'h-full w-full flex flex-col bg-card border border-border rounded-lg shadow-xl overflow-hidden',
           'ring-0 focus-within:ring-2 focus-within:ring-primary/50'
         )}
-        onMouseDown={onFocus}
+        onMouseDown={handleWindowFocus}
       >
         {/* Window title bar - compact with status */}
         <div className="floating-terminal-handle flex items-center justify-between px-3 py-1.5 bg-muted/50 border-b border-border cursor-move select-none">
