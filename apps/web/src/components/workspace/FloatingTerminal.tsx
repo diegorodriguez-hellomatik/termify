@@ -1,11 +1,16 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Rnd } from 'react-rnd';
 import dynamic from 'next/dynamic';
-import { X, Minus, Maximize2, Minimize2, Loader2 } from 'lucide-react';
+import { X, Minus, Maximize2, Minimize2, Loader2, Settings, Trash2, Pencil, ListChecks, Play, ChevronDown } from 'lucide-react';
 import { TerminalStatus } from '@termify/shared';
 import { cn } from '@/lib/utils';
+import { TerminalSettingsModal, TerminalSettings } from '@/components/terminal/TerminalSettingsModal';
+import { terminalsApi, personalTasksApi, PersonalTask } from '@/lib/api';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { useSession } from 'next-auth/react';
 
 // Dynamic import to avoid SSR issues with xterm
 const Terminal = dynamic(
@@ -30,6 +35,12 @@ interface FloatingTerminalProps {
   zIndex: number;
   /** Whether user has customized position/size - if false, syncs with parent */
   isCustomized?: boolean;
+  /** Initial display settings from database */
+  initialSettings?: {
+    fontSize?: number | null;
+    fontFamily?: string | null;
+    theme?: string | null;
+  };
   onFocus: () => void;
   onClose: () => void;
   onPositionChange?: (position: { x: number; y: number }) => void;
@@ -50,6 +61,7 @@ export function FloatingTerminal({
   initialSize = { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT },
   zIndex,
   isCustomized = false,
+  initialSettings,
   onFocus,
   onClose,
   onPositionChange,
@@ -64,6 +76,108 @@ export function FloatingTerminal({
     size: { width: number; height: number };
   } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  // Drop zone state for tasks
+  const [isDropTarget, setIsDropTarget] = useState(false);
+  const { data: session } = useSession();
+  const accessToken = (session as any)?.accessToken as string | undefined;
+
+  // Settings modal state
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  // Tasks panel state
+  const [showTasksPanel, setShowTasksPanel] = useState(false);
+  const [executableTasks, setExecutableTasks] = useState<PersonalTask[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const tasksPanelRef = useRef<HTMLDivElement>(null);
+
+  // Rename state
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(name);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const { renameTerminal } = useWorkspace();
+
+  // Focus input when renaming starts
+  useEffect(() => {
+    if (isRenaming && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [isRenaming]);
+
+  // Rename handlers
+  const handleStartRename = useCallback(() => {
+    setRenameValue(name);
+    setIsRenaming(true);
+  }, [name]);
+
+  const handleRenameSubmit = useCallback(async () => {
+    if (renameValue.trim() && renameValue.trim() !== name) {
+      await renameTerminal(terminalId, renameValue.trim());
+    }
+    setIsRenaming(false);
+  }, [renameValue, name, renameTerminal, terminalId]);
+
+  const handleRenameCancel = useCallback(() => {
+    setRenameValue(name);
+    setIsRenaming(false);
+  }, [name]);
+
+  const handleRenameKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleRenameSubmit();
+    } else if (e.key === 'Escape') {
+      handleRenameCancel();
+    }
+  }, [handleRenameSubmit, handleRenameCancel]);
+
+  // Terminal settings (per-terminal configuration)
+  const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>({
+    fontSize: initialSettings?.fontSize ?? 14,
+    fontFamily: initialSettings?.fontFamily ?? 'JetBrains Mono, monospace',
+    theme: initialSettings?.theme ?? undefined,
+  });
+
+  // Save settings to database
+  const saveSettings = useCallback(async (newSettings: TerminalSettings) => {
+    setTerminalSettings(newSettings);
+    try {
+      await terminalsApi.update(
+        terminalId,
+        {
+          fontSize: newSettings.fontSize,
+          fontFamily: newSettings.fontFamily,
+          theme: newSettings.theme ?? null,
+        },
+        token
+      );
+    } catch (error) {
+      console.error('Failed to save terminal settings:', error);
+    }
+  }, [terminalId, token]);
+
+  // Handle context menu
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  // Close context menu
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    if (contextMenu) {
+      const handleClick = () => closeContextMenu();
+      window.addEventListener('click', handleClick);
+      return () => window.removeEventListener('click', handleClick);
+    }
+  }, [contextMenu, closeContextMenu]);
 
   // Sync position/size with parent when not customized (e.g., when grid recalculates)
   useEffect(() => {
@@ -313,6 +427,106 @@ export function FloatingTerminal({
   const [isAnimating, setIsAnimating] = useState(false);
   const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Handle task drop for execution
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('application/task-id')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      setIsDropTarget(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setIsDropTarget(false);
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDropTarget(false);
+
+    const taskId = e.dataTransfer.getData('application/task-id');
+    const taskTitle = e.dataTransfer.getData('text/plain');
+
+    if (!taskId || !accessToken) return;
+
+    try {
+      const response = await personalTasksApi.execute(taskId, { terminalId }, accessToken);
+      if (response.success && response.data) {
+        console.log(`[FloatingTerminal] Task "${taskTitle}" sent to terminal - Executing ${response.data.queue.commands.length} commands`);
+        // TODO: Add toast notification when toast system is set up
+      } else {
+        console.error('[FloatingTerminal] Failed to execute task:', typeof response.error === 'string' ? response.error : 'Unknown error');
+      }
+    } catch (error) {
+      console.error('[FloatingTerminal] Error executing task:', error);
+    }
+  }, [accessToken, terminalId]);
+
+  // Load tasks with commands for the tasks panel
+  const loadExecutableTasks = useCallback(async () => {
+    if (!accessToken) return;
+    setLoadingTasks(true);
+    try {
+      const response = await personalTasksApi.list(accessToken);
+      if (response.success && response.data) {
+        // Filter tasks that have commands
+        const tasksWithCommands = response.data.tasks.filter((task: PersonalTask) => {
+          if (!task.commands) return false;
+          try {
+            const commands = JSON.parse(task.commands) as string[];
+            return commands.length > 0;
+          } catch {
+            return false;
+          }
+        });
+        setExecutableTasks(tasksWithCommands);
+      }
+    } catch (error) {
+      console.error('[FloatingTerminal] Error loading tasks:', error);
+    } finally {
+      setLoadingTasks(false);
+    }
+  }, [accessToken]);
+
+  // Execute a task from the panel
+  const handleExecuteTask = useCallback(async (task: PersonalTask) => {
+    if (!accessToken) return;
+    setShowTasksPanel(false);
+    try {
+      const response = await personalTasksApi.execute(task.id, { terminalId }, accessToken);
+      if (response.success && response.data) {
+        console.log(`[FloatingTerminal] Task "${task.title}" executed - ${response.data.queue.commands.length} commands`);
+      } else {
+        console.error('[FloatingTerminal] Failed to execute task:', response.error);
+      }
+    } catch (error) {
+      console.error('[FloatingTerminal] Error executing task:', error);
+    }
+  }, [accessToken, terminalId]);
+
+  // Toggle tasks panel
+  const handleToggleTasksPanel = useCallback(() => {
+    if (!showTasksPanel) {
+      loadExecutableTasks();
+    }
+    setShowTasksPanel(!showTasksPanel);
+  }, [showTasksPanel, loadExecutableTasks]);
+
+  // Close tasks panel when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (tasksPanelRef.current && !tasksPanelRef.current.contains(event.target as Node)) {
+        setShowTasksPanel(false);
+      }
+    };
+    if (showTasksPanel) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showTasksPanel]);
+
   // Trigger animation when position/size changes from parent (not user interaction)
   useEffect(() => {
     if (!isCustomized && !isMaximized) {
@@ -380,17 +594,54 @@ export function FloatingTerminal({
         ref={containerRef}
         className={cn(
           'h-full w-full flex flex-col bg-card border border-border rounded-lg shadow-xl overflow-hidden',
-          'ring-0 focus-within:ring-2 focus-within:ring-primary/50'
+          'ring-0 focus-within:ring-2 focus-within:ring-primary/50',
+          isDropTarget && 'ring-2 ring-primary border-primary'
         )}
         onMouseDown={handleWindowFocus}
+        onContextMenu={handleContextMenu}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
+        {/* Drop indicator */}
+        {isDropTarget && (
+          <div className="absolute inset-0 bg-primary/10 flex items-center justify-center z-10 pointer-events-none">
+            <div className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg shadow-lg">
+              <ListChecks className="h-5 w-5" />
+              <span className="font-medium">Drop to execute task</span>
+            </div>
+          </div>
+        )}
+
         {/* Window title bar - compact with status */}
         <div className="floating-terminal-handle flex items-center justify-between px-3 py-1.5 bg-muted/50 border-b border-border cursor-move select-none">
           <div className="flex items-center gap-3">
             {/* Terminal name with status indicator */}
             <div className="flex items-center gap-2">
               <div className={cn('w-2 h-2 rounded-full', getStatusColor(terminalStatus))} />
-              <span className="text-sm font-medium truncate max-w-[150px]">{name}</span>
+              {isRenaming ? (
+                <input
+                  ref={renameInputRef}
+                  type="text"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={handleRenameKeyDown}
+                  onBlur={handleRenameSubmit}
+                  className="text-sm font-medium bg-transparent border-none outline-none w-[150px] focus:ring-1 focus:ring-primary rounded px-1"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <span
+                  className="text-sm font-medium truncate max-w-[150px] cursor-text"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    handleStartRename();
+                  }}
+                  title="Double-click to rename"
+                >
+                  {name}
+                </span>
+              )}
             </div>
 
             {/* Status label */}
@@ -408,6 +659,79 @@ export function FloatingTerminal({
           </div>
 
           <div className="flex items-center gap-1">
+            {/* Tasks button */}
+            <div className="relative" ref={tasksPanelRef}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleTasksPanel();
+                }}
+                className={cn(
+                  "p-1 rounded hover:bg-muted transition-colors",
+                  showTasksPanel && "bg-muted"
+                )}
+                title="Execute Task"
+              >
+                <ListChecks size={14} className="text-muted-foreground" />
+              </button>
+
+              {/* Tasks dropdown panel */}
+              {showTasksPanel && (
+                <div className="absolute right-0 top-full mt-1 w-64 bg-background border rounded-lg shadow-xl z-50 overflow-hidden">
+                  <div className="px-3 py-2 border-b bg-muted/50">
+                    <span className="text-xs font-medium">Execute Task</span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {loadingTasks ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : executableTasks.length === 0 ? (
+                      <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                        No tasks with commands
+                      </div>
+                    ) : (
+                      executableTasks.map((task) => {
+                        const commands = task.commands ? JSON.parse(task.commands) as string[] : [];
+                        return (
+                          <button
+                            key={task.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExecuteTask(task);
+                            }}
+                            className="w-full px-3 py-2 text-left hover:bg-muted transition-colors flex items-start gap-2"
+                          >
+                            <Play size={14} className="text-primary mt-0.5 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium truncate">{task.title}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {commands.length} command{commands.length !== 1 ? 's' : ''}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Settings button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowSettingsModal(true);
+              }}
+              className="p-1 rounded hover:bg-muted transition-colors"
+              title="Terminal Settings"
+            >
+              <Settings size={14} className="text-muted-foreground" />
+            </button>
+
+            <div className="w-px h-4 bg-border mx-0.5" />
+
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -453,8 +777,76 @@ export function FloatingTerminal({
             className="h-full"
             hideToolbar={true}
             onStatusUpdate={handleStatusUpdate}
+            fontSize={terminalSettings.fontSize}
+            fontFamily={terminalSettings.fontFamily}
+            themeOverride={terminalSettings.theme}
           />
         </div>
+
+        {/* Context Menu */}
+        {contextMenu && typeof window !== 'undefined' && createPortal(
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 z-[9998]"
+              onClick={closeContextMenu}
+              onContextMenu={(e) => { e.preventDefault(); closeContextMenu(); }}
+            />
+            {/* Menu */}
+            <div
+              className="fixed z-[9999] min-w-[140px] py-1 bg-popover border border-border rounded-lg shadow-lg animate-in fade-in duration-75"
+              style={{
+                top: contextMenu.y,
+                left: contextMenu.x,
+              }}
+            >
+              <button
+                onClick={() => {
+                  closeContextMenu();
+                  handleStartRename();
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted transition-colors duration-75"
+              >
+                <Pencil size={14} className="text-muted-foreground" />
+                Rename
+              </button>
+              <button
+                onClick={() => {
+                  closeContextMenu();
+                  setShowSettingsModal(true);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted transition-colors duration-75"
+              >
+                <Settings size={14} className="text-muted-foreground" />
+                Settings
+              </button>
+              <div className="my-1 border-t border-border" />
+              <button
+                onClick={() => {
+                  closeContextMenu();
+                  onClose();
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-destructive hover:bg-destructive/10 transition-colors duration-75"
+              >
+                <Trash2 size={14} />
+                Close Terminal
+              </button>
+            </div>
+          </>,
+          document.body
+        )}
+
+        {/* Settings Modal - rendered in portal to appear centered on screen */}
+        {showSettingsModal && typeof window !== 'undefined' && createPortal(
+          <TerminalSettingsModal
+            isOpen={showSettingsModal}
+            onClose={() => setShowSettingsModal(false)}
+            terminalName={name}
+            settings={terminalSettings}
+            onSave={saveSettings}
+          />,
+          document.body
+        )}
       </div>
     </Rnd>
   );

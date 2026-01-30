@@ -26,7 +26,10 @@ import teamHistoryRoutes from './api/team-history.js';
 import teamPresenceRoutes from './api/team-presence.js';
 import teamRolesRoutes from './api/team-roles.js';
 import taskCommandsRoutes from './api/task-commands.js';
+import personalTasksRoutes from './api/personal-tasks.js';
+import personalTaskBoardsRoutes from './api/personal-task-boards.js';
 import usersRoutes from './api/users.js';
+import terminalQueueRoutes from './api/terminal-queue.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',');
@@ -71,8 +74,11 @@ app.use('/api/teams', teamPresenceRoutes);
 app.use('/api/teams', teamRolesRoutes);
 app.use('/api/tasks', tasksRoutes);
 app.use('/api/tasks', taskCommandsRoutes);
+app.use('/api/personal-tasks', personalTasksRoutes);
+app.use('/api/personal-task-boards', personalTaskBoardsRoutes);
 app.use('/api', pushRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api', terminalQueueRoutes);
 
 // Stats endpoint
 app.get('/api/stats', (req, res) => {

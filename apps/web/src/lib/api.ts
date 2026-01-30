@@ -193,7 +193,17 @@ export const terminalsApi = {
 
   update: (
     id: string,
-    data: { name?: string; cols?: number; rows?: number; categoryId?: string | null; position?: number },
+    data: {
+      name?: string;
+      cols?: number;
+      rows?: number;
+      categoryId?: string | null;
+      position?: number;
+      // Display settings
+      fontSize?: number | null;
+      fontFamily?: string | null;
+      theme?: string | null;
+    },
     token: string
   ) =>
     api<any>(`/api/terminals/${id}`, { method: 'PATCH', body: data, token }),
@@ -625,6 +635,7 @@ export interface WorkspaceSettings {
   theme?: string;
   defaultCols?: number;
   defaultRows?: number;
+  activeTerminalId?: string;
 }
 
 export interface WorkspaceLayout {
@@ -639,6 +650,23 @@ export interface WorkspaceLayout {
   sizes?: number[];
 }
 
+// Floating window position for Windows-style layout
+export interface FloatingWindowPosition {
+  terminalId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex: number;
+  isCustomized: boolean;
+}
+
+// Layout mode and floating window positions
+export interface FloatingLayout {
+  mode: 'split' | 'floating';
+  windows?: FloatingWindowPosition[];
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -648,6 +676,7 @@ export interface Workspace {
   isDefault: boolean;
   position: number;
   layout?: WorkspaceLayout | null;
+  floatingLayout?: FloatingLayout | null;
   settings?: WorkspaceSettings | null;
   terminalCount: number;
   terminals?: WorkspaceTerminalItem[];
@@ -674,6 +703,10 @@ export interface WorkspaceTerminalItem {
   } | null;
   createdAt: string;
   updatedAt: string;
+  // Display settings
+  fontSize: number | null;
+  fontFamily: string | null;
+  theme: string | null;
 }
 
 // Workspaces API
@@ -706,6 +739,7 @@ export const workspacesApi = {
       isDefault?: boolean;
       position?: number;
       layout?: WorkspaceLayout | null;
+      floatingLayout?: FloatingLayout | null;
       settings?: WorkspaceSettings | null;
     },
     token: string
@@ -1858,6 +1892,229 @@ export const taskCommandsApi = {
     api<void>(`/api/tasks/${taskId}/commands/reorder`, {
       method: 'POST',
       body: { commandIds },
+      token,
+    }),
+};
+
+// ========================
+// Personal Tasks
+// ========================
+
+export interface PersonalTaskBoard {
+  id: string;
+  userId: string;
+  name: string;
+  color: string;
+  icon: string | null;
+  position: number;
+  isDefault: boolean;
+  _count?: { tasks: number };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PersonalTask {
+  id: string;
+  userId: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  position: number;
+  dueDate: string | null;
+  boardId: string | null;
+  commands: string | null; // JSON array of commands
+  terminalQueueId: string | null;
+  executedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const personalTaskBoardsApi = {
+  list: (token: string) =>
+    api<{ boards: PersonalTaskBoard[] }>('/api/personal-task-boards', { token }),
+
+  get: (id: string, token: string) =>
+    api<PersonalTaskBoard>(`/api/personal-task-boards/${id}`, { token }),
+
+  create: (
+    data: {
+      name: string;
+      color?: string;
+      icon?: string | null;
+      isDefault?: boolean;
+    },
+    token: string
+  ) =>
+    api<PersonalTaskBoard>('/api/personal-task-boards', { method: 'POST', body: data, token }),
+
+  update: (
+    id: string,
+    data: {
+      name?: string;
+      color?: string;
+      icon?: string | null;
+      isDefault?: boolean;
+    },
+    token: string
+  ) =>
+    api<PersonalTaskBoard>(`/api/personal-task-boards/${id}`, { method: 'PATCH', body: data, token }),
+
+  delete: (id: string, token: string) =>
+    api<void>(`/api/personal-task-boards/${id}`, { method: 'DELETE', token }),
+
+  reorder: (data: { boardIds: string[] }, token: string) =>
+    api<void>('/api/personal-task-boards/reorder', { method: 'POST', body: data, token }),
+};
+
+export const personalTasksApi = {
+  list: (token: string, boardId?: string | null) => {
+    const params = new URLSearchParams();
+    if (boardId !== undefined) {
+      params.set('boardId', boardId === null ? 'null' : boardId);
+    }
+    const query = params.toString();
+    return api<{ tasks: PersonalTask[] }>(
+      `/api/personal-tasks${query ? `?${query}` : ''}`,
+      { token }
+    );
+  },
+
+  get: (id: string, token: string) =>
+    api<PersonalTask>(`/api/personal-tasks/${id}`, { token }),
+
+  create: (
+    data: {
+      title: string;
+      description?: string;
+      status?: TaskStatus;
+      priority?: TaskPriority;
+      dueDate?: string | null;
+      boardId?: string | null;
+      commands?: string[] | null;
+    },
+    token: string
+  ) =>
+    api<PersonalTask>('/api/personal-tasks', { method: 'POST', body: data, token }),
+
+  update: (
+    id: string,
+    data: {
+      title?: string;
+      description?: string | null;
+      status?: TaskStatus;
+      priority?: TaskPriority;
+      position?: number;
+      dueDate?: string | null;
+      boardId?: string | null;
+      commands?: string[] | null;
+    },
+    token: string
+  ) =>
+    api<PersonalTask>(`/api/personal-tasks/${id}`, { method: 'PATCH', body: data, token }),
+
+  delete: (id: string, token: string) =>
+    api<void>(`/api/personal-tasks/${id}`, { method: 'DELETE', token }),
+
+  reorder: (
+    data: { taskIds: string[]; status: TaskStatus },
+    token: string
+  ) =>
+    api<void>('/api/personal-tasks/reorder', { method: 'POST', body: data, token }),
+
+  execute: (
+    id: string,
+    data: { terminalId: string },
+    token: string
+  ) =>
+    api<{ task: PersonalTask; queue: TerminalTaskQueue }>(
+      `/api/personal-tasks/${id}/execute`,
+      { method: 'POST', body: data, token }
+    ),
+};
+
+// ========================
+// Terminal Task Queue
+// ========================
+
+export type QueueStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type CommandStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'SKIPPED';
+
+export interface TerminalQueueCommand {
+  id: string;
+  queueId: string;
+  command: string;
+  status: CommandStatus;
+  position: number;
+  output: string | null;
+  exitCode: number | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
+export interface TerminalTaskQueue {
+  id: string;
+  terminalId: string;
+  userId: string;
+  name: string;
+  status: QueueStatus;
+  position: number;
+  commands: TerminalQueueCommand[];
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export const terminalQueueApi = {
+  list: (terminalId: string, token: string) =>
+    api<{ queues: TerminalTaskQueue[] }>(
+      `/api/terminals/${terminalId}/queue`,
+      { token }
+    ),
+
+  get: (terminalId: string, queueId: string, token: string) =>
+    api<{ queue: TerminalTaskQueue }>(
+      `/api/terminals/${terminalId}/queue/${queueId}`,
+      { token }
+    ),
+
+  create: (
+    terminalId: string,
+    data: {
+      name: string;
+      commands: Array<{ command: string; position?: number }>;
+    },
+    token: string
+  ) =>
+    api<{ queue: TerminalTaskQueue }>(
+      `/api/terminals/${terminalId}/queue`,
+      { method: 'POST', body: data, token }
+    ),
+
+  delete: (terminalId: string, queueId: string, token: string) =>
+    api<void>(`/api/terminals/${terminalId}/queue/${queueId}`, {
+      method: 'DELETE',
+      token,
+    }),
+
+  start: (terminalId: string, queueId: string, token: string) =>
+    api<{ queue: TerminalTaskQueue }>(
+      `/api/terminals/${terminalId}/queue/${queueId}/start`,
+      { method: 'POST', token }
+    ),
+
+  cancel: (terminalId: string, queueId: string, token: string) =>
+    api<{ queue: TerminalTaskQueue }>(
+      `/api/terminals/${terminalId}/queue/${queueId}/cancel`,
+      { method: 'POST', token }
+    ),
+
+  reorder: (terminalId: string, queueIds: string[], token: string) =>
+    api<void>(`/api/terminals/${terminalId}/queue/reorder`, {
+      method: 'POST',
+      body: { queueIds },
       token,
     }),
 };
