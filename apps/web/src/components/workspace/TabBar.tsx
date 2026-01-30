@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   SortableContext,
@@ -23,6 +23,7 @@ import {
   Minimize,
   Maximize,
   LayoutGrid,
+  Pencil,
 } from 'lucide-react';
 import { useWorkspace, Tab } from '@/contexts/WorkspaceContext';
 import { cn } from '@/lib/utils';
@@ -133,11 +134,32 @@ interface TabItemProps {
   onActivate: () => void;
   onClose: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  onStartRename: () => void;
+  isRenaming: boolean;
+  renameValue: string;
+  onRenameChange: (value: string) => void;
+  onRenameSubmit: () => void;
+  onRenameCancel: () => void;
   isDark: boolean;
   isCompact?: boolean;
 }
 
-function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark, isCompact }: TabItemProps) {
+function SortableTab({
+  tab,
+  isActive,
+  onActivate,
+  onClose,
+  onContextMenu,
+  onStartRename,
+  isRenaming,
+  renameValue,
+  onRenameChange,
+  onRenameSubmit,
+  onRenameCancel,
+  isDark,
+  isCompact,
+}: TabItemProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const {
     attributes,
     listeners,
@@ -154,6 +176,7 @@ function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark
       tabType: tab.type,
       name: tab.name,
     },
+    disabled: isRenaming,
   });
 
   const style = {
@@ -163,9 +186,25 @@ function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark
     zIndex: isDragging ? 1000 : isActive ? 10 : 1,
   };
 
+  // Focus input when renaming starts
+  useEffect(() => {
+    if (isRenaming && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isRenaming]);
+
   // Determine icon based on tab type
   const Icon = tab.type === 'file' ? getFileIcon(tab.fileExtension) : Terminal;
   const iconColor = tab.type === 'file' ? getFileIconColor(tab.fileExtension) : 'text-muted-foreground';
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      onRenameSubmit();
+    } else if (e.key === 'Escape') {
+      onRenameCancel();
+    }
+  };
 
   return (
     <div
@@ -179,16 +218,38 @@ function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark
           : 'bg-muted/50 border-transparent hover:bg-muted',
         isDragging && 'shadow-lg'
       )}
-      onClick={onActivate}
+      onClick={isRenaming ? undefined : onActivate}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        if (tab.type === 'terminal') {
+          onStartRename();
+        }
+      }}
       onContextMenu={onContextMenu}
-      {...attributes}
-      {...listeners}
+      {...(isRenaming ? {} : attributes)}
+      {...(isRenaming ? {} : listeners)}
     >
       <Icon size={isCompact ? 12 : 14} className={cn('flex-shrink-0', iconColor)} />
-      <span className={cn(
-        'font-medium truncate flex-1',
-        isCompact ? 'text-xs' : 'text-sm'
-      )}>{tab.name}</span>
+      {isRenaming ? (
+        <input
+          ref={inputRef}
+          type="text"
+          value={renameValue}
+          onChange={(e) => onRenameChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={onRenameSubmit}
+          className={cn(
+            'flex-1 min-w-0 bg-transparent border-none outline-none font-medium',
+            isCompact ? 'text-xs' : 'text-sm'
+          )}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span className={cn(
+          'font-medium truncate flex-1',
+          isCompact ? 'text-xs' : 'text-sm'
+        )}>{tab.name}</span>
+      )}
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -214,7 +275,7 @@ interface TabBarProps {
 }
 
 export function TabBar({ onAddTab, isDark, isFullscreen, onToggleFullscreen, onAutoLayout }: TabBarProps) {
-  const { tabs, activeTabId, setActiveTab, closeTab } = useWorkspace();
+  const { tabs, activeTabId, setActiveTab, closeTab, renameTerminal } = useWorkspace();
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -223,6 +284,10 @@ export function TabBar({ onAddTab, isDark, isFullscreen, onToggleFullscreen, onA
     tabId: string;
   } | null>(null);
 
+  // Rename state
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+
   const handleContextMenu = useCallback((e: React.MouseEvent, tabId: string) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, tabId });
@@ -230,6 +295,31 @@ export function TabBar({ onAddTab, isDark, isFullscreen, onToggleFullscreen, onA
 
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
+  }, []);
+
+  const handleStartRename = useCallback((tabId: string) => {
+    const tab = tabs.find(t => t.id === tabId);
+    if (tab && tab.type === 'terminal') {
+      setRenameValue(tab.name);
+      setRenamingTabId(tabId);
+    }
+    closeContextMenu();
+  }, [tabs, closeContextMenu]);
+
+  const handleRenameSubmit = useCallback(async () => {
+    if (renamingTabId && renameValue.trim()) {
+      const tab = tabs.find(t => t.id === renamingTabId);
+      if (tab?.terminalId) {
+        await renameTerminal(tab.terminalId, renameValue.trim());
+      }
+    }
+    setRenamingTabId(null);
+    setRenameValue('');
+  }, [renamingTabId, renameValue, tabs, renameTerminal]);
+
+  const handleRenameCancel = useCallback(() => {
+    setRenamingTabId(null);
+    setRenameValue('');
   }, []);
 
   const handleCloseTab = useCallback(() => {
@@ -326,6 +416,12 @@ export function TabBar({ onAddTab, isDark, isFullscreen, onToggleFullscreen, onA
               onActivate={() => setActiveTab(tab.id)}
               onClose={() => closeTab(tab.id)}
               onContextMenu={(e) => handleContextMenu(e, tab.id)}
+              onStartRename={() => handleStartRename(tab.id)}
+              isRenaming={renamingTabId === tab.id}
+              renameValue={renameValue}
+              onRenameChange={setRenameValue}
+              onRenameSubmit={handleRenameSubmit}
+              onRenameCancel={handleRenameCancel}
               isDark={isDark}
               isCompact={isFullscreen}
             />
@@ -388,6 +484,19 @@ export function TabBar({ onAddTab, isDark, isFullscreen, onToggleFullscreen, onA
               left: contextMenu.x,
             }}
           >
+            {/* Rename - only for terminal tabs */}
+            {tabs.find(t => t.id === contextMenu.tabId)?.type === 'terminal' && (
+              <>
+                <button
+                  onClick={() => handleStartRename(contextMenu.tabId)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted transition-colors duration-75"
+                >
+                  <Pencil size={14} className="text-muted-foreground" />
+                  Rename
+                </button>
+                <div className="my-1 border-t border-border" />
+              </>
+            )}
             <button
               onClick={handleCloseTab}
               className="w-full px-3 py-2 text-sm text-left hover:bg-muted transition-colors duration-75"

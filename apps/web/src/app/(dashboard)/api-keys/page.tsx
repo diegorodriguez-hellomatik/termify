@@ -18,6 +18,7 @@ import {
   Activity,
   Shield,
 } from 'lucide-react';
+import { PageLayout, PageHeader, PageContent } from '@/components/ui/page-layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -130,31 +131,26 @@ export default function ApiKeysPage() {
   }
 
   return (
-    <div className="p-8 max-w-6xl">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-3">
-            <Key className="h-8 w-8 text-primary" />
-            API Keys
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage API keys for programmatic access to Termify
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link href="/docs/api">
-            <Button variant="outline" className="gap-2">
-              <ExternalLink size={16} />
-              API Documentation
+    <PageLayout>
+      <PageHeader
+        title="API Keys"
+        description="Manage API keys for programmatic access to Termify"
+        actions={
+          <>
+            <Link href="/docs/api">
+              <Button variant="outline" className="gap-2">
+                <ExternalLink size={16} />
+                API Documentation
+              </Button>
+            </Link>
+            <Button onClick={() => setShowCreateModal(true)} className="gap-2">
+              <Plus size={16} />
+              Create API Key
             </Button>
-          </Link>
-          <Button onClick={() => setShowCreateModal(true)} className="gap-2">
-            <Plus size={16} />
-            Create API Key
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
+      <PageContent>
 
       {/* Newly Created Key Alert */}
       {newlyCreatedKey && (
@@ -416,6 +412,7 @@ export default function ApiKeysPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+      </PageContent>
+    </PageLayout>
   );
 }

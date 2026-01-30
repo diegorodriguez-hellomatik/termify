@@ -4,13 +4,15 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Rnd } from 'react-rnd';
 import dynamic from 'next/dynamic';
-import { X, Minus, Maximize2, Minimize2, Loader2, Settings, Trash2, Pencil, ListChecks, Play, ChevronDown } from 'lucide-react';
+import { X, Minus, Maximize2, Minimize2, Loader2, Settings, Trash2, Pencil, ListChecks, Play, ChevronDown, Zap } from 'lucide-react';
 import { TerminalStatus } from '@termify/shared';
 import { cn } from '@/lib/utils';
 import { TerminalSettingsModal, TerminalSettings } from '@/components/terminal/TerminalSettingsModal';
 import { terminalsApi, personalTasksApi, PersonalTask } from '@/lib/api';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useSession } from 'next-auth/react';
+import { usePersonalTasksSocket } from '@/hooks/usePersonalTasksSocket';
+import { useTerminalTasksOptional } from '@/contexts/TerminalTasksContext';
 
 // Dynamic import to avoid SSR issues with xterm
 const Terminal = dynamic(
@@ -93,6 +95,18 @@ export function FloatingTerminal({
   const [executableTasks, setExecutableTasks] = useState<PersonalTask[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const tasksPanelRef = useRef<HTMLDivElement>(null);
+
+  // Executing task state (for showing which task this terminal is working on)
+  const [executingTask, setExecutingTask] = useState<{
+    id: string;
+    title: string;
+    queueId: string;
+    commandsTotal: number;
+    commandsCompleted: number;
+  } | null>(null);
+
+  // Global terminal-task tracking context (optional - may not be available)
+  const terminalTasksContext = useTerminalTasksOptional();
 
   // Rename state
   const [isRenaming, setIsRenaming] = useState(false);
@@ -406,7 +420,10 @@ export function FloatingTerminal({
     return (
       <div
         ref={containerRef}
-        className="absolute bottom-4 left-4 bg-card border border-border rounded-lg shadow-lg cursor-pointer hover:bg-muted transition-colors"
+        className={cn(
+          "absolute bottom-4 left-4 bg-card border border-border rounded-lg shadow-lg cursor-pointer hover:bg-muted transition-colors",
+          executingTask && "border-primary/50"
+        )}
         style={{ zIndex }}
         onClick={() => {
           setIsMinimized(false);
@@ -416,7 +433,15 @@ export function FloatingTerminal({
         <div className="flex items-center gap-2 px-3 py-2">
           <div className={cn('w-2 h-2 rounded-full', getStatusColor(terminalStatus))} />
           <span className="text-sm font-medium truncate max-w-[150px]">{name}</span>
-          <span className="text-xs text-muted-foreground">{getStatusLabel(terminalStatus)}</span>
+          {executingTask ? (
+            <div className="flex items-center gap-1 text-xs text-primary">
+              <Zap size={12} className="animate-pulse" />
+              <span className="truncate max-w-[100px]">{executingTask.title}</span>
+              <span className="text-primary/70">{executingTask.commandsCompleted}/{executingTask.commandsTotal}</span>
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">{getStatusLabel(terminalStatus)}</span>
+          )}
           <Maximize2 size={14} className="text-muted-foreground" />
         </div>
       </div>
@@ -446,40 +471,73 @@ export function FloatingTerminal({
 
     const taskId = e.dataTransfer.getData('application/task-id');
     const taskTitle = e.dataTransfer.getData('text/plain');
+    const taskCommandsJson = e.dataTransfer.getData('application/task-commands');
 
     if (!taskId || !accessToken) return;
 
+    // Check if task has commands
+    let commands: string[] = [];
     try {
-      const response = await personalTasksApi.execute(taskId, { terminalId }, accessToken);
-      if (response.success && response.data) {
-        console.log(`[FloatingTerminal] Task "${taskTitle}" sent to terminal - Executing ${response.data.queue.commands.length} commands`);
-        // TODO: Add toast notification when toast system is set up
+      commands = taskCommandsJson ? JSON.parse(taskCommandsJson) as string[] : [];
+    } catch {
+      commands = [];
+    }
+
+    try {
+      if (commands.length > 0) {
+        // Task has commands - execute them in the terminal
+        const response = await personalTasksApi.execute(taskId, { terminalId }, accessToken);
+        if (response.success && response.data) {
+          console.log(`[FloatingTerminal] Task "${taskTitle}" sent to terminal - Executing ${response.data.queue.commands.length} commands`);
+          // Track executing task locally
+          const taskInfo = {
+            id: taskId,
+            title: taskTitle,
+            queueId: response.data.queue.id,
+            commandsTotal: response.data.queue.commands.length,
+            commandsCompleted: 0,
+          };
+          setExecutingTask(taskInfo);
+          // Register in global context
+          terminalTasksContext?.registerExecution({
+            taskId,
+            taskTitle,
+            queueId: response.data.queue.id,
+            terminalId,
+            terminalName: name,
+            commandsTotal: response.data.queue.commands.length,
+            commandsCompleted: 0,
+            startedAt: new Date(),
+          });
+        } else {
+          console.error('[FloatingTerminal] Failed to execute task:', typeof response.error === 'string' ? response.error : 'Unknown error');
+        }
       } else {
-        console.error('[FloatingTerminal] Failed to execute task:', typeof response.error === 'string' ? response.error : 'Unknown error');
+        // Task has no commands - just mark as in_progress
+        const response = await personalTasksApi.update(taskId, { status: 'in_progress' }, accessToken);
+        if (response.success) {
+          console.log(`[FloatingTerminal] Task "${taskTitle}" marked as in progress`);
+        } else {
+          console.error('[FloatingTerminal] Failed to update task:', typeof response.error === 'string' ? response.error : 'Unknown error');
+        }
       }
     } catch (error) {
       console.error('[FloatingTerminal] Error executing task:', error);
     }
-  }, [accessToken, terminalId]);
+  }, [accessToken, terminalId, name, terminalTasksContext]);
 
-  // Load tasks with commands for the tasks panel
+  // Load tasks for the tasks panel (all tasks, not just those with commands)
   const loadExecutableTasks = useCallback(async () => {
     if (!accessToken) return;
     setLoadingTasks(true);
     try {
       const response = await personalTasksApi.list(accessToken);
       if (response.success && response.data) {
-        // Filter tasks that have commands
-        const tasksWithCommands = response.data.tasks.filter((task: PersonalTask) => {
-          if (!task.commands) return false;
-          try {
-            const commands = JSON.parse(task.commands) as string[];
-            return commands.length > 0;
-          } catch {
-            return false;
-          }
-        });
-        setExecutableTasks(tasksWithCommands);
+        // Show all pending tasks (not done)
+        const pendingTasks = response.data.tasks.filter((task: PersonalTask) =>
+          task.status !== 'done' && task.status !== 'in_review'
+        );
+        setExecutableTasks(pendingTasks);
       }
     } catch (error) {
       console.error('[FloatingTerminal] Error loading tasks:', error);
@@ -492,17 +550,56 @@ export function FloatingTerminal({
   const handleExecuteTask = useCallback(async (task: PersonalTask) => {
     if (!accessToken) return;
     setShowTasksPanel(false);
+
+    // Check if task has commands
+    let commands: string[] = [];
     try {
-      const response = await personalTasksApi.execute(task.id, { terminalId }, accessToken);
-      if (response.success && response.data) {
-        console.log(`[FloatingTerminal] Task "${task.title}" executed - ${response.data.queue.commands.length} commands`);
+      commands = task.commands ? JSON.parse(task.commands) as string[] : [];
+    } catch {
+      commands = [];
+    }
+
+    try {
+      if (commands.length > 0) {
+        // Task has commands - execute them in the terminal
+        const response = await personalTasksApi.execute(task.id, { terminalId }, accessToken);
+        if (response.success && response.data) {
+          console.log(`[FloatingTerminal] Task "${task.title}" executed - ${response.data.queue.commands.length} commands`);
+          // Track executing task locally
+          setExecutingTask({
+            id: task.id,
+            title: task.title,
+            queueId: response.data.queue.id,
+            commandsTotal: response.data.queue.commands.length,
+            commandsCompleted: 0,
+          });
+          // Register in global context
+          terminalTasksContext?.registerExecution({
+            taskId: task.id,
+            taskTitle: task.title,
+            queueId: response.data.queue.id,
+            terminalId,
+            terminalName: name,
+            commandsTotal: response.data.queue.commands.length,
+            commandsCompleted: 0,
+            startedAt: new Date(),
+          });
+        } else {
+          console.error('[FloatingTerminal] Failed to execute task:', response.error);
+        }
       } else {
-        console.error('[FloatingTerminal] Failed to execute task:', response.error);
+        // Task has no commands - just mark as in_progress
+        const response = await personalTasksApi.update(task.id, { status: 'in_progress' }, accessToken);
+        if (response.success) {
+          console.log(`[FloatingTerminal] Task "${task.title}" marked as in progress`);
+        } else {
+          console.error('[FloatingTerminal] Failed to update task:', response.error);
+        }
       }
     } catch (error) {
       console.error('[FloatingTerminal] Error executing task:', error);
     }
-  }, [accessToken, terminalId]);
+  }, [accessToken, terminalId, name, terminalTasksContext]);
 
   // Toggle tasks panel
   const handleToggleTasksPanel = useCallback(() => {
@@ -526,6 +623,47 @@ export function FloatingTerminal({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showTasksPanel]);
+
+  // WebSocket callbacks to track queue events for this terminal
+  const socketCallbacks = {
+    onQueueCompleted: useCallback((event: { queueId: string; taskId?: string }) => {
+      if (executingTask && event.queueId === executingTask.queueId) {
+        console.log(`[FloatingTerminal ${terminalId}] Task "${executingTask.title}" completed`);
+        setExecutingTask(null);
+        terminalTasksContext?.clearExecution(event.queueId);
+      }
+    }, [executingTask, terminalId, terminalTasksContext]),
+    onQueueFailed: useCallback((event: { queueId: string; taskId?: string; reason?: string }) => {
+      if (executingTask && event.queueId === executingTask.queueId) {
+        console.log(`[FloatingTerminal ${terminalId}] Task "${executingTask.title}" failed:`, event.reason);
+        setExecutingTask(null);
+        terminalTasksContext?.clearExecution(event.queueId);
+      }
+    }, [executingTask, terminalId, terminalTasksContext]),
+    onQueueCancelled: useCallback((event: { queueId: string; taskId?: string }) => {
+      if (executingTask && event.queueId === executingTask.queueId) {
+        console.log(`[FloatingTerminal ${terminalId}] Task "${executingTask.title}" cancelled`);
+        setExecutingTask(null);
+        terminalTasksContext?.clearExecution(event.queueId);
+      }
+    }, [executingTask, terminalId, terminalTasksContext]),
+    onQueueCommandCompleted: useCallback((event: { queueId: string; commandId: string; exitCode: number }) => {
+      if (executingTask && event.queueId === executingTask.queueId) {
+        const newCompleted = executingTask.commandsCompleted + 1;
+        setExecutingTask(prev => prev ? {
+          ...prev,
+          commandsCompleted: newCompleted,
+        } : null);
+        terminalTasksContext?.updateProgress(event.queueId, newCompleted);
+      }
+    }, [executingTask, terminalTasksContext]),
+  };
+
+  // Connect to WebSocket for queue events
+  usePersonalTasksSocket({
+    token: accessToken || null,
+    callbacks: socketCallbacks,
+  });
 
   // Trigger animation when position/size changes from parent (not user interaction)
   useEffect(() => {
@@ -656,6 +794,19 @@ export function FloatingTerminal({
             )}>
               {isConnected ? 'Connected' : 'Disconnected'}
             </span>
+
+            {/* Executing task indicator */}
+            {executingTask && (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/20 text-primary">
+                <Zap size={12} className="animate-pulse" />
+                <span className="text-xs font-medium truncate max-w-[120px]" title={executingTask.title}>
+                  {executingTask.title}
+                </span>
+                <span className="text-[10px] text-primary/70">
+                  {executingTask.commandsCompleted}/{executingTask.commandsTotal}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-1">
@@ -688,11 +839,17 @@ export function FloatingTerminal({
                       </div>
                     ) : executableTasks.length === 0 ? (
                       <div className="px-3 py-4 text-center text-sm text-muted-foreground">
-                        No tasks with commands
+                        No pending tasks
                       </div>
                     ) : (
                       executableTasks.map((task) => {
-                        const commands = task.commands ? JSON.parse(task.commands) as string[] : [];
+                        let commands: string[] = [];
+                        try {
+                          commands = task.commands ? JSON.parse(task.commands) as string[] : [];
+                        } catch {
+                          commands = [];
+                        }
+                        const hasCommands = commands.length > 0;
                         return (
                           <button
                             key={task.id}
@@ -702,11 +859,14 @@ export function FloatingTerminal({
                             }}
                             className="w-full px-3 py-2 text-left hover:bg-muted transition-colors flex items-start gap-2"
                           >
-                            <Play size={14} className="text-primary mt-0.5 flex-shrink-0" />
+                            <Play size={14} className={cn("mt-0.5 flex-shrink-0", hasCommands ? "text-primary" : "text-muted-foreground")} />
                             <div className="flex-1 min-w-0">
                               <div className="text-sm font-medium truncate">{task.title}</div>
                               <div className="text-xs text-muted-foreground">
-                                {commands.length} command{commands.length !== 1 ? 's' : ''}
+                                {hasCommands
+                                  ? `${commands.length} command${commands.length !== 1 ? 's' : ''}`
+                                  : 'No commands - will mark as in progress'
+                                }
                               </div>
                             </div>
                           </button>

@@ -3,13 +3,13 @@
 import { useDroppable } from '@dnd-kit/core';
 import { useRef, useState, useEffect } from 'react';
 import { DropZoneOverlay, DropPosition, calculateDropPosition } from './DropZoneOverlay';
+import { useWorkspaceDnd } from './WorkspaceDndProvider';
 
 interface DroppablePaneProps {
   id: string;
   terminalId: string;
   children: React.ReactNode;
   isDark: boolean;
-  onDropPositionChange?: (position: DropPosition) => void;
 }
 
 export function DroppablePane({
@@ -17,13 +17,17 @@ export function DroppablePane({
   terminalId,
   children,
   isDark,
-  onDropPositionChange,
 }: DroppablePaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dropPosition, setDropPosition] = useState<DropPosition>(null);
 
-  const { isOver, setNodeRef, active } = useDroppable({
-    id: `pane-${id}`,
+  // Get context from WorkspaceDndProvider
+  const { isDraggingTab, setDropPosition: updateDropPosition } = useWorkspaceDnd();
+
+  const droppableId = `pane-${id}`;
+
+  const { setNodeRef, isOver } = useDroppable({
+    id: droppableId,
     data: {
       type: 'pane',
       paneId: id,
@@ -31,11 +35,14 @@ export function DroppablePane({
     },
   });
 
-  // Track mouse position for drop zone calculation
+  // Use isOver from the hook - this is the most reliable signal
+  // that the draggable is currently over this droppable
+  const isActiveTarget = isOver && isDraggingTab;
+
+  // Track mouse position for drop zone calculation when dragging over this pane
   useEffect(() => {
-    if (!isOver || !containerRef.current) {
+    if (!isActiveTarget || !containerRef.current) {
       setDropPosition(null);
-      onDropPositionChange?.(null);
       return;
     }
 
@@ -44,16 +51,27 @@ export function DroppablePane({
       const rect = containerRef.current.getBoundingClientRect();
       const position = calculateDropPosition(rect, e.clientX, e.clientY);
       setDropPosition(position);
-      onDropPositionChange?.(position);
+      updateDropPosition(id, position);
     };
 
+    // Set up continuous tracking while over this pane
     window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, [isOver, onDropPositionChange]);
 
-  // Check if dragging a tab (not reordering within same context)
-  const isDraggingTab = active?.data?.current?.type === 'tab';
-  const showOverlay = isOver && isDraggingTab;
+    // Trigger initial position calculation
+    const mouseEvent = new MouseEvent('mousemove', {
+      clientX: window.innerWidth / 2,
+      clientY: window.innerHeight / 2,
+    });
+    handleMouseMove(mouseEvent as MouseEvent);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      updateDropPosition(id, null);
+    };
+  }, [isActiveTarget, id, updateDropPosition]);
+
+  // Show overlay when dragging a tab and hovering over this pane
+  const showOverlay = isActiveTarget;
 
   return (
     <div
@@ -64,6 +82,13 @@ export function DroppablePane({
       className="relative h-full w-full"
     >
       {children}
+      {/* Invisible overlay to capture pointer events during drag */}
+      {isDraggingTab && (
+        <div
+          className="absolute inset-0 z-40"
+          style={{ backgroundColor: 'transparent' }}
+        />
+      )}
       <DropZoneOverlay
         isActive={showOverlay}
         position={dropPosition}

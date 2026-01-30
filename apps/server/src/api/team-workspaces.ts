@@ -22,6 +22,14 @@ const updateWorkspaceLayoutSchema = z.object({
   isTeamDefault: z.boolean().optional(),
 });
 
+const createTeamWorkspaceSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional(),
+  color: z.string().max(50).optional(),
+  icon: z.string().max(50).optional(),
+  isTeamDefault: z.boolean().optional().default(false),
+});
+
 /**
  * GET /api/teams/:teamId/workspaces
  * List all workspaces shared with the team
@@ -93,6 +101,141 @@ router.get('/:teamId/workspaces', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[API] List team workspaces error:', error);
     res.status(500).json({ success: false, error: 'Failed to list team workspaces' });
+  }
+});
+
+/**
+ * POST /api/teams/:teamId/workspaces/create
+ * Create a new workspace directly owned by the team
+ * NOTE: This route MUST be defined BEFORE /:teamId/workspaces to avoid route conflicts
+ */
+router.post('/:teamId/workspaces/create', async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const teamId = req.params.teamId as string;
+    const data = createTeamWorkspaceSchema.parse(req.body);
+
+    // Verify membership and check if user can create workspaces (admin/owner)
+    const membership = await prisma.teamMember.findUnique({
+      where: { teamId_userId: { teamId, userId } },
+    });
+
+    if (!membership) {
+      res.status(404).json({ success: false, error: 'Team not found' });
+      return;
+    }
+
+    const canCreate = membership.role === TeamRole.OWNER || membership.role === TeamRole.ADMIN;
+    if (!canCreate) {
+      res.status(403).json({ success: false, error: 'Only team admins and owners can create team workspaces' });
+      return;
+    }
+
+    // If setting as team default, unset other defaults
+    if (data.isTeamDefault) {
+      await prisma.workspace.updateMany({
+        where: { teamId, isTeamDefault: true },
+        data: { isTeamDefault: false },
+      });
+    }
+
+    // Get max position for new workspace
+    const maxPositionResult = await prisma.workspace.aggregate({
+      where: { teamId },
+      _max: { position: true },
+    });
+    const nextPosition = (maxPositionResult._max.position ?? -1) + 1;
+
+    // Create workspace directly associated with team
+    const newWorkspace = await prisma.workspace.create({
+      data: {
+        name: data.name,
+        description: data.description,
+        color: data.color || '#6366f1',
+        icon: data.icon,
+        isTeamDefault: data.isTeamDefault,
+        position: nextPosition,
+        userId: userId,
+        teamId: teamId,
+      },
+    });
+
+    // Fetch with relations for response
+    const workspaceWithRelations = await prisma.workspace.findUnique({
+      where: { id: newWorkspace.id },
+      include: {
+        user: {
+          select: { id: true, email: true, name: true, image: true },
+        },
+        terminals: {
+          include: {
+            terminal: {
+              select: { id: true, name: true, status: true, type: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!workspaceWithRelations) {
+      res.status(500).json({ success: false, error: 'Failed to create workspace' });
+      return;
+    }
+
+    // Log audit
+    await prisma.teamAuditLog.create({
+      data: {
+        teamId,
+        userId,
+        action: 'workspace.created',
+        resource: 'workspace',
+        resourceId: newWorkspace.id,
+        details: { workspaceName: data.name, isTeamDefault: data.isTeamDefault },
+      },
+    });
+
+    // Broadcast to team subscribers
+    const wsServer = getWebSocketServer();
+    if (wsServer) {
+      wsServer.broadcastToTeam(teamId, {
+        type: 'team.workspace.added',
+        teamId,
+        workspace: mapWorkspace(workspaceWithRelations),
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      data: {
+        id: workspaceWithRelations.id,
+        name: workspaceWithRelations.name,
+        description: workspaceWithRelations.description,
+        color: workspaceWithRelations.color,
+        icon: workspaceWithRelations.icon,
+        isTeamDefault: workspaceWithRelations.isTeamDefault,
+        position: workspaceWithRelations.position,
+        layout: workspaceWithRelations.layout,
+        settings: workspaceWithRelations.settings,
+        owner: workspaceWithRelations.user,
+        terminalCount: workspaceWithRelations.terminals.length,
+        terminals: workspaceWithRelations.terminals.map((t) => ({
+          id: t.terminal.id,
+          name: t.terminal.name,
+          status: t.terminal.status,
+          type: t.terminal.type,
+          position: t.position,
+        })),
+        createdAt: workspaceWithRelations.createdAt,
+        updatedAt: workspaceWithRelations.updatedAt,
+      },
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ success: false, error: error.errors });
+      return;
+    }
+    console.error('[API] Create team workspace error:', error);
+    res.status(500).json({ success: false, error: 'Failed to create team workspace' });
   }
 });
 

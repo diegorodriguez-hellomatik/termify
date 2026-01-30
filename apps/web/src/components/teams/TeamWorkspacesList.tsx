@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useTeamWorkspaces } from '@/hooks/useTeamWorkspaces';
 import { DeleteConfirmModal } from '@/components/ui/DeleteConfirmModal';
 import { ShareWorkspaceWithTeamModal } from './ShareWorkspaceWithTeamModal';
+import { CreateTeamWorkspaceModal } from './CreateTeamWorkspaceModal';
 import { TeamWorkspace } from '@/lib/api';
 
 interface TeamWorkspacesListProps {
@@ -26,10 +27,12 @@ export function TeamWorkspacesList({
     error,
     refetch,
     shareWorkspace,
+    createWorkspace,
     updateWorkspace,
     removeWorkspace,
   } = useTeamWorkspaces(teamId);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedWorkspace, setSelectedWorkspace] = useState<TeamWorkspace | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -37,6 +40,18 @@ export function TeamWorkspacesList({
   const handleShare = async (workspaceId: string) => {
     await shareWorkspace(workspaceId);
     setShareModalOpen(false);
+  };
+
+  const handleCreate = async (data: {
+    name: string;
+    description?: string;
+    isTeamDefault?: boolean;
+  }) => {
+    const result = await createWorkspace(data);
+    if (result.success) {
+      setCreateModalOpen(false);
+    }
+    return result;
   };
 
   const handleRemove = async () => {
@@ -84,19 +99,30 @@ export function TeamWorkspacesList({
         </div>
         <h3 className="text-lg font-semibold mb-1">No team workspaces</h3>
         <p className="text-sm text-muted-foreground text-center mb-4">
-          Share workspaces with your team for collaboration.
+          Create a workspace for your team or share an existing one.
         </p>
         {canManage && (
-          <Button onClick={() => setShareModalOpen(true)} className="gap-2">
-            <Plus size={16} />
-            Share Workspace
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setCreateModalOpen(true)} className="gap-2">
+              <Plus size={16} />
+              Create Workspace
+            </Button>
+            <Button variant="outline" onClick={() => setShareModalOpen(true)} className="gap-2">
+              <Users size={16} />
+              Share Existing
+            </Button>
+          </div>
         )}
         <ShareWorkspaceWithTeamModal
           teamId={teamId}
           open={shareModalOpen}
           onOpenChange={setShareModalOpen}
           onShare={handleShare}
+        />
+        <CreateTeamWorkspaceModal
+          open={createModalOpen}
+          onOpenChange={setCreateModalOpen}
+          onCreate={handleCreate}
         />
       </div>
     );
@@ -105,10 +131,14 @@ export function TeamWorkspacesList({
   return (
     <div className="space-y-4">
       {canManage && (
-        <div className="flex justify-end">
-          <Button onClick={() => setShareModalOpen(true)} className="gap-2">
+        <div className="flex justify-end gap-2">
+          <Button onClick={() => setCreateModalOpen(true)} className="gap-2">
             <Plus size={16} />
-            Share Workspace
+            Create Workspace
+          </Button>
+          <Button variant="outline" onClick={() => setShareModalOpen(true)} className="gap-2">
+            <Users size={16} />
+            Share Existing
           </Button>
         </div>
       )}
@@ -215,6 +245,12 @@ export function TeamWorkspacesList({
         open={shareModalOpen}
         onOpenChange={setShareModalOpen}
         onShare={handleShare}
+      />
+
+      <CreateTeamWorkspaceModal
+        open={createModalOpen}
+        onOpenChange={setCreateModalOpen}
+        onCreate={handleCreate}
       />
 
       <DeleteConfirmModal

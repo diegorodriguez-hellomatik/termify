@@ -13,10 +13,15 @@ import { TaskCard } from './TaskCard';
 interface TaskColumnProps {
   status: TaskStatus;
   title: string;
-  color: string;
+  color: string; // Now supports hex colors like "#6b7280" or Tailwind classes like "bg-gray-500"
   tasks: Task[];
   onAddTask: () => void;
   onTaskClick: (task: Task) => void;
+}
+
+// Helper to check if color is a hex color
+function isHexColor(color: string): boolean {
+  return color.startsWith('#');
 }
 
 export function TaskColumn({
@@ -31,6 +36,9 @@ export function TaskColumn({
     id: status,
   });
 
+  const colorStyle = isHexColor(color) ? { backgroundColor: color } : undefined;
+  const colorClass = isHexColor(color) ? '' : color;
+
   return (
     <div
       ref={setNodeRef}
@@ -42,7 +50,10 @@ export function TaskColumn({
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
         <div className="flex items-center gap-2">
-          <div className={cn('w-2 h-2 rounded-full', color)} />
+          <div
+            className={cn('w-2 h-2 rounded-full', colorClass)}
+            style={colorStyle}
+          />
           <span className="font-medium text-sm">{title}</span>
           <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
             {tasks.length}

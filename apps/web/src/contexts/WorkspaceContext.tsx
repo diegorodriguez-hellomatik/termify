@@ -12,6 +12,7 @@ import {
 import { useSession } from 'next-auth/react';
 import {
   workspacesApi,
+  terminalsApi,
   Workspace,
   WorkspaceLayout,
   WorkspaceTerminalItem,
@@ -21,6 +22,12 @@ import {
 
 // Tab represents an open terminal or file
 export type TabType = 'terminal' | 'file';
+
+export interface TerminalDisplaySettings {
+  fontSize: number | null;
+  fontFamily: string | null;
+  theme: string | null;
+}
 
 export interface Tab {
   id: string;
@@ -33,6 +40,9 @@ export interface Tab {
   filePath?: string;
   fileExtension?: string;
 }
+
+// Map of terminalId -> display settings
+export type TerminalSettingsMap = Map<string, TerminalDisplaySettings>;
 
 // Split pane configuration
 export type SplitDirection = 'horizontal' | 'vertical';
@@ -76,6 +86,9 @@ interface WorkspaceContextType {
   // Pre-connection: terminal IDs that should establish WebSocket connections
   preConnectTerminalIds: string[];
 
+  // Terminal display settings (per-terminal)
+  getTerminalSettings: (terminalId: string) => TerminalDisplaySettings | undefined;
+
   // Tabs
   tabs: Tab[];
   activeTabId: string | null;
@@ -86,6 +99,7 @@ interface WorkspaceContextType {
   setActiveTab: (tabId: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   updateTabName: (tabId: string, name: string) => void;
+  renameTerminal: (terminalId: string, name: string) => Promise<boolean>;
 
   // Split panes
   layout: PaneNode | null;
@@ -167,12 +181,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Terminal IDs that should pre-connect (establish WebSocket before being visible)
   const [preConnectTerminalIds, setPreConnectTerminalIds] = useState<string[]>([]);
 
+  // Terminal display settings (fontSize, fontFamily, theme) by terminalId
+  const [terminalSettings, setTerminalSettings] = useState<TerminalSettingsMap>(new Map());
+
   // Track if we've loaded initial workspaces
   const initialLoadDone = useRef(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Get current workspace object
   const currentWorkspace = workspaces.find((w) => w.id === currentWorkspaceId) || null;
+
+  // Get terminal display settings by terminalId
+  const getTerminalSettings = useCallback((terminalId: string): TerminalDisplaySettings | undefined => {
+    return terminalSettings.get(terminalId);
+  }, [terminalSettings]);
 
   // Load workspaces from server
   const loadWorkspaces = useCallback(async () => {
@@ -255,15 +277,33 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             status: t.status,
           }));
           setTabs(newTabs);
-          setActiveTabId(newTabs[0]?.id || null);
+
+          // Restore active tab from settings, or use first tab
+          const savedActiveTerminalId = (response.data.settings as { activeTerminalId?: string } | null)?.activeTerminalId;
+          const activeTab = savedActiveTerminalId
+            ? newTabs.find((t) => t.terminalId === savedActiveTerminalId)
+            : null;
+          setActiveTabId(activeTab?.id || newTabs[0]?.id || null);
 
           // Set all terminal IDs for pre-connection
           const terminalIds = response.data.terminals.map((t: WorkspaceTerminalItem) => t.id);
           setPreConnectTerminalIds(terminalIds);
+
+          // Store terminal display settings
+          const newSettings = new Map<string, TerminalDisplaySettings>();
+          response.data.terminals.forEach((t: WorkspaceTerminalItem) => {
+            newSettings.set(t.id, {
+              fontSize: t.fontSize,
+              fontFamily: t.fontFamily,
+              theme: t.theme,
+            });
+          });
+          setTerminalSettings(newSettings);
         } else {
           setTabs([]);
           setActiveTabId(null);
           setPreConnectTerminalIds([]);
+          setTerminalSettings(new Map());
         }
       }
     } catch (error) {
@@ -310,26 +350,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const saveLayoutToServer = useCallback(async () => {
     if (!session?.accessToken || !currentWorkspaceId) return;
 
+    // Find active terminal ID from current active tab
+    const activeTerminalId = tabs.find((t) => t.id === activeTabId)?.terminalId;
+
     try {
       await workspacesApi.update(
         currentWorkspaceId,
         {
           layout: layout as WorkspaceLayout | null,
           floatingLayout: floatingLayout,
+          settings: { activeTerminalId },
         },
         session.accessToken
       );
     } catch (error) {
       console.error('Failed to save layout:', error);
     }
-  }, [session?.accessToken, currentWorkspaceId, layout, floatingLayout]);
+  }, [session?.accessToken, currentWorkspaceId, layout, floatingLayout, tabs, activeTabId]);
 
   // Update floating layout
   const updateFloatingLayout = useCallback((newLayout: FloatingLayout) => {
     setFloatingLayout(newLayout);
   }, []);
 
-  // Debounced save when layout changes
+  // Debounced save when layout or active tab changes
   useEffect(() => {
     if (!mounted || !currentWorkspaceId || sessionStatus !== 'authenticated') return;
 
@@ -346,7 +390,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [layout, floatingLayout, mounted, currentWorkspaceId, sessionStatus, saveLayoutToServer]);
+  }, [layout, floatingLayout, activeTabId, mounted, currentWorkspaceId, sessionStatus, saveLayoutToServer]);
 
   // Get active tab object
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
@@ -632,16 +676,51 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const newTabs = [...prev];
       const [removed] = newTabs.splice(fromIndex, 1);
       newTabs.splice(toIndex, 0, removed);
+
+      // Save new order to server (fire and forget)
+      if (session?.accessToken && currentWorkspaceId) {
+        const terminalIds = newTabs
+          .filter((t) => t.type === 'terminal' && t.terminalId)
+          .map((t) => t.terminalId!);
+
+        if (terminalIds.length > 0) {
+          workspacesApi.reorderTerminals(
+            currentWorkspaceId,
+            { terminalIds },
+            session.accessToken
+          ).catch((err) => console.error('Failed to save tab order:', err));
+        }
+      }
+
       return newTabs;
     });
-  }, []);
+  }, [session?.accessToken, currentWorkspaceId]);
 
-  // Update tab name
+  // Update tab name (local only)
   const updateTabName = useCallback((tabId: string, name: string) => {
     setTabs((prev) =>
       prev.map((t) => (t.id === tabId ? { ...t, name } : t))
     );
   }, []);
+
+  // Rename terminal (persists to server)
+  const renameTerminal = useCallback(async (terminalId: string, name: string): Promise<boolean> => {
+    if (!session?.accessToken) return false;
+
+    try {
+      const response = await terminalsApi.update(terminalId, { name }, session.accessToken);
+      if (response.success) {
+        // Update tab name locally
+        setTabs((prev) =>
+          prev.map((t) => (t.terminalId === terminalId ? { ...t, name } : t))
+        );
+        return true;
+      }
+    } catch (error) {
+      console.error('Failed to rename terminal:', error);
+    }
+    return false;
+  }, [session?.accessToken]);
 
   // Set simple single-terminal layout
   const setSimpleLayout = useCallback((terminalId: string) => {
@@ -783,6 +862,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         reorderWorkspaces,
         refreshWorkspaces,
         preConnectTerminalIds,
+        getTerminalSettings,
         // Tabs
         tabs,
         activeTabId,
@@ -793,6 +873,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setActiveTab: handleSetActiveTab,
         reorderTabs,
         updateTabName,
+        renameTerminal,
         // Layout
         layout,
         splitPane,

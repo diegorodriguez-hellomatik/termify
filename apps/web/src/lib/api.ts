@@ -1420,6 +1420,7 @@ export interface Server {
   isDefault: boolean;
   projectCount?: number;
   connectionCount?: number;
+  activeTerminals?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -1429,6 +1430,14 @@ export interface ServerConnection {
   terminalId: string | null;
   success: boolean;
   error: string | null;
+  createdAt: string;
+}
+
+export interface ActiveServerTerminal {
+  id: string;
+  name: string;
+  type: 'LOCAL' | 'SSH';
+  status: string;
   createdAt: string;
 }
 
@@ -1537,6 +1546,18 @@ export const serversApi = {
       `/api/servers/${id}/connections`,
       { token }
     ),
+
+  getActiveTerminals: (id: string, token: string) =>
+    api<{ terminals: ActiveServerTerminal[]; total: number }>(
+      `/api/servers/${id}/terminals`,
+      { token }
+    ),
+
+  closeTerminal: (serverId: string, terminalId: string, token: string) =>
+    api<void>(`/api/servers/${serverId}/terminals/${terminalId}`, {
+      method: 'DELETE',
+      token,
+    }),
 };
 
 // ========================
@@ -1814,6 +1835,23 @@ export const teamWorkspacesApi = {
   remove: (teamId: string, workspaceId: string, token: string) =>
     api<void>(`/api/teams/${teamId}/workspaces/${workspaceId}`, {
       method: 'DELETE',
+      token,
+    }),
+
+  create: (
+    teamId: string,
+    data: {
+      name: string;
+      description?: string;
+      color?: string;
+      icon?: string;
+      isTeamDefault?: boolean;
+    },
+    token: string
+  ) =>
+    api<TeamWorkspace>(`/api/teams/${teamId}/workspaces/create`, {
+      method: 'POST',
+      body: data,
       token,
     }),
 };

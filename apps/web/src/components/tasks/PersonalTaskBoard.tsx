@@ -38,6 +38,7 @@ interface PersonalTaskBoardProps {
     status?: TaskStatus;
     priority?: TaskPriority;
     dueDate?: string | null;
+    workspaceId?: string | null;
   }) => Promise<PersonalTask | null>;
   onUpdateTask: (id: string, data: {
     title?: string;
@@ -213,6 +214,18 @@ export function PersonalTaskBoard({
     });
   };
 
+  const handleDuplicateTask = async (task: PersonalTask) => {
+    // Copy all task properties including workspaceId to keep it in the same workspace
+    await onCreateTask({
+      title: `${task.title} (copy)`,
+      description: task.description || undefined,
+      status: task.status,
+      priority: task.priority,
+      dueDate: task.dueDate || undefined,
+      workspaceId: task.workspaceId,
+    });
+  };
+
   return (
     <>
       <DndContext
@@ -243,6 +256,8 @@ export function PersonalTaskBoard({
                   tasks={tasksByStatus[column.status] || []}
                   onAddTask={() => handleOpenCreateModal(column.status)}
                   onTaskClick={setSelectedTask}
+                  onTaskDelete={onDeleteTask}
+                  onTaskDuplicate={handleDuplicateTask}
                 />
               );
             })}

@@ -2,21 +2,40 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware } from '../auth/middleware.js';
-import { TaskStatus, TaskPriority, TeamRole } from '@termify/shared';
+import { TaskPriority, TeamRole } from '@termify/shared';
 import { getWebSocketServer } from '../websocket/WebSocketServer.js';
 import { NotificationService } from '../services/NotificationService.js';
+import { createDefaultStatusesForTeam } from './team-task-status.js';
 
 const router = Router();
 
 // All routes require authentication
 router.use(authMiddleware);
 
-// Validation schemas
+// Helper to get default status key for a team
+async function getDefaultStatusKey(teamId: string): Promise<string> {
+  await createDefaultStatusesForTeam(teamId);
+  const defaultStatus = await prisma.taskStatusConfig.findFirst({
+    where: { teamId, isDefault: true },
+  });
+  return defaultStatus?.key || 'backlog';
+}
+
+// Helper to validate status exists for team
+async function validateStatusKey(teamId: string, statusKey: string): Promise<boolean> {
+  await createDefaultStatusesForTeam(teamId);
+  const status = await prisma.taskStatusConfig.findUnique({
+    where: { teamId_key: { teamId, key: statusKey } },
+  });
+  return !!status;
+}
+
+// Validation schemas - status is now a string (custom status key)
 const createTaskSchema = z.object({
   teamId: z.string(),
   title: z.string().min(1).max(200),
   description: z.string().max(5000).optional(),
-  status: z.enum(['BACKLOG', 'TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE']).optional().default('BACKLOG'),
+  status: z.string().min(1).max(50).optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional().default('MEDIUM'),
   dueDate: z.string().datetime().optional(),
   assigneeIds: z.array(z.string()).optional(),
@@ -25,7 +44,7 @@ const createTaskSchema = z.object({
 const updateTaskSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(5000).optional().nullable(),
-  status: z.enum(['BACKLOG', 'TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE']).optional(),
+  status: z.string().min(1).max(50).optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
   position: z.number().int().min(0).optional(),
   dueDate: z.string().datetime().optional().nullable(),
@@ -37,7 +56,7 @@ const assignTaskSchema = z.object({
 
 const reorderTasksSchema = z.object({
   taskIds: z.array(z.string()),
-  status: z.enum(['BACKLOG', 'TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE']),
+  status: z.string().min(1).max(50),
 });
 
 /**
@@ -141,9 +160,18 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
 
+    // Get default status if not provided
+    const statusKey = data.status || await getDefaultStatusKey(data.teamId);
+
+    // Validate the status exists
+    if (!(await validateStatusKey(data.teamId, statusKey))) {
+      res.status(400).json({ success: false, error: `Invalid status: ${statusKey}` });
+      return;
+    }
+
     // Get the highest position for this status
     const lastTask = await prisma.task.findFirst({
-      where: { teamId: data.teamId, status: data.status as TaskStatus },
+      where: { teamId: data.teamId, status: statusKey },
       orderBy: { position: 'desc' },
     });
     const position = (lastTask?.position ?? -1) + 1;
@@ -155,7 +183,7 @@ router.post('/', async (req: Request, res: Response) => {
         createdById: userId,
         title: data.title,
         description: data.description,
-        status: data.status as TaskStatus,
+        status: statusKey,
         priority: data.priority as TaskPriority,
         position,
         dueDate: data.dueDate ? new Date(data.dueDate) : null,
@@ -337,13 +365,19 @@ router.patch('/:id', async (req: Request, res: Response) => {
       return;
     }
 
+    // Validate the new status if provided
+    if (data.status && !(await validateStatusKey(existingTask.teamId, data.status))) {
+      res.status(400).json({ success: false, error: `Invalid status: ${data.status}` });
+      return;
+    }
+
     const statusChanged = data.status && data.status !== existingTask.status;
 
     // If status changed, update position
     let position = data.position;
     if (statusChanged && position === undefined) {
       const lastTask = await prisma.task.findFirst({
-        where: { teamId: existingTask.teamId, status: data.status as TaskStatus },
+        where: { teamId: existingTask.teamId, status: data.status },
         orderBy: { position: 'desc' },
       });
       position = (lastTask?.position ?? -1) + 1;
@@ -355,7 +389,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
       data: {
         title: data.title,
         description: data.description,
-        status: data.status as TaskStatus,
+        status: data.status,
         priority: data.priority as TaskPriority,
         position,
         dueDate: data.dueDate === null ? null : data.dueDate ? new Date(data.dueDate) : undefined,
@@ -379,14 +413,14 @@ router.patch('/:id', async (req: Request, res: Response) => {
     });
 
     // Notify assignees of status change
-    if (statusChanged) {
+    if (statusChanged && data.status) {
       const notificationService = NotificationService.getInstance();
       for (const assignee of existingTask.assignees) {
         if (assignee.teamMember.userId !== userId) {
           await notificationService.notifyTaskStatusChanged(
             assignee.teamMember.userId,
             task.title,
-            data.status as TaskStatus,
+            data.status,
             existingTask.teamId,
             task.id
           );
@@ -400,7 +434,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
           type: 'task.status.changed',
           teamId: existingTask.teamId,
           taskId,
-          status: data.status as TaskStatus,
+          status: data.status,
           changedById: userId,
         });
       }
@@ -737,6 +771,12 @@ router.post('/reorder', async (req: Request, res: Response) => {
       return;
     }
 
+    // Validate the status exists
+    if (!(await validateStatusKey(firstTask.teamId, data.status))) {
+      res.status(400).json({ success: false, error: `Invalid status: ${data.status}` });
+      return;
+    }
+
     // Update positions and status
     await prisma.$transaction(
       data.taskIds.map((id, index) =>
@@ -744,7 +784,7 @@ router.post('/reorder', async (req: Request, res: Response) => {
           where: { id },
           data: {
             position: index,
-            status: data.status as TaskStatus,
+            status: data.status,
           },
         })
       )

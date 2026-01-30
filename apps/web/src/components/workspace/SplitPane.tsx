@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { X, SplitSquareHorizontal, SplitSquareVertical, Maximize2, Loader2 } from 'lucide-react';
+import { X, SplitSquareHorizontal, SplitSquareVertical, Loader2 } from 'lucide-react';
 import { PaneNode, useWorkspace } from '@/contexts/WorkspaceContext';
 import { FileViewer } from '@/components/files/FileViewer';
 import { DroppablePane } from './DroppablePane';
@@ -28,7 +28,6 @@ interface SplitPaneProps {
   activeTerminalId?: string; // For file viewer context
   onSplitHorizontal?: (terminalId: string) => void;
   onSplitVertical?: (terminalId: string) => void;
-  onTabDrop?: (paneId: string, terminalId: string, position: 'left' | 'right' | 'top' | 'bottom' | 'center') => void;
   depth?: number;
 }
 
@@ -117,47 +116,54 @@ export function SplitPane({
   // Render terminal pane
   if (node.type === 'terminal' && node.terminalId) {
     return (
-      <div className="h-full w-full relative group">
-        {/* Pane toolbar */}
-        <div
-          className={cn(
-            'absolute top-0 right-0 z-20 flex items-center gap-1 p-1 rounded-bl-lg transition-opacity',
-            'opacity-0 group-hover:opacity-100',
-            isDark ? 'bg-black/50' : 'bg-white/50'
-          )}
-        >
-          <button
-            onClick={() => onSplitHorizontal?.(node.terminalId!)}
-            className="p-1 rounded hover:bg-muted transition-colors"
-            title="Split horizontal"
+      <DroppablePane
+        id={node.id}
+        terminalId={node.terminalId}
+        isDark={isDark}
+      >
+        <div className="h-full w-full relative group">
+          {/* Pane toolbar */}
+          <div
+            className={cn(
+              'absolute top-0 right-0 z-20 flex items-center gap-1 p-1 rounded-bl-lg transition-opacity',
+              'opacity-0 group-hover:opacity-100',
+              isDark ? 'bg-black/50' : 'bg-white/50'
+            )}
           >
-            <SplitSquareHorizontal size={14} className="text-muted-foreground" />
-          </button>
-          <button
-            onClick={() => onSplitVertical?.(node.terminalId!)}
-            className="p-1 rounded hover:bg-muted transition-colors"
-            title="Split vertical"
-          >
-            <SplitSquareVertical size={14} className="text-muted-foreground" />
-          </button>
-          {depth > 0 && (
             <button
-              onClick={() => closePane(node.id)}
-              className="p-1 rounded hover:bg-destructive/20 transition-colors"
-              title="Close pane"
+              onClick={() => onSplitHorizontal?.(node.terminalId!)}
+              className="p-1 rounded hover:bg-muted transition-colors"
+              title="Split horizontal"
             >
-              <X size={14} className="text-muted-foreground hover:text-destructive" />
+              <SplitSquareHorizontal size={14} className="text-muted-foreground" />
             </button>
-          )}
-        </div>
+            <button
+              onClick={() => onSplitVertical?.(node.terminalId!)}
+              className="p-1 rounded hover:bg-muted transition-colors"
+              title="Split vertical"
+            >
+              <SplitSquareVertical size={14} className="text-muted-foreground" />
+            </button>
+            {depth > 0 && (
+              <button
+                onClick={() => closePane(node.id)}
+                className="p-1 rounded hover:bg-destructive/20 transition-colors"
+                title="Close pane"
+              >
+                <X size={14} className="text-muted-foreground hover:text-destructive" />
+              </button>
+            )}
+          </div>
 
-        <Terminal
-          key={node.terminalId}
-          terminalId={node.terminalId}
-          token={token}
-          className="h-full"
-        />
-      </div>
+          <Terminal
+            key={node.terminalId}
+            terminalId={node.terminalId}
+            token={token}
+            className="h-full"
+            onClose={() => closePane(node.id)}
+          />
+        </div>
+      </DroppablePane>
     );
   }
 
@@ -233,19 +239,30 @@ export function SplitPane({
               />
             </div>
 
-            {/* Resize handle */}
+            {/* Resize handle - larger hit area with slim visual */}
             {node.children && index < node.children.length - 1 && (
               <div
                 onMouseDown={handleMouseDown(index)}
                 className={cn(
-                  'flex-shrink-0 transition-colors',
+                  'flex-shrink-0 relative group',
                   isHorizontal
-                    ? 'w-1 cursor-col-resize hover:bg-primary/50'
-                    : 'h-1 cursor-row-resize hover:bg-primary/50',
-                  isResizing && resizeIndex === index && 'bg-primary',
-                  isDark ? 'bg-border' : 'bg-border'
+                    ? 'w-2 cursor-col-resize'
+                    : 'h-2 cursor-row-resize'
                 )}
-              />
+              >
+                {/* Visual indicator */}
+                <div
+                  className={cn(
+                    'absolute transition-all',
+                    isHorizontal
+                      ? 'top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 group-hover:w-1 group-hover:bg-gray-400'
+                      : 'left-0 right-0 top-1/2 -translate-y-1/2 h-0.5 group-hover:h-1 group-hover:bg-gray-400',
+                    isResizing && resizeIndex === index ? 'bg-gray-400' : 'bg-border',
+                    isHorizontal && isResizing && resizeIndex === index && 'w-1',
+                    !isHorizontal && isResizing && resizeIndex === index && 'h-1'
+                  )}
+                />
+              </div>
             )}
           </div>
         ))}

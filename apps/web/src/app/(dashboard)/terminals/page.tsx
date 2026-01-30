@@ -71,16 +71,18 @@ function ContextMenu({
   onRename,
   onShare,
   onDelete,
+  onNewTerminal,
   isDark,
 }: {
   x: number;
   y: number;
-  terminal: TerminalData;
+  terminal?: TerminalData;
   onClose: () => void;
   onConnect: () => void;
   onRename: () => void;
   onShare: () => void;
   onDelete: () => void;
+  onNewTerminal: () => void;
   isDark: boolean;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -111,6 +113,33 @@ function ContextMenu({
   const adjustedY = Math.min(y, window.innerHeight - 200);
 
   if (typeof window === 'undefined') return null;
+
+  // Blank area context menu - show "New Terminal"
+  if (!terminal) {
+    return createPortal(
+      <div
+        ref={menuRef}
+        className="fixed z-[9999] min-w-[160px] py-1 rounded-lg shadow-xl border border-border overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+        style={{
+          left: adjustedX,
+          top: adjustedY,
+          backgroundColor: isDark ? '#1f1f1f' : '#ffffff',
+        }}
+      >
+        <button
+          onClick={() => {
+            onNewTerminal();
+            onClose();
+          }}
+          className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+        >
+          <Plus size={16} className="text-primary" />
+          <span>New Terminal</span>
+        </button>
+      </div>,
+      document.body
+    );
+  }
 
   return createPortal(
     <div
@@ -984,7 +1013,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
-    terminal: TerminalData;
+    terminal?: TerminalData;
   } | null>(null);
   const [terminalToShare, setTerminalToShare] = useState<TerminalData | null>(null);
   const [terminalToRename, setTerminalToRename] = useState<string | null>(null);
@@ -1179,26 +1208,35 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
     });
   };
 
+  const handleBlankAreaContextMenu = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, [role="button"], [data-no-context-menu]')) {
+      return;
+    }
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
   const handleContextMenuConnect = () => {
-    if (contextMenu) {
+    if (contextMenu?.terminal) {
       navigateToTerminal(contextMenu.terminal.id);
     }
   };
 
   const handleContextMenuRename = () => {
-    if (contextMenu) {
+    if (contextMenu?.terminal) {
       setTerminalToRename(contextMenu.terminal.id);
     }
   };
 
   const handleContextMenuShare = () => {
-    if (contextMenu) {
+    if (contextMenu?.terminal) {
       setTerminalToShare(contextMenu.terminal);
     }
   };
 
   const handleContextMenuDelete = () => {
-    if (contextMenu) {
+    if (contextMenu?.terminal) {
       handleDeleteTerminal(contextMenu.terminal.id);
     }
   };
@@ -1407,7 +1445,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
           },
         }}
       >
-        <div className="hidden md:block p-8">
+        <div className="hidden md:block p-8" onContextMenu={handleBlankAreaContextMenu}>
           {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -1654,7 +1692,10 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
             )}
           </div>
         ) : viewMode === 'list' && !showSharedOnly ? (
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div
+            key={`list-${viewMode}`}
+            className="bg-card border border-border rounded-xl overflow-hidden animate-in fade-in duration-200"
+          >
             <TerminalListView
               terminals={filteredTerminals as TerminalData[]}
               onDelete={handleDeleteTerminal}
@@ -1709,11 +1750,13 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
 
                   {/* User's terminals grid */}
                   <div
+                    key={`shared-grid-${viewMode}`}
                     className={cn(
-                      'grid gap-4 transition-all',
+                      'grid gap-4',
                       viewMode === 'compact'
                         ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
-                        : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+                        : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3',
+                      'animate-in fade-in duration-200'
                     )}
                   >
                     {userTerminals.map((terminal, index) => (
@@ -1742,11 +1785,13 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
             strategy={rectSortingStrategy}
           >
             <div
+              key={`grid-${viewMode}`}
               className={cn(
-                'grid gap-4 transition-all',
+                'grid gap-4',
                 viewMode === 'compact'
                   ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
-                  : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+                  : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3',
+                'animate-in fade-in duration-200'
               )}
             >
               {(filteredTerminals as TerminalData[]).map((terminal, index) => (
@@ -1807,6 +1852,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
             onRename={handleContextMenuRename}
             onShare={handleContextMenuShare}
             onDelete={handleContextMenuDelete}
+            onNewTerminal={handleOpenCreateModal}
             isDark={isDark}
           />
         )}

@@ -53,8 +53,32 @@
   * {
     @apply border-border;
   }
+  html {
+    font-size: var(--font-size, 16px); /* Default font size, can be changed in settings */
+  }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-jetbrains), 'JetBrains Mono', monospace;
+  }
+
+  /* Font family selection based on data-font attribute */
+  html[data-font="jetbrains"] body {
+    font-family: var(--font-jetbrains), 'JetBrains Mono', monospace;
+  }
+  html[data-font="fira"] body {
+    font-family: var(--font-fira), 'Fira Code', monospace;
+  }
+  html[data-font="source"] body {
+    font-family: var(--font-source), 'Source Code Pro', monospace;
+  }
+  html[data-font="ibm"] body {
+    font-family: var(--font-ibm), 'IBM Plex Mono', monospace;
+  }
+  html[data-font="space"] body {
+    font-family: var(--font-space), 'Space Mono', monospace;
+  }
+  html[data-font="inter"] body {
+    font-family: var(--font-inter), 'Inter', system-ui, sans-serif;
   }
 }
 
@@ -324,27 +348,27 @@
 
 /* Animation Classes */
 .fade-in {
-  animation: fadeIn 0.5s ease-out forwards;
+  animation: fadeIn 0.15s ease-out forwards;
   opacity: 0;
 }
 
 .slide-up {
-  animation: slideUp 0.6s ease-out forwards;
+  animation: slideUp 0.2s ease-out forwards;
   opacity: 0;
 }
 
 .slide-down {
-  animation: slideDown 0.6s ease-out forwards;
+  animation: slideDown 0.2s ease-out forwards;
   opacity: 0;
 }
 
 .slide-left {
-  animation: slideLeft 0.6s ease-out forwards;
+  animation: slideLeft 0.2s ease-out forwards;
   opacity: 0;
 }
 
 .scale-in {
-  animation: scaleIn 0.4s ease-out forwards;
+  animation: scaleIn 0.15s ease-out forwards;
   opacity: 0;
 }
 
@@ -388,7 +412,7 @@
 
 /* Card animations */
 .card-hover {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .card-hover:hover {
@@ -419,21 +443,21 @@ select:focus {
 
 /* Smooth page transitions */
 .page-transition {
-  animation: fadeIn 0.3s ease-out;
+  animation: fadeIn 0.15s ease-out;
 }
 
 /* Tooltip animation */
 .tooltip {
-  animation: scaleIn 0.2s ease-out;
+  animation: scaleIn 0.1s ease-out;
 }
 
 /* Modal/Dialog animation */
 .modal-backdrop {
-  animation: fadeIn 0.2s ease-out;
+  animation: fadeIn 0.1s ease-out;
 }
 
 .modal-content {
-  animation: scaleIn 0.3s ease-out;
+  animation: scaleIn 0.15s ease-out;
 }
 
 /* Smooth scrolling */
@@ -453,11 +477,9 @@ html {
   }
 }
 
-/* Global transitions for theme changes */
-* {
-  transition-property: background-color, border-color, color;
-  transition-duration: 0.2s;
-  transition-timing-function: ease-out;
+/* Theme transition only on body */
+body {
+  transition: background-color 0.15s ease-out;
 }
 
 /* Disable transition on specific elements that shouldn't animate */
@@ -596,7 +618,7 @@ body {
 
 /* Smooth card repositioning during drag */
 .drag-transition {
-  transition: transform 250ms cubic-bezier(0.25, 1, 0.5, 1);
+  transition: transform 150ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 /* Card being dragged (placeholder) */
@@ -626,9 +648,9 @@ body {
 
 /* Card hover lift effect */
 .card-draggable {
-  transition: transform 0.2s ease-out,
-              box-shadow 0.2s ease-out,
-              border-color 0.2s ease-out;
+  transition: transform 0.1s ease-out,
+              box-shadow 0.1s ease-out,
+              border-color 0.1s ease-out;
 }
 
 .card-draggable:hover:not(:active) {
@@ -648,8 +670,8 @@ body {
 }
 
 .sortable-grid > * {
-  transition: transform 250ms cubic-bezier(0.25, 1, 0.5, 1),
-              opacity 200ms ease;
+  transition: transform 150ms cubic-bezier(0.25, 1, 0.5, 1),
+              opacity 100ms ease;
 }
 
 /* Keyboard navigation focus styles */

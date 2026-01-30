@@ -7,6 +7,7 @@ import { prisma } from '../lib/prisma.js';
 import { authMiddleware } from '../auth/middleware.js';
 import { getPTYManager } from '../pty/PTYManager.js';
 import { SSHManager } from '../ssh/SSHManager.js';
+import { ephemeralManager } from '../ephemeral/EphemeralTerminalManager.js';
 import { DEFAULT_COLS, DEFAULT_ROWS, TerminalStatus } from '@termify/shared';
 
 const router = Router();
@@ -53,6 +54,10 @@ const updateTerminalSchema = z.object({
   rows: z.number().int().min(10).max(200).optional(),
   categoryId: z.string().optional().nullable(),
   position: z.number().int().min(0).optional(),
+  // Display settings
+  fontSize: z.number().int().min(8).max(32).optional().nullable(),
+  fontFamily: z.string().max(200).optional().nullable(),
+  theme: z.string().max(50).optional().nullable(),
 });
 
 const reorderSchema = z.object({
@@ -422,8 +427,33 @@ router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
     const id = req.params.id as string;
+    const ptyManager = getPTYManager();
+    const sshManager = SSHManager.getInstance();
 
-    // Verify ownership
+    // Check if this is an ephemeral terminal first
+    if (ephemeralManager.isEphemeral(id)) {
+      // Verify ownership of ephemeral terminal
+      if (!ephemeralManager.verifyOwnership(id, userId)) {
+        res.status(404).json({ success: false, error: 'Terminal not found' });
+        return;
+      }
+
+      // Kill PTY or SSH if running
+      if (ptyManager.has(id)) {
+        ptyManager.kill(id);
+      } else if (sshManager.hasSession(id)) {
+        sshManager.destroySession(id);
+      }
+
+      // Delete from memory
+      ephemeralManager.delete(id);
+
+      console.log(`[API] Deleted ephemeral terminal ${id}`);
+      res.json({ success: true });
+      return;
+    }
+
+    // Verify ownership of persistent terminal
     const existing = await prisma.terminal.findFirst({
       where: { id, userId },
     });
@@ -434,7 +464,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     // Kill PTY if running
-    const ptyManager = getPTYManager();
     ptyManager.kill(id);
 
     await prisma.terminal.delete({
@@ -1318,6 +1347,10 @@ const renameFileSchema = z.object({
   newName: z.string().min(1).max(255),
 });
 
+const setActiveTaskSchema = z.object({
+  taskId: z.string().nullable(),
+});
+
 /**
  * POST /api/terminals/:id/files/rename
  * Rename a file or directory
@@ -1406,6 +1439,173 @@ router.post('/:id/files/rename', async (req: Request, res: Response) => {
     }
     console.error('[API] Error renaming file:', error);
     res.status(500).json({ success: false, error: 'Failed to rename file' });
+  }
+});
+
+/**
+ * PATCH /api/terminals/:id/active-task
+ * Set or clear the active task for a terminal
+ */
+router.patch('/:id/active-task', async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const id = req.params.id as string;
+    const data = setActiveTaskSchema.parse(req.body);
+
+    // Verify ownership
+    const terminal = await prisma.terminal.findFirst({
+      where: { id, userId },
+    });
+
+    if (!terminal) {
+      res.status(404).json({ success: false, error: 'Terminal not found' });
+      return;
+    }
+
+    // If setting a new task, verify access
+    if (data.taskId) {
+      const task = await prisma.task.findUnique({
+        where: { id: data.taskId },
+      });
+
+      if (!task) {
+        res.status(404).json({ success: false, error: 'Task not found' });
+        return;
+      }
+
+      // Verify user is a member of the task's team
+      const membership = await prisma.teamMember.findUnique({
+        where: { teamId_userId: { teamId: task.teamId, userId } },
+      });
+
+      if (!membership) {
+        res.status(403).json({ success: false, error: 'You must be a team member to link this task' });
+        return;
+      }
+    }
+
+    // If there was a previous active task, end the history record
+    if (terminal.activeTaskId && terminal.activeTaskId !== data.taskId) {
+      const activeHistory = await prisma.taskTerminalHistory.findFirst({
+        where: {
+          taskId: terminal.activeTaskId,
+          terminalId: id,
+          endedAt: null,
+        },
+        orderBy: { startedAt: 'desc' },
+      });
+
+      if (activeHistory) {
+        const endedAt = new Date();
+        const duration = Math.floor((endedAt.getTime() - activeHistory.startedAt.getTime()) / 1000);
+        await prisma.taskTerminalHistory.update({
+          where: { id: activeHistory.id },
+          data: { endedAt, duration },
+        });
+      }
+    }
+
+    // Update terminal
+    const updatedTerminal = await prisma.terminal.update({
+      where: { id },
+      data: { activeTaskId: data.taskId },
+      include: {
+        activeTask: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            priority: true,
+            teamId: true,
+          },
+        },
+      },
+    });
+
+    // Create new history record if setting a task
+    if (data.taskId) {
+      await prisma.taskTerminalHistory.create({
+        data: {
+          taskId: data.taskId,
+          terminalId: id,
+        },
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: updatedTerminal.id,
+        activeTaskId: updatedTerminal.activeTaskId,
+        activeTask: updatedTerminal.activeTask,
+      },
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ success: false, error: error.errors });
+      return;
+    }
+    console.error('[API] Error setting active task:', error);
+    res.status(500).json({ success: false, error: 'Failed to set active task' });
+  }
+});
+
+/**
+ * GET /api/terminals/:id/task-history
+ * Get task history for a terminal
+ */
+router.get('/:id/task-history', async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const id = req.params.id as string;
+
+    // Verify ownership
+    const terminal = await prisma.terminal.findFirst({
+      where: { id, userId },
+    });
+
+    if (!terminal) {
+      res.status(404).json({ success: false, error: 'Terminal not found' });
+      return;
+    }
+
+    const history = await prisma.taskTerminalHistory.findMany({
+      where: { terminalId: id },
+      include: {
+        task: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            priority: true,
+            teamId: true,
+            team: {
+              select: { id: true, name: true, color: true },
+            },
+          },
+        },
+      },
+      orderBy: { startedAt: 'desc' },
+      take: 50, // Limit to last 50 records
+    });
+
+    res.json({
+      success: true,
+      data: {
+        history: history.map((h) => ({
+          id: h.id,
+          taskId: h.taskId,
+          terminalId: h.terminalId,
+          startedAt: h.startedAt,
+          endedAt: h.endedAt,
+          duration: h.duration,
+          task: h.task,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('[API] Error getting task history:', error);
+    res.status(500).json({ success: false, error: 'Failed to get task history' });
   }
 });
 
