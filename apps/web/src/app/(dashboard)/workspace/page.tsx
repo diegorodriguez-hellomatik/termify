@@ -1298,6 +1298,9 @@ function WorkspaceContent() {
                 onUseSnippet={handleUseSnippet}
                 onOpenQuickSwitcher={() => setShowQuickSwitcher(true)}
                 onOpenShortcuts={() => setShowShortcuts(true)}
+                onToggleTasks={() => setTasksPanelOpen(!tasksPanelOpen)}
+                tasksOpen={tasksPanelOpen}
+                taskCount={workspaceTasks.length}
                 isFullscreen={isFullscreen}
                 onToggleFullscreen={toggleFullscreen}
               />

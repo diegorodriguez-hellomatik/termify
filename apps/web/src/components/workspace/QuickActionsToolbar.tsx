@@ -10,6 +10,7 @@ import {
   Maximize,
   Minimize,
   Zap,
+  CheckSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SnippetsModal } from '@/components/snippets/SnippetsModal';
@@ -25,6 +26,9 @@ interface QuickActionsToolbarProps {
   onUseSnippet?: (command: string) => void;
   onOpenQuickSwitcher?: () => void;
   onOpenShortcuts?: () => void;
+  onToggleTasks?: () => void;
+  tasksOpen?: boolean;
+  taskCount?: number;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
   className?: string;
@@ -37,6 +41,9 @@ export function QuickActionsToolbar({
   onUseSnippet,
   onOpenQuickSwitcher,
   onOpenShortcuts,
+  onToggleTasks,
+  tasksOpen = false,
+  taskCount = 0,
   isFullscreen = false,
   onToggleFullscreen,
   className,
@@ -100,6 +107,28 @@ export function QuickActionsToolbar({
           <Code size={16} />
           <span className="hidden sm:inline">Snippets</span>
         </button>
+
+        {/* Tasks */}
+        {onToggleTasks && (
+          <button
+            onClick={onToggleTasks}
+            className={cn(
+              'flex items-center gap-2 px-3 py-1.5 text-sm rounded transition-colors relative',
+              tasksOpen
+                ? 'bg-primary/20 text-primary hover:bg-primary/30'
+                : 'hover:bg-muted'
+            )}
+            title="Workspace Tasks"
+          >
+            <CheckSquare size={16} />
+            <span className="hidden sm:inline">Tasks</span>
+            {taskCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
+                {taskCount > 9 ? '9+' : taskCount}
+              </span>
+            )}
+          </button>
+        )}
 
         <div className="w-px h-5 bg-border mx-1" />
 
