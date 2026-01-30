@@ -103,15 +103,13 @@ export function PersonalTaskDetailModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-background border rounded-lg shadow-xl w-full max-w-2xl p-6 z-[101] max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            {isOverdue && (
-              <div className="flex items-center gap-1 text-red-500 text-sm">
-                <AlertCircle className="h-4 w-4" />
-                Overdue
-              </div>
-            )}
-          </div>
+        <div className="flex items-center justify-end mb-2">
+          {isOverdue && (
+            <div className="flex items-center gap-1 text-red-500 text-sm mr-auto">
+              <AlertCircle className="h-4 w-4" />
+              Overdue
+            </div>
+          )}
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
