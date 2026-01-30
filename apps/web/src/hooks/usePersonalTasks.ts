@@ -44,18 +44,26 @@ export function usePersonalTasks(options: UsePersonalTasksOptions = {}) {
     },
     onTaskUpdated: (task: PersonalTask, previousStatus?: string) => {
       setTasks((prev) => {
+        // Check if task matches current workspace filter
+        const matchesFilter = workspaceId === undefined // All tasks mode
+          || (workspaceId === null && task.workspaceId === null) // Independent tasks
+          || task.workspaceId === workspaceId; // Specific workspace
+
         const index = prev.findIndex((t) => t.id === task.id);
         if (index === -1) {
-          // Task not in list - might need to add if it matches filter now
-          if (workspaceId === undefined) {
-            return [...prev, task];
-          } else if (workspaceId === null && task.workspaceId === null) {
-            return [...prev, task];
-          } else if (task.workspaceId === workspaceId) {
+          // Task not in list - add if it matches filter
+          if (matchesFilter) {
             return [...prev, task];
           }
           return prev;
         }
+
+        // Task exists in list
+        if (!matchesFilter) {
+          // Task moved to different workspace - remove from current view
+          return prev.filter((t) => t.id !== task.id);
+        }
+
         // Update existing task
         const updated = [...prev];
         updated[index] = { ...updated[index], ...task };
@@ -150,17 +158,29 @@ export function usePersonalTasks(options: UsePersonalTasksOptions = {}) {
     try {
       const response = await personalTasksApi.update(id, data, accessToken);
       if (response.success && response.data) {
-        setTasks((prev) =>
-          prev.map((task) => (task.id === id ? { ...task, ...response.data } : task))
-        );
-        return response.data;
+        const updatedTask = response.data;
+        setTasks((prev) => {
+          // Check if the task still matches the current workspace filter
+          const matchesFilter = workspaceId === undefined // All tasks mode
+            || (workspaceId === null && updatedTask.workspaceId === null) // Independent tasks
+            || updatedTask.workspaceId === workspaceId; // Specific workspace
+
+          if (!matchesFilter) {
+            // Task moved to different workspace - remove from current view
+            return prev.filter((task) => task.id !== id);
+          }
+
+          // Update the task in place
+          return prev.map((task) => (task.id === id ? { ...task, ...updatedTask } : task));
+        });
+        return updatedTask;
       }
       return null;
     } catch (err) {
       console.error('[usePersonalTasks] Error updating task:', err);
       return null;
     }
-  }, [accessToken]);
+  }, [accessToken, workspaceId]);
 
   const deleteTask = useCallback(async (id: string) => {
     if (!accessToken) return false;

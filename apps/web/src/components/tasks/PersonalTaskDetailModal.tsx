@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Loader2, Calendar, Trash2, AlertCircle } from 'lucide-react';
+import { X, Loader2, Calendar, Trash2, AlertCircle, FolderKanban } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DeleteConfirmModal } from '@/components/ui/DeleteConfirmModal';
-import { PersonalTask, TaskStatus, TaskPriority } from '@/lib/api';
+import { PersonalTask, TaskStatus, TaskPriority, Workspace } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
@@ -19,8 +19,10 @@ interface PersonalTaskDetailModalProps {
     status?: TaskStatus;
     priority?: TaskPriority;
     dueDate?: string | null;
+    workspaceId?: string | null;
   }) => Promise<PersonalTask | null>;
   onDelete: (id: string) => Promise<boolean>;
+  workspaces?: Workspace[];
 }
 
 const STATUSES: { value: TaskStatus; label: string; color: string }[] = [
@@ -43,12 +45,14 @@ export function PersonalTaskDetailModal({
   onClose,
   onUpdate,
   onDelete,
+  workspaces = [],
 }: PersonalTaskDetailModalProps) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description || '');
   const [status, setStatus] = useState(task.status);
   const [priority, setPriority] = useState(task.priority);
   const [dueDate, setDueDate] = useState(task.dueDate ? task.dueDate.split('T')[0] : '');
+  const [workspaceId, setWorkspaceId] = useState<string | null>(task.workspaceId || null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -70,6 +74,7 @@ export function PersonalTaskDetailModal({
         status,
         priority,
         dueDate: dueDate || null,
+        workspaceId,
       });
       onClose();
     } finally {
@@ -169,6 +174,49 @@ export function PersonalTaskDetailModal({
               </div>
             </div>
           </div>
+
+          {/* Workspace */}
+          {workspaces.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium mb-1.5">
+                <FolderKanban className="h-4 w-4 inline mr-1.5" />
+                Workspace
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  className={cn(
+                    'px-2.5 py-1 rounded text-xs transition-colors border',
+                    workspaceId === null
+                      ? 'border-primary bg-primary/10'
+                      : 'border-muted hover:border-muted-foreground'
+                  )}
+                  onClick={() => setWorkspaceId(null)}
+                >
+                  Independent
+                </button>
+                {workspaces.map((workspace) => (
+                  <button
+                    key={workspace.id}
+                    type="button"
+                    className={cn(
+                      'px-2.5 py-1 rounded text-xs transition-colors flex items-center gap-1',
+                      workspaceId === workspace.id
+                        ? 'text-white'
+                        : 'border border-muted hover:border-muted-foreground'
+                    )}
+                    style={{
+                      backgroundColor: workspaceId === workspace.id ? (workspace.color || '#6366f1') : undefined,
+                    }}
+                    onClick={() => setWorkspaceId(workspace.id)}
+                  >
+                    {workspace.icon && <span>{workspace.icon}</span>}
+                    {workspace.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Description */}
           <div>

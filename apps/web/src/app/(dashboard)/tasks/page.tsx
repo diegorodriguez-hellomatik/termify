@@ -1,7 +1,7 @@
 'use client';
 
-import { Plus, CheckSquare } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { Plus, CheckSquare, Settings } from 'lucide-react';
+import { useState } from 'react';
 import { PageLayout, PageHeader, PageContent } from '@/components/ui/page-layout';
 import { Button } from '@/components/ui/button';
 import { PersonalTaskBoard as TaskBoardComponent } from '@/components/tasks/PersonalTaskBoard';
@@ -11,45 +11,16 @@ import { usePersonalTasks } from '@/hooks/usePersonalTasks';
 import { useTaskStatuses } from '@/hooks/useTaskStatuses';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { TaskPriority } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { BlankAreaContextMenu } from '@/components/ui/BlankAreaContextMenu';
 
 export default function TasksPage() {
-  // null = all tasks, 'independent' = tasks without workspace, string = specific workspace
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
-  const [isTransitioning, setIsTransitioning] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const prevWorkspaceRef = useRef<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   const { workspaces, loadingWorkspaces } = useWorkspace();
 
-  // Handle workspace change with transition
-  const handleWorkspaceChange = (workspaceId: string | null) => {
-    if (workspaceId === selectedWorkspaceId) return;
-
-    setIsTransitioning(true);
-
-    // Small delay to allow fade out
-    setTimeout(() => {
-      setSelectedWorkspaceId(workspaceId);
-      prevWorkspaceRef.current = workspaceId;
-    }, 150);
-  };
-
-  // Reset transition state when tasks load
-  useEffect(() => {
-    if (!isTransitioning) return;
-
-    const timer = setTimeout(() => {
-      setIsTransitioning(false);
-    }, 50);
-
-    return () => clearTimeout(timer);
-  }, [selectedWorkspaceId]);
-
-  // Convert selectedWorkspaceId for the hook:
-  // null -> undefined (all tasks)
-  // 'independent' -> null (tasks without workspace)
-  // string -> string (specific workspace)
   const workspaceIdForHook = selectedWorkspaceId === null
     ? undefined
     : selectedWorkspaceId === 'independent'
@@ -70,6 +41,7 @@ export default function TasksPage() {
     statuses,
     isLoading: statusesLoading,
     refetch: refetchStatuses,
+    reorderStatuses,
   } = useTaskStatuses();
 
   const loading = loadingWorkspaces || tasksLoading || statusesLoading;
@@ -82,7 +54,6 @@ export default function TasksPage() {
     workspaceId?: string | null;
     commands?: string[] | null;
   }) => {
-    // If creating from a specific workspace tab, use that workspace
     const finalWorkspaceId = data.workspaceId !== undefined
       ? data.workspaceId
       : selectedWorkspaceId === 'independent'
@@ -91,9 +62,19 @@ export default function TasksPage() {
 
     return createTask({
       ...data,
-      status: 'TODO',
+      status: 'todo',
       workspaceId: finalWorkspaceId,
     });
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    // Only show on blank area (not on interactive elements)
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, [role="button"], [data-no-context-menu]')) {
+      return;
+    }
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
   const totalTasks = Object.values(tasksByStatus()).flat().length;
@@ -120,29 +101,32 @@ export default function TasksPage() {
         title="My Tasks"
         description="Manage your personal tasks"
         actions={
-          <Button onClick={() => setCreateModalOpen(true)} className="gap-2">
-            <Plus size={16} />
-            New Task
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSettingsOpen(true)}
+              className="gap-2"
+            >
+              <Settings size={16} />
+              Customize Columns
+            </Button>
+            <Button onClick={() => setCreateModalOpen(true)} className="gap-2">
+              <Plus size={16} />
+              New Task
+            </Button>
+          </div>
         }
       />
       <PageContent>
-        {/* Workspace Tabs */}
-        <WorkspaceTabs
-          workspaces={workspaces}
-          selectedWorkspaceId={selectedWorkspaceId}
-          onSelectWorkspace={handleWorkspaceChange}
-        />
+        <div onContextMenu={handleContextMenu} className="min-h-[calc(100vh-220px)]">
+          {/* Workspace Tabs */}
+          <WorkspaceTabs
+            workspaces={workspaces}
+            selectedWorkspaceId={selectedWorkspaceId}
+            onSelectWorkspace={setSelectedWorkspaceId}
+          />
 
-        {/* Content with transition */}
-        <div
-          className={cn(
-            'transition-all duration-200 ease-out',
-            isTransitioning
-              ? 'opacity-0 translate-y-2'
-              : 'opacity-100 translate-y-0'
-          )}
-        >
           {totalTasks === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 px-4">
               <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
@@ -161,18 +145,33 @@ export default function TasksPage() {
             <TaskBoardComponent
               tasksByStatus={tasksByStatus()}
               statuses={statuses}
+              workspaces={workspaces}
               onCreateTask={createTask}
               onUpdateTask={updateTask}
               onDeleteTask={deleteTask}
               onReorderTasks={reorderTasks}
+              onReorderStatuses={reorderStatuses}
               onStatusesChange={() => {
                 refetchStatuses();
                 fetchTasks();
               }}
+              settingsOpen={settingsOpen}
+              onSettingsOpenChange={setSettingsOpen}
             />
           )}
         </div>
       </PageContent>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <BlankAreaContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onAction={() => setCreateModalOpen(true)}
+          actionLabel="New Task"
+        />
+      )}
 
       {/* Create Task Modal */}
       <PersonalTaskCreateModal
