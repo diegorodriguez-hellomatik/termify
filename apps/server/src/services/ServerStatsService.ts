@@ -1,5 +1,7 @@
 import { Client, ConnectConfig } from 'ssh2';
 import { EventEmitter } from 'events';
+import * as si from 'systeminformation';
+import * as os from 'os';
 import { prisma } from '../lib/prisma.js';
 
 export interface ServerStats {
@@ -41,12 +43,22 @@ export interface ServerStats {
   timestamp: number;
 }
 
-interface StatsCollector {
+interface SSHCollector {
+  type: 'ssh';
   conn: Client;
   stream: any;
   serverId: string;
   userId: string;
 }
+
+interface LocalCollector {
+  type: 'local';
+  interval: NodeJS.Timeout;
+  serverId: string;
+  userId: string;
+}
+
+type StatsCollector = SSHCollector | LocalCollector;
 
 class ServerStatsService extends EventEmitter {
   private collectors: Map<string, StatsCollector> = new Map();
@@ -55,6 +67,13 @@ class ServerStatsService extends EventEmitter {
   // Path to stats-agent binary on remote servers
   private agentPath = '~/.termify/stats-agent';
   private agentInterval = 5; // seconds
+
+  /**
+   * Check if the host is localhost
+   */
+  private isLocalhost(host: string): boolean {
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  }
 
   /**
    * Start collecting stats for a server
@@ -74,99 +93,199 @@ class ServerStatsService extends EventEmitter {
         throw new Error('Server not found');
       }
 
-      const sshConfig: ConnectConfig = {
-        host: server.host,
-        port: server.port,
-        username: server.username || undefined,
-        readyTimeout: 10000,
-      };
-
-      // Add auth method
-      if (server.authMethod === 'PASSWORD' && server.password) {
-        sshConfig.password = server.password;
-      } else if (server.authMethod === 'KEY' && server.privateKey) {
-        sshConfig.privateKey = server.privateKey;
-      } else if (server.authMethod === 'AGENT') {
-        sshConfig.agent = process.env.SSH_AUTH_SOCK;
+      // Use local collection for localhost, SSH for remote servers
+      if (this.isLocalhost(server.host)) {
+        await this.startLocalCollecting(serverId, userId);
+      } else {
+        await this.startSSHCollecting(serverId, userId, server);
       }
 
-      const conn = new Client();
-
-      await new Promise<void>((resolve, reject) => {
-        conn.on('ready', resolve);
-        conn.on('error', reject);
-        conn.connect(sshConfig);
-      });
-
-      // Execute the stats-agent daemon
-      conn.exec(
-        `${this.agentPath} daemon ${this.agentInterval}`,
-        (err, stream) => {
-          if (err) {
-            console.error(`[ServerStats] Failed to start agent on ${serverId}:`, err.message);
-            this.emit('error', { serverId, error: err.message });
-            conn.end();
-            return;
-          }
-
-          let buffer = '';
-
-          stream.on('data', (data: Buffer) => {
-            buffer += data.toString();
-
-            // Process complete lines
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              if (line.trim()) {
-                try {
-                  const stats = this.parseStats(line);
-                  this.emit('stats', { serverId, userId, stats });
-                } catch (e) {
-                  // Could be OS info or other non-JSON output, try parsing legacy format
-                  const legacyStats = this.parseLegacyFormat(line);
-                  if (legacyStats) {
-                    this.emit('stats', { serverId, userId, stats: legacyStats });
-                  }
-                }
-              }
-            }
-          });
-
-          stream.stderr.on('data', (data: Buffer) => {
-            console.error(`[ServerStats] stderr from ${serverId}:`, data.toString());
-          });
-
-          stream.on('close', () => {
-            console.log(`[ServerStats] Stream closed for ${serverId}`);
-            this.collectors.delete(serverId);
-            this.emit('disconnected', { serverId });
-
-            // Schedule reconnect
-            this.scheduleReconnect(serverId, userId);
-          });
-
-          this.collectors.set(serverId, { conn, stream, serverId, userId });
-          console.log(`[ServerStats] Started collecting for ${serverId}`);
-          this.emit('connected', { serverId });
-        }
-      );
-
-      conn.on('error', (err) => {
-        console.error(`[ServerStats] Connection error for ${serverId}:`, err.message);
-        this.emit('error', { serverId, error: err.message });
-      });
-
-      conn.on('close', () => {
-        this.collectors.delete(serverId);
-      });
-
     } catch (error: any) {
-      console.error(`[ServerStats] Failed to connect to ${serverId}:`, error.message);
+      console.error(`[ServerStats] Failed to start collecting for ${serverId}:`, error.message);
       this.emit('error', { serverId, error: error.message });
       this.scheduleReconnect(serverId, userId);
     }
+  }
+
+  /**
+   * Start collecting stats locally (for localhost)
+   */
+  private async startLocalCollecting(serverId: string, userId: string): Promise<void> {
+    console.log(`[ServerStats] Starting local collection for ${serverId}`);
+
+    // Emit connected immediately
+    this.emit('connected', { serverId });
+
+    // Collect stats immediately
+    const stats = await this.collectLocalStats();
+    this.emit('stats', { serverId, userId, stats });
+
+    // Set up interval for continuous collection
+    const interval = setInterval(async () => {
+      try {
+        const stats = await this.collectLocalStats();
+        this.emit('stats', { serverId, userId, stats });
+      } catch (error: any) {
+        console.error(`[ServerStats] Local collection error:`, error.message);
+      }
+    }, this.agentInterval * 1000);
+
+    this.collectors.set(serverId, {
+      type: 'local',
+      interval,
+      serverId,
+      userId,
+    });
+
+    console.log(`[ServerStats] Started local collecting for ${serverId}`);
+  }
+
+  /**
+   * Collect stats from the local machine using systeminformation
+   */
+  private async collectLocalStats(): Promise<ServerStats> {
+    const [cpu, mem, disks, network, osInfo] = await Promise.all([
+      si.currentLoad(),
+      si.mem(),
+      si.fsSize(),
+      si.networkStats(),
+      si.osInfo(),
+    ]);
+
+    return {
+      cpu: cpu.cpus.map(c => Math.round(c.load * 100) / 100),
+      cpuAvg: Math.round(cpu.currentLoad * 100) / 100,
+      memory: {
+        total: mem.total,
+        used: mem.used,
+        swapTotal: mem.swaptotal,
+        swapUsed: mem.swapused,
+      },
+      disks: disks
+        .filter(d => d.size > 0)
+        .map(d => ({
+          name: d.fs,
+          available: d.available,
+          total: d.size,
+        })),
+      network: network
+        .filter(n => n.rx_bytes > 0 || n.tx_bytes > 0)
+        .map(n => ({
+          interface: n.iface,
+          rxBytes: n.rx_bytes,
+          txBytes: n.tx_bytes,
+          rxPackets: n.rx_sec !== null ? Math.round(n.rx_sec) : 0,
+          txPackets: n.tx_sec !== null ? Math.round(n.tx_sec) : 0,
+          rxErrors: n.rx_errors,
+          txErrors: n.tx_errors,
+        })),
+      processes: [],
+      os: {
+        name: osInfo.distro || os.type(),
+        kernel: osInfo.kernel,
+        version: osInfo.release,
+        arch: osInfo.arch,
+      },
+      timestamp: Date.now(),
+    };
+  }
+
+  /**
+   * Start collecting stats via SSH (for remote servers)
+   */
+  private async startSSHCollecting(serverId: string, userId: string, server: any): Promise<void> {
+    const sshConfig: ConnectConfig = {
+      host: server.host,
+      port: server.port,
+      username: server.username || undefined,
+      readyTimeout: 10000,
+    };
+
+    // Add auth method
+    if (server.authMethod === 'PASSWORD' && server.password) {
+      sshConfig.password = server.password;
+    } else if (server.authMethod === 'KEY' && server.privateKey) {
+      sshConfig.privateKey = server.privateKey;
+    } else if (server.authMethod === 'AGENT') {
+      sshConfig.agent = process.env.SSH_AUTH_SOCK;
+    }
+
+    const conn = new Client();
+
+    await new Promise<void>((resolve, reject) => {
+      conn.on('ready', resolve);
+      conn.on('error', reject);
+      conn.connect(sshConfig);
+    });
+
+    // Execute the stats-agent daemon
+    conn.exec(
+      `${this.agentPath} daemon ${this.agentInterval}`,
+      (err, stream) => {
+        if (err) {
+          console.error(`[ServerStats] Failed to start agent on ${serverId}:`, err.message);
+          this.emit('error', { serverId, error: `Failed to start stats-agent: ${err.message}. Make sure ~/.termify/stats-agent exists on the server.` });
+          conn.end();
+          return;
+        }
+
+        let buffer = '';
+
+        stream.on('data', (data: Buffer) => {
+          buffer += data.toString();
+
+          // Process complete lines
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.trim()) {
+              try {
+                const stats = this.parseStats(line);
+                this.emit('stats', { serverId, userId, stats });
+              } catch (e) {
+                // Could be OS info or other non-JSON output, try parsing legacy format
+                const legacyStats = this.parseLegacyFormat(line);
+                if (legacyStats) {
+                  this.emit('stats', { serverId, userId, stats: legacyStats });
+                }
+              }
+            }
+          }
+        });
+
+        stream.stderr.on('data', (data: Buffer) => {
+          const errMsg = data.toString().trim();
+          console.error(`[ServerStats] stderr from ${serverId}:`, errMsg);
+          // Check for common errors
+          if (errMsg.includes('not found') || errMsg.includes('No such file')) {
+            this.emit('error', { serverId, error: 'stats-agent not found. Please install it at ~/.termify/stats-agent' });
+          }
+        });
+
+        stream.on('close', () => {
+          console.log(`[ServerStats] Stream closed for ${serverId}`);
+          this.collectors.delete(serverId);
+          this.emit('disconnected', { serverId });
+
+          // Schedule reconnect
+          this.scheduleReconnect(serverId, userId);
+        });
+
+        this.collectors.set(serverId, { type: 'ssh', conn, stream, serverId, userId });
+        console.log(`[ServerStats] Started SSH collecting for ${serverId}`);
+        this.emit('connected', { serverId });
+      }
+    );
+
+    conn.on('error', (err) => {
+      console.error(`[ServerStats] Connection error for ${serverId}:`, err.message);
+      this.emit('error', { serverId, error: err.message });
+    });
+
+    conn.on('close', () => {
+      this.collectors.delete(serverId);
+    });
   }
 
   /**
@@ -175,8 +294,12 @@ class ServerStatsService extends EventEmitter {
   stopCollecting(serverId: string): void {
     const collector = this.collectors.get(serverId);
     if (collector) {
-      collector.stream?.close();
-      collector.conn?.end();
+      if (collector.type === 'ssh') {
+        collector.stream?.close();
+        collector.conn?.end();
+      } else if (collector.type === 'local') {
+        clearInterval(collector.interval);
+      }
       this.collectors.delete(serverId);
     }
 
