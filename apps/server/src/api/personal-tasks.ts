@@ -131,6 +131,15 @@ router.post('/', async (req: Request, res: Response) => {
       },
     });
 
+    // Broadcast task created event
+    const wsServer = getWebSocketServer();
+    if (wsServer) {
+      wsServer.broadcastToUser(userId, {
+        type: 'personal-task.created',
+        task,
+      });
+    }
+
     res.status(201).json({
       success: true,
       data: task,
@@ -238,6 +247,16 @@ router.patch('/:id', async (req: Request, res: Response) => {
       },
     });
 
+    // Broadcast task updated event
+    const wsServer = getWebSocketServer();
+    if (wsServer) {
+      wsServer.broadcastToUser(userId, {
+        type: 'personal-task.updated',
+        task,
+        previousStatus: statusChanged ? existingTask.status : undefined,
+      });
+    }
+
     res.json({
       success: true,
       data: task,
@@ -280,6 +299,16 @@ router.delete('/:id', async (req: Request, res: Response) => {
     await prisma.personalTask.delete({
       where: { id: taskId },
     });
+
+    // Broadcast task deleted event
+    const wsServer = getWebSocketServer();
+    if (wsServer) {
+      wsServer.broadcastToUser(userId, {
+        type: 'personal-task.deleted',
+        taskId,
+        status: task.status,
+      });
+    }
 
     res.json({ success: true });
   } catch (error) {
@@ -330,6 +359,22 @@ router.post('/reorder', async (req: Request, res: Response) => {
         })
       )
     );
+
+    // Fetch updated tasks to broadcast
+    const updatedTasks = await prisma.personalTask.findMany({
+      where: { id: { in: data.taskIds } },
+      orderBy: { position: 'asc' },
+    });
+
+    // Broadcast tasks reordered event
+    const wsServer = getWebSocketServer();
+    if (wsServer) {
+      wsServer.broadcastToUser(userId, {
+        type: 'personal-task.reordered',
+        tasks: updatedTasks,
+        status: data.status,
+      });
+    }
 
     res.json({ success: true });
   } catch (error) {

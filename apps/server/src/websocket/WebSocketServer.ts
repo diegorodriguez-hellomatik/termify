@@ -15,6 +15,7 @@ import { getPTYManager } from '../pty/PTYManager.js';
 import { SSHManager } from '../ssh/SSHManager.js';
 import { prisma } from '../lib/prisma.js';
 import { NotificationService } from '../services/NotificationService.js';
+import { ephemeralManager } from '../ephemeral/EphemeralTerminalManager.js';
 
 interface TokenPayload {
   userId: string;
@@ -260,6 +261,52 @@ export class TerminalWebSocketServer {
     const isDev = process.env.NODE_ENV === 'development';
     const shareToken = (ws as any).shareToken as string | undefined;
 
+    // Check if this is an ephemeral terminal first
+    const ephemeralTerminal = ephemeralManager.get(terminalId);
+    if (ephemeralTerminal) {
+      // Verify ownership for ephemeral terminal
+      if (!ephemeralManager.verifyOwnership(terminalId, userId)) {
+        this.send(ws, {
+          type: 'terminal.error',
+          terminalId,
+          error: 'Access denied',
+        });
+        return;
+      }
+
+      // Associate connection with ephemeral terminal (owner has full control)
+      console.log('[WS] Connecting to ephemeral terminal:', { terminalId, userId });
+      this.connectionManager.associateTerminal(ws, terminalId, {
+        permission: SharePermission.CONTROL,
+        isOwner: true,
+      });
+
+      const ptyManager = getPTYManager();
+      const sshManager = SSHManager.getInstance();
+      const ptyInstance = ptyManager.get(terminalId);
+      const sshRunning = sshManager.hasSession(terminalId);
+
+      // Get buffered output if PTY/SSH is running
+      const bufferedOutput = ptyInstance?.outputBuffer.getContents();
+
+      this.send(ws, {
+        type: 'terminal.connected',
+        terminalId,
+        bufferedOutput,
+        permission: SharePermission.CONTROL,
+      });
+
+      this.send(ws, {
+        type: 'terminal.status',
+        terminalId,
+        status: (ptyInstance?.status || (sshRunning ? TerminalStatus.RUNNING : ephemeralTerminal.status)) as TerminalStatus,
+      });
+
+      // Send viewers list (for ephemeral, just the owner)
+      this.sendViewersList(ws, terminalId);
+      return;
+    }
+
     // Check access: owner, email share, or link share
     let terminal = await prisma.terminal.findUnique({
       where: { id: terminalId },
@@ -421,6 +468,28 @@ export class TerminalWebSocketServer {
     terminalId: string
   ): Promise<void> {
     const isDev = process.env.NODE_ENV === 'development';
+
+    // Check if this is an ephemeral terminal first
+    const ephemeralTerminal = ephemeralManager.get(terminalId);
+    if (ephemeralTerminal) {
+      // Verify ownership for ephemeral terminal
+      if (!ephemeralManager.verifyOwnership(terminalId, userId)) {
+        this.send(ws, {
+          type: 'terminal.error',
+          terminalId,
+          error: 'Access denied',
+        });
+        return;
+      }
+
+      // Route to appropriate handler based on type
+      if (ephemeralTerminal.type === 'SSH') {
+        await this.handleEphemeralSSHStart(ws, userId, terminalId, ephemeralTerminal);
+      } else {
+        await this.handleEphemeralPTYStart(ws, userId, terminalId, ephemeralTerminal);
+      }
+      return;
+    }
 
     // Verify ownership (relaxed in dev mode)
     let terminal = await prisma.terminal.findFirst({
@@ -606,6 +675,128 @@ export class TerminalWebSocketServer {
   }
 
   /**
+   * Handle ephemeral PTY (local) terminal start
+   */
+  private async handleEphemeralPTYStart(
+    ws: WebSocket,
+    userId: string,
+    terminalId: string,
+    ephemeral: ReturnType<typeof ephemeralManager.get>
+  ): Promise<void> {
+    if (!ephemeral) return;
+
+    const ptyManager = getPTYManager();
+
+    // Check if already running
+    if (ptyManager.has(terminalId)) {
+      this.send(ws, {
+        type: 'terminal.status',
+        terminalId,
+        status: TerminalStatus.RUNNING,
+      });
+      return;
+    }
+
+    try {
+      // Update ephemeral status to starting
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.STARTING);
+      this.broadcastStatus(terminalId, TerminalStatus.STARTING);
+
+      // Create PTY instance
+      await ptyManager.create(terminalId, userId, {
+        cols: ephemeral.cols,
+        rows: ephemeral.rows,
+      });
+
+      // Update ephemeral status to running
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.RUNNING);
+      this.broadcastStatus(terminalId, TerminalStatus.RUNNING);
+    } catch (error) {
+      console.error(`[WS] Failed to start ephemeral PTY terminal ${terminalId}:`, error);
+
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.CRASHED);
+
+      this.send(ws, {
+        type: 'terminal.error',
+        terminalId,
+        error: error instanceof Error ? error.message : 'Failed to start terminal',
+      });
+
+      this.broadcastStatus(terminalId, TerminalStatus.CRASHED);
+    }
+  }
+
+  /**
+   * Handle ephemeral SSH terminal start
+   */
+  private async handleEphemeralSSHStart(
+    ws: WebSocket,
+    userId: string,
+    terminalId: string,
+    ephemeral: ReturnType<typeof ephemeralManager.get>
+  ): Promise<void> {
+    if (!ephemeral) return;
+
+    const sshManager = SSHManager.getInstance();
+
+    // Check if already running
+    if (sshManager.hasSession(terminalId)) {
+      this.send(ws, {
+        type: 'terminal.status',
+        terminalId,
+        status: TerminalStatus.RUNNING,
+      });
+      return;
+    }
+
+    // Validate SSH config
+    if (!ephemeral.sshHost || !ephemeral.sshUsername) {
+      this.send(ws, {
+        type: 'terminal.error',
+        terminalId,
+        error: 'SSH configuration is incomplete',
+      });
+      return;
+    }
+
+    try {
+      // Update ephemeral status to starting
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.STARTING);
+      this.broadcastStatus(terminalId, TerminalStatus.STARTING);
+
+      // Create SSH session
+      await sshManager.createSession(
+        terminalId,
+        {
+          host: ephemeral.sshHost,
+          port: ephemeral.sshPort || 22,
+          username: ephemeral.sshUsername,
+          password: ephemeral.sshPassword || undefined,
+          privateKey: ephemeral.sshPrivateKey || undefined,
+        },
+        ephemeral.cols,
+        ephemeral.rows
+      );
+
+      // Update ephemeral status to running
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.RUNNING);
+      this.broadcastStatus(terminalId, TerminalStatus.RUNNING);
+    } catch (error) {
+      console.error(`[WS] Failed to start ephemeral SSH terminal ${terminalId}:`, error);
+
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.CRASHED);
+
+      this.send(ws, {
+        type: 'terminal.error',
+        terminalId,
+        error: error instanceof Error ? error.message : 'Failed to connect to SSH server',
+      });
+
+      this.broadcastStatus(terminalId, TerminalStatus.CRASHED);
+    }
+  }
+
+  /**
    * Handle terminal stop request
    */
   private async handleTerminalStop(
@@ -613,7 +804,35 @@ export class TerminalWebSocketServer {
     userId: string,
     terminalId: string
   ): Promise<void> {
-    // Verify ownership
+    const ptyManager = getPTYManager();
+    const sshManager = SSHManager.getInstance();
+
+    // Check if this is an ephemeral terminal
+    const ephemeralTerminal = ephemeralManager.get(terminalId);
+    if (ephemeralTerminal) {
+      // Verify ownership
+      if (!ephemeralManager.verifyOwnership(terminalId, userId)) {
+        this.send(ws, {
+          type: 'terminal.error',
+          terminalId,
+          error: 'Access denied',
+        });
+        return;
+      }
+
+      // Kill PTY or SSH (no buffer saving for ephemeral)
+      if (ptyManager.has(terminalId)) {
+        ptyManager.kill(terminalId);
+      } else if (sshManager.hasSession(terminalId)) {
+        sshManager.destroySession(terminalId);
+      }
+
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.STOPPED);
+      this.broadcastStatus(terminalId, TerminalStatus.STOPPED);
+      return;
+    }
+
+    // Verify ownership for persistent terminal
     const terminal = await prisma.terminal.findFirst({
       where: { id: terminalId, userId },
     });
@@ -626,8 +845,6 @@ export class TerminalWebSocketServer {
       });
       return;
     }
-
-    const ptyManager = getPTYManager();
 
     // Save output buffer before killing
     const instance = ptyManager.get(terminalId);
@@ -725,14 +942,16 @@ export class TerminalWebSocketServer {
       return;
     }
 
-    // Update last active (ignore if terminal was deleted)
-    try {
-      await prisma.terminal.update({
-        where: { id: terminalId },
-        data: { lastActiveAt: new Date() },
-      });
-    } catch (error) {
-      // Terminal might have been deleted, ignore
+    // Update last active (skip for ephemeral terminals, ignore if terminal was deleted)
+    if (!ephemeralManager.isEphemeral(terminalId)) {
+      try {
+        await prisma.terminal.update({
+          where: { id: terminalId },
+          data: { lastActiveAt: new Date() },
+        });
+      } catch (error) {
+        // Terminal might have been deleted, ignore
+      }
     }
   }
 
@@ -763,14 +982,16 @@ export class TerminalWebSocketServer {
       return;
     }
 
-    // Update dimensions (ignore if terminal was deleted)
-    try {
-      await prisma.terminal.update({
-        where: { id: terminalId },
-        data: { cols, rows },
-      });
-    } catch (error) {
-      // Terminal might have been deleted, ignore
+    // Update dimensions (skip for ephemeral terminals, ignore if terminal was deleted)
+    if (!ephemeralManager.isEphemeral(terminalId)) {
+      try {
+        await prisma.terminal.update({
+          where: { id: terminalId },
+          data: { cols, rows },
+        });
+      } catch (error) {
+        // Terminal might have been deleted, ignore
+      }
     }
   }
 
@@ -864,14 +1085,16 @@ export class TerminalWebSocketServer {
 
     // Handle CWD changes
     ptyManager.on('cwd', async (terminalId: string, cwd: string) => {
-      // Update the database with the new CWD
-      try {
-        await prisma.terminal.update({
-          where: { id: terminalId },
-          data: { cwd },
-        });
-      } catch (error) {
-        // Terminal might have been deleted, ignore
+      // Update the database with the new CWD (skip for ephemeral terminals)
+      if (!ephemeralManager.isEphemeral(terminalId)) {
+        try {
+          await prisma.terminal.update({
+            where: { id: terminalId },
+            data: { cwd },
+          });
+        } catch (error) {
+          // Terminal might have been deleted, ignore
+        }
       }
 
       // Broadcast CWD change to connected clients
@@ -890,6 +1113,14 @@ export class TerminalWebSocketServer {
     ptyManager.on('exit', async (terminalId: string, exitCode: number) => {
       const status =
         exitCode === 0 ? TerminalStatus.STOPPED : TerminalStatus.CRASHED;
+
+      // Check if this is an ephemeral terminal
+      if (ephemeralManager.isEphemeral(terminalId)) {
+        ephemeralManager.updateStatus(terminalId, status);
+        this.broadcastStatus(terminalId, status);
+        console.log(`[WS] Ephemeral terminal ${terminalId} exited with code ${exitCode}`);
+        return;
+      }
 
       try {
         // Try to update, but the terminal might have been deleted
@@ -939,6 +1170,14 @@ export class TerminalWebSocketServer {
 
     // Handle SSH session close
     sshManager.on('close', async (terminalId: string) => {
+      // Check if this is an ephemeral terminal
+      if (ephemeralManager.isEphemeral(terminalId)) {
+        ephemeralManager.updateStatus(terminalId, TerminalStatus.STOPPED);
+        this.broadcastStatus(terminalId, TerminalStatus.STOPPED);
+        console.log(`[WS] Ephemeral SSH terminal ${terminalId} closed`);
+        return;
+      }
+
       try {
         await prisma.terminal.update({
           where: { id: terminalId },
@@ -953,6 +1192,26 @@ export class TerminalWebSocketServer {
     // Handle SSH errors
     sshManager.on('error', async (terminalId: string, error: Error) => {
       console.error(`[WS] SSH error for terminal ${terminalId}:`, error);
+
+      // Check if this is an ephemeral terminal
+      if (ephemeralManager.isEphemeral(terminalId)) {
+        ephemeralManager.updateStatus(terminalId, TerminalStatus.CRASHED);
+        this.broadcastStatus(terminalId, TerminalStatus.CRASHED);
+
+        // Send error message to connected clients
+        const message: ServerMessage = {
+          type: 'terminal.error',
+          terminalId,
+          error: error.message,
+        };
+        this.connectionManager.broadcastToTerminal(
+          terminalId,
+          JSON.stringify(message)
+        );
+        console.log(`[WS] Ephemeral SSH terminal ${terminalId} error: ${error.message}`);
+        return;
+      }
+
       try {
         const terminal = await prisma.terminal.update({
           where: { id: terminalId },
@@ -1186,6 +1445,13 @@ export class TerminalWebSocketServer {
    */
   broadcastToTeam(teamId: string, message: ServerMessage): void {
     this.connectionManager.broadcastToTeam(teamId, JSON.stringify(message));
+  }
+
+  /**
+   * Broadcast a message to all connections of a user
+   */
+  broadcastToUser(userId: string, message: any): void {
+    this.connectionManager.sendToUser(userId, message);
   }
 
   /**

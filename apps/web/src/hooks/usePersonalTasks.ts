@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { personalTasksApi, PersonalTask, TaskStatus, TaskPriority, TerminalTaskQueue } from '@/lib/api';
+import { usePersonalTasksSocket } from './usePersonalTasksSocket';
 
 interface UsePersonalTasksOptions {
   workspaceId?: string | null; // undefined = all tasks, null = tasks without workspace, string = specific workspace
@@ -15,6 +16,75 @@ export function usePersonalTasks(options: UsePersonalTasksOptions = {}) {
   const [tasks, setTasks] = useState<PersonalTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // WebSocket callbacks for real-time updates
+  const socketCallbacks = useMemo(() => ({
+    onTaskCreated: (task: PersonalTask) => {
+      setTasks((prev) => {
+        // Check if task already exists (avoid duplicates)
+        if (prev.some((t) => t.id === task.id)) return prev;
+        // Check if task matches current workspace filter
+        if (workspaceId === undefined) {
+          // All tasks mode - add it
+          return [...prev, task];
+        } else if (workspaceId === null) {
+          // Independent tasks mode - only add if no workspace
+          if (task.workspaceId === null) {
+            return [...prev, task];
+          }
+          return prev;
+        } else {
+          // Specific workspace mode
+          if (task.workspaceId === workspaceId) {
+            return [...prev, task];
+          }
+          return prev;
+        }
+      });
+    },
+    onTaskUpdated: (task: PersonalTask, previousStatus?: string) => {
+      setTasks((prev) => {
+        const index = prev.findIndex((t) => t.id === task.id);
+        if (index === -1) {
+          // Task not in list - might need to add if it matches filter now
+          if (workspaceId === undefined) {
+            return [...prev, task];
+          } else if (workspaceId === null && task.workspaceId === null) {
+            return [...prev, task];
+          } else if (task.workspaceId === workspaceId) {
+            return [...prev, task];
+          }
+          return prev;
+        }
+        // Update existing task
+        const updated = [...prev];
+        updated[index] = { ...updated[index], ...task };
+        return updated;
+      });
+    },
+    onTaskDeleted: (taskId: string) => {
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    },
+    onTasksReordered: (reorderedTasks: PersonalTask[], status: string) => {
+      setTasks((prev) => {
+        // Update positions for reordered tasks
+        const taskMap = new Map(reorderedTasks.map((t) => [t.id, t]));
+        return prev.map((task) => {
+          const updated = taskMap.get(task.id);
+          if (updated) {
+            return { ...task, position: updated.position, status: updated.status };
+          }
+          return task;
+        });
+      });
+    },
+  }), [workspaceId]);
+
+  // Connect to WebSocket for real-time updates
+  usePersonalTasksSocket({
+    token: accessToken || null,
+    callbacks: socketCallbacks,
+  });
 
   const fetchTasks = useCallback(async () => {
     if (!accessToken) {
@@ -153,25 +223,27 @@ export function usePersonalTasks(options: UsePersonalTasksOptions = {}) {
     }
   }, [accessToken]);
 
-  // Get tasks grouped by status
+  // Get tasks grouped by status (using lowercase keys to match DB)
   const tasksByStatus = useCallback(() => {
-    const grouped: Record<TaskStatus, PersonalTask[]> = {
-      BACKLOG: [],
-      TODO: [],
-      IN_PROGRESS: [],
-      IN_REVIEW: [],
-      DONE: [],
+    const grouped: Record<string, PersonalTask[]> = {
+      backlog: [],
+      todo: [],
+      in_progress: [],
+      in_review: [],
+      done: [],
     };
 
     tasks.forEach((task) => {
-      if (grouped[task.status]) {
-        grouped[task.status].push(task);
+      const statusKey = task.status.toLowerCase();
+      if (!grouped[statusKey]) {
+        grouped[statusKey] = [];
       }
+      grouped[statusKey].push(task);
     });
 
     // Sort by position within each status
     Object.keys(grouped).forEach((status) => {
-      grouped[status as TaskStatus].sort((a, b) => a.position - b.position);
+      grouped[status].sort((a, b) => a.position - b.position);
     });
 
     return grouped;
