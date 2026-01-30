@@ -160,6 +160,10 @@ model User {
   collaborativeMessages  CollaborativeMessage[]
   teamNotificationPrefs  TeamNotificationPrefs[]
 
+  // Chat messages
+  teamMessages           TeamMessage[]
+  workspaceMessages      WorkspaceMessage[]
+
   // Terminal task queues
   terminalTaskQueues     TerminalTaskQueue[]
 
@@ -483,6 +487,9 @@ model Workspace {
   shares      WorkspaceShare[]
   tasks       PersonalTask[]
 
+  // Workspace chat
+  messages    WorkspaceMessage[]
+
   createdAt   DateTime            @default(now()) @map("created_at")
   updatedAt   DateTime            @updatedAt @map("updated_at")
 
@@ -572,6 +579,9 @@ model Team {
   commandHistory      TeamCommandHistory[]
   auditLogs           TeamAuditLog[]
   notificationPrefs   TeamNotificationPrefs[]
+
+  // Team chat
+  messages            TeamMessage[]
 
   createdAt   DateTime     @default(now()) @map("created_at")
   updatedAt   DateTime     @updatedAt @map("updated_at")
@@ -891,6 +901,42 @@ model CollaborativeMessage {
   @@index([userId])
   @@index([createdAt])
   @@map("collaborative_messages")
+}
+
+// ========================
+// Team & Workspace Chat
+// ========================
+
+model TeamMessage {
+  id        String   @id @default(cuid())
+  teamId    String   @map("team_id")
+  userId    String   @map("user_id")
+  content   String   @db.Text
+
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([teamId, createdAt])
+  @@index([userId])
+  @@map("team_messages")
+}
+
+model WorkspaceMessage {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  userId      String    @map("user_id")
+  content     String    @db.Text
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id])
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([workspaceId, createdAt])
+  @@index([userId])
+  @@map("workspace_messages")
 }
 
 model TaskCommand {

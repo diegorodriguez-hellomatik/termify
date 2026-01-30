@@ -15,6 +15,7 @@ import {
   Unlock,
   LayoutGrid,
   ChevronDown,
+  MessageCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SnippetsModal } from '@/components/snippets/SnippetsModal';
@@ -41,6 +42,8 @@ interface QuickActionsToolbarProps {
   onToggleLayoutLock?: () => void;
   layoutMode?: LayoutMode;
   onLayoutModeChange?: (mode: LayoutMode) => void;
+  onToggleChat?: () => void;
+  chatOpen?: boolean;
   className?: string;
 }
 
@@ -60,6 +63,8 @@ export function QuickActionsToolbar({
   onToggleLayoutLock,
   layoutMode = 'flexible',
   onLayoutModeChange,
+  onToggleChat,
+  chatOpen = false,
   className,
 }: QuickActionsToolbarProps) {
   const [showSnippets, setShowSnippets] = useState(false);
@@ -143,6 +148,23 @@ export function QuickActionsToolbar({
                 {taskCount > 9 ? '9+' : taskCount}
               </span>
             )}
+          </button>
+        )}
+
+        {/* Chat */}
+        {onToggleChat && (
+          <button
+            onClick={onToggleChat}
+            className={cn(
+              'flex items-center gap-2 px-3 py-1.5 text-sm rounded transition-colors',
+              chatOpen
+                ? 'bg-primary/20 text-primary hover:bg-primary/30'
+                : 'hover:bg-muted'
+            )}
+            title="Workspace Chat"
+          >
+            <MessageCircle size={16} />
+            <span className="hidden sm:inline">Chat</span>
           </button>
         )}
 

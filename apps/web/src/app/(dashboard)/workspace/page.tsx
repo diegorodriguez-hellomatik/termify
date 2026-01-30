@@ -109,7 +109,9 @@ import { WorkspaceModal } from '@/components/workspaces/WorkspaceModal';
 import { WorkspaceEditModal } from '@/components/workspaces/WorkspaceEditModal';
 import { ShareWorkspaceModal } from '@/components/workspaces/ShareWorkspaceModal';
 import { usePersonalTasks } from '@/hooks/usePersonalTasks';
+import { useWorkspaceChat } from '@/hooks/useWorkspaceChat';
 import { TerminalTasksProvider } from '@/contexts/TerminalTasksContext';
+import { WorkspaceChatPanel } from '@/components/chat';
 import { cn } from '@/lib/utils';
 
 interface TerminalData {
@@ -624,6 +626,9 @@ function WorkspaceContent() {
   const [tasksPanelOpen, setTasksPanelOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<PersonalTask | null>(null);
 
+  // Chat panel state
+  const [chatPanelOpen, setChatPanelOpen] = useState(false);
+
   // Fetch tasks for current workspace
   const {
     tasks: workspaceTasks,
@@ -631,6 +636,19 @@ function WorkspaceContent() {
     updateTask,
     deleteTask,
   } = usePersonalTasks({ workspaceId: currentWorkspaceId || undefined });
+
+  // Workspace chat
+  const {
+    messages: chatMessages,
+    onlineUsers: chatOnlineUsers,
+    isLoading: chatLoading,
+    isConnected: chatConnected,
+    sendMessage: sendChatMessage,
+  } = useWorkspaceChat({
+    token: session?.accessToken ?? null,
+    workspaceId: currentWorkspaceId,
+    enabled: chatPanelOpen && viewMode === 'workspace',
+  });
 
   // Get fullscreen state and layout settings from context
   const { isFullscreen, toggleFullscreen, isLayoutLocked, toggleLayoutLock, layoutMode, setLayoutMode } = useWorkspace();
@@ -1302,6 +1320,8 @@ function WorkspaceContent() {
                 onToggleTasks={() => setTasksPanelOpen(!tasksPanelOpen)}
                 tasksOpen={tasksPanelOpen}
                 taskCount={workspaceTasks.length}
+                onToggleChat={() => setChatPanelOpen(!chatPanelOpen)}
+                chatOpen={chatPanelOpen}
                 isFullscreen={isFullscreen}
                 onToggleFullscreen={toggleFullscreen}
                 isLayoutLocked={isLayoutLocked}
@@ -1485,6 +1505,20 @@ function WorkspaceContent() {
           onUpdate={updateTask}
           onDelete={deleteTask}
           workspaces={workspaces}
+        />
+      )}
+
+      {/* Workspace Chat Panel */}
+      {viewMode === 'workspace' && (
+        <WorkspaceChatPanel
+          isOpen={chatPanelOpen}
+          messages={chatMessages}
+          onlineUsers={chatOnlineUsers}
+          currentUserId={session?.user?.id || ''}
+          isLoading={chatLoading}
+          isConnected={chatConnected}
+          onSendMessage={sendChatMessage}
+          onClose={() => setChatPanelOpen(false)}
         />
       )}
     </div>

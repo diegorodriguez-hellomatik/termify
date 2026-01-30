@@ -22,6 +22,7 @@ export interface Connection {
   lastMessageReset: number;
   teamSubscriptions: Set<string>;
   serverSubscriptions: Set<string>;
+  workspaceSubscriptions: Set<string>;
 }
 
 /**
@@ -33,6 +34,7 @@ export class ConnectionManager {
   private terminalConnections: Map<string, Set<WebSocket>> = new Map();
   private teamConnections: Map<string, Set<WebSocket>> = new Map();
   private serverConnections: Map<string, Set<WebSocket>> = new Map();
+  private workspaceConnections: Map<string, Set<WebSocket>> = new Map();
   private pingInterval: NodeJS.Timeout | null = null;
 
   constructor() {
@@ -60,6 +62,7 @@ export class ConnectionManager {
       lastMessageReset: Date.now(),
       teamSubscriptions: new Set(),
       serverSubscriptions: new Set(),
+      workspaceSubscriptions: new Set(),
     };
 
     this.connections.set(ws, connection);
@@ -118,6 +121,17 @@ export class ConnectionManager {
         serverSockets.delete(ws);
         if (serverSockets.size === 0) {
           this.serverConnections.delete(serverId);
+        }
+      }
+    }
+
+    // Remove from workspace tracking
+    for (const workspaceId of connection.workspaceSubscriptions) {
+      const workspaceSockets = this.workspaceConnections.get(workspaceId);
+      if (workspaceSockets) {
+        workspaceSockets.delete(ws);
+        if (workspaceSockets.size === 0) {
+          this.workspaceConnections.delete(workspaceId);
         }
       }
     }
@@ -341,6 +355,139 @@ export class ConnectionManager {
   }
 
   /**
+   * Subscribe a connection to a workspace
+   */
+  subscribeToWorkspace(ws: WebSocket, workspaceId: string): void {
+    const connection = this.connections.get(ws);
+    if (!connection) return;
+
+    connection.workspaceSubscriptions.add(workspaceId);
+
+    if (!this.workspaceConnections.has(workspaceId)) {
+      this.workspaceConnections.set(workspaceId, new Set());
+    }
+    this.workspaceConnections.get(workspaceId)!.add(ws);
+  }
+
+  /**
+   * Unsubscribe a connection from a workspace
+   */
+  unsubscribeFromWorkspace(ws: WebSocket, workspaceId: string): void {
+    const connection = this.connections.get(ws);
+    if (!connection) return;
+
+    connection.workspaceSubscriptions.delete(workspaceId);
+
+    const workspaceSockets = this.workspaceConnections.get(workspaceId);
+    if (workspaceSockets) {
+      workspaceSockets.delete(ws);
+      if (workspaceSockets.size === 0) {
+        this.workspaceConnections.delete(workspaceId);
+      }
+    }
+  }
+
+  /**
+   * Broadcast to all connections subscribed to a workspace
+   */
+  broadcastToWorkspace(workspaceId: string, message: string): void {
+    const sockets = this.workspaceConnections.get(workspaceId);
+    if (!sockets) return;
+
+    for (const ws of sockets) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+      }
+    }
+  }
+
+  /**
+   * Get online members for a team
+   */
+  getTeamOnlineMembers(teamId: string): Array<{
+    odId: string;
+    visitorId: string;
+    userId: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+  }> {
+    const sockets = this.teamConnections.get(teamId);
+    if (!sockets) return [];
+
+    const members: Array<{
+      odId: string;
+      visitorId: string;
+      userId: string;
+      email: string;
+      name: string | null;
+      image: string | null;
+    }> = [];
+
+    // Deduplicate by userId
+    const seenUserIds = new Set<string>();
+    for (const ws of sockets) {
+      const conn = this.connections.get(ws);
+      if (conn && !seenUserIds.has(conn.userId)) {
+        seenUserIds.add(conn.userId);
+        members.push({
+          odId: conn.odId,
+          visitorId: conn.visitorId,
+          userId: conn.userId,
+          email: conn.email,
+          name: conn.name,
+          image: conn.image,
+        });
+      }
+    }
+
+    return members;
+  }
+
+  /**
+   * Get online users for a workspace
+   */
+  getWorkspaceOnlineUsers(workspaceId: string): Array<{
+    odId: string;
+    visitorId: string;
+    userId: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+  }> {
+    const sockets = this.workspaceConnections.get(workspaceId);
+    if (!sockets) return [];
+
+    const users: Array<{
+      odId: string;
+      visitorId: string;
+      userId: string;
+      email: string;
+      name: string | null;
+      image: string | null;
+    }> = [];
+
+    // Deduplicate by userId
+    const seenUserIds = new Set<string>();
+    for (const ws of sockets) {
+      const conn = this.connections.get(ws);
+      if (conn && !seenUserIds.has(conn.userId)) {
+        seenUserIds.add(conn.userId);
+        users.push({
+          odId: conn.odId,
+          visitorId: conn.visitorId,
+          userId: conn.userId,
+          email: conn.email,
+          name: conn.name,
+          image: conn.image,
+        });
+      }
+    }
+
+    return users;
+  }
+
+  /**
    * Send message to a specific connection
    */
   send(ws: WebSocket, message: object): void {
@@ -402,6 +549,7 @@ export class ConnectionManager {
     activeTerminals: number;
     activeTeams: number;
     activeServers: number;
+    activeWorkspaces: number;
   } {
     return {
       totalConnections: this.connections.size,
@@ -409,6 +557,7 @@ export class ConnectionManager {
       activeTerminals: this.terminalConnections.size,
       activeTeams: this.teamConnections.size,
       activeServers: this.serverConnections.size,
+      activeWorkspaces: this.workspaceConnections.size,
     };
   }
 
@@ -429,5 +578,6 @@ export class ConnectionManager {
     this.terminalConnections.clear();
     this.teamConnections.clear();
     this.serverConnections.clear();
+    this.workspaceConnections.clear();
   }
 }

@@ -209,7 +209,12 @@ export function mapCollaborativeMessage(message: {
     terminalId: message.terminalId,
     userId: message.userId,
     content: message.content,
-    user: message.user ? mapUser(message.user) as SharedUser : undefined,
+    user: message.user ? {
+      id: message.user.id,
+      email: message.user.email,
+      name: message.user.name,
+      image: message.user.image,
+    } : undefined,
     createdAt: message.createdAt,
   };
 }

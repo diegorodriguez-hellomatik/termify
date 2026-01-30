@@ -449,14 +449,52 @@ export interface TeamNotificationPrefs {
   updatedAt: Date;
 }
 
+// User info for messages (partial user data)
+export interface MessageUser {
+  id: string;
+  email: string;
+  name: string | null;
+  image: string | null;
+}
+
 // Collaborative Message model
 export interface CollaborativeMessage {
   id: string;
   terminalId: string;
   userId: string;
   content: string;
-  user?: User;
+  user?: MessageUser;
   createdAt: Date;
+}
+
+// Team Message model
+export interface TeamMessage {
+  id: string;
+  teamId: string;
+  userId: string;
+  content: string;
+  user?: MessageUser;
+  createdAt: Date;
+}
+
+// Workspace Message model
+export interface WorkspaceMessage {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  content: string;
+  user?: MessageUser;
+  createdAt: Date;
+}
+
+// Online Member for teams/workspaces
+export interface OnlineMember {
+  odId: string;
+  visitorId: string;
+  userId: string;
+  email: string;
+  name: string | null;
+  image: string | null;
 }
 
 // Task Command model
@@ -533,6 +571,14 @@ export type ClientMessage =
   | { type: 'terminal.stop'; terminalId: string }
   | { type: 'team.subscribe'; teamId: string }
   | { type: 'team.unsubscribe'; teamId: string }
+  // Team chat messages
+  | { type: 'chat.team.send'; teamId: string; content: string }
+  | { type: 'chat.team.history'; teamId: string; limit?: number; before?: string }
+  // Workspace messages
+  | { type: 'workspace.subscribe'; workspaceId: string }
+  | { type: 'workspace.unsubscribe'; workspaceId: string }
+  | { type: 'chat.workspace.send'; workspaceId: string; content: string }
+  | { type: 'chat.workspace.history'; workspaceId: string; limit?: number; before?: string }
   // Collaboration messages
   | { type: 'terminal.cursor.move'; terminalId: string; x: number; y: number; scrollTop: number }
   | { type: 'terminal.chat.send'; terminalId: string; content: string }
@@ -564,6 +610,15 @@ export type ServerMessage =
   | { type: 'team.member.joined'; teamId: string; member: TeamMember }
   | { type: 'team.member.left'; teamId: string; memberId: string }
   | { type: 'team.member.role.changed'; teamId: string; memberId: string; role: TeamRole; customRole?: TeamCustomRole }
+  // Team chat events
+  | { type: 'chat.team.message'; teamId: string; message: TeamMessage }
+  | { type: 'chat.team.messages'; teamId: string; messages: TeamMessage[] }
+  | { type: 'chat.team.online'; teamId: string; members: OnlineMember[] }
+  // Workspace events
+  | { type: 'workspace.subscribed'; workspaceId: string }
+  | { type: 'chat.workspace.message'; workspaceId: string; message: WorkspaceMessage }
+  | { type: 'chat.workspace.messages'; workspaceId: string; messages: WorkspaceMessage[] }
+  | { type: 'chat.workspace.online'; workspaceId: string; users: OnlineMember[] }
   // Team role events
   | { type: 'team.role.created'; teamId: string; role: TeamCustomRole }
   | { type: 'team.role.updated'; teamId: string; role: TeamCustomRole }

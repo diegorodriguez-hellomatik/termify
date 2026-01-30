@@ -10,6 +10,8 @@ import {
   SharePermission,
   ShareType,
   TerminalViewer,
+  TeamMessage,
+  WorkspaceMessage,
 } from '@termify/shared';
 import { ConnectionManager } from './ConnectionManager.js';
 import { getPTYManager } from '../pty/PTYManager.js';
@@ -254,6 +256,32 @@ export class TerminalWebSocketServer {
 
       case 'server.stats.unsubscribe':
         await this.handleServerStatsUnsubscribe(ws, (message as any).serverId);
+        break;
+
+      // Team chat messages
+      case 'chat.team.send':
+        await this.handleTeamChatSend(ws, userId, (message as any).teamId, (message as any).content);
+        break;
+
+      case 'chat.team.history':
+        await this.handleTeamChatHistory(ws, userId, (message as any).teamId, (message as any).limit, (message as any).before);
+        break;
+
+      // Workspace messages
+      case 'workspace.subscribe':
+        await this.handleWorkspaceSubscribe(ws, userId, (message as any).workspaceId);
+        break;
+
+      case 'workspace.unsubscribe':
+        await this.handleWorkspaceUnsubscribe(ws, (message as any).workspaceId);
+        break;
+
+      case 'chat.workspace.send':
+        await this.handleWorkspaceChatSend(ws, userId, (message as any).workspaceId, (message as any).content);
+        break;
+
+      case 'chat.workspace.history':
+        await this.handleWorkspaceChatHistory(ws, userId, (message as any).workspaceId, (message as any).limit, (message as any).before);
         break;
 
       default:
@@ -1610,6 +1638,295 @@ export class TerminalWebSocketServer {
         this.send(ws, message);
       }
     });
+  }
+
+  // ============================================
+  // Team Chat Methods
+  // ============================================
+
+  /**
+   * Handle team chat message send
+   */
+  private async handleTeamChatSend(
+    ws: WebSocket,
+    userId: string,
+    teamId: string,
+    content: string
+  ): Promise<void> {
+    if (!content?.trim()) {
+      this.send(ws, { type: 'error', message: 'Message content is required' });
+      return;
+    }
+
+    // Verify membership
+    const membership = await prisma.teamMember.findUnique({
+      where: { teamId_userId: { teamId, userId } },
+    });
+
+    if (!membership) {
+      this.send(ws, { type: 'error', message: 'You are not a member of this team' });
+      return;
+    }
+
+    // Create message
+    const message = await prisma.teamMessage.create({
+      data: {
+        teamId,
+        userId,
+        content: content.trim(),
+      },
+      include: {
+        user: { select: { id: true, email: true, name: true, image: true } },
+      },
+    });
+
+    // Broadcast to all team subscribers
+    const serverMessage: ServerMessage = {
+      type: 'chat.team.message',
+      teamId,
+      message: {
+        id: message.id,
+        teamId: message.teamId,
+        userId: message.userId,
+        content: message.content,
+        user: message.user,
+        createdAt: message.createdAt,
+      } as TeamMessage,
+    };
+
+    this.connectionManager.broadcastToTeam(teamId, JSON.stringify(serverMessage));
+  }
+
+  /**
+   * Handle team chat history request
+   */
+  private async handleTeamChatHistory(
+    ws: WebSocket,
+    userId: string,
+    teamId: string,
+    limit: number = 50,
+    before?: string
+  ): Promise<void> {
+    // Verify membership
+    const membership = await prisma.teamMember.findUnique({
+      where: { teamId_userId: { teamId, userId } },
+    });
+
+    if (!membership) {
+      this.send(ws, { type: 'error', message: 'You are not a member of this team' });
+      return;
+    }
+
+    // Fetch messages
+    const messages = await prisma.teamMessage.findMany({
+      where: {
+        teamId,
+        ...(before ? { createdAt: { lt: new Date(before) } } : {}),
+      },
+      include: {
+        user: { select: { id: true, email: true, name: true, image: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit, 100),
+    });
+
+    // Send messages in chronological order
+    this.send(ws, {
+      type: 'chat.team.messages',
+      teamId,
+      messages: messages.reverse().map((m) => ({
+        id: m.id,
+        teamId: m.teamId,
+        userId: m.userId,
+        content: m.content,
+        user: m.user,
+        createdAt: m.createdAt,
+      })),
+    });
+
+    // Also send online members
+    const onlineMembers = this.connectionManager.getTeamOnlineMembers(teamId);
+    this.send(ws, {
+      type: 'chat.team.online',
+      teamId,
+      members: onlineMembers,
+    });
+  }
+
+  // ============================================
+  // Workspace Chat Methods
+  // ============================================
+
+  /**
+   * Handle workspace subscription
+   */
+  private async handleWorkspaceSubscribe(
+    ws: WebSocket,
+    userId: string,
+    workspaceId: string
+  ): Promise<void> {
+    // Verify access (owner or shared)
+    const workspace = await prisma.workspace.findFirst({
+      where: {
+        id: workspaceId,
+        OR: [
+          { userId },
+          { shares: { some: { sharedWithId: userId } } },
+          { team: { members: { some: { userId } } } },
+        ],
+      },
+    });
+
+    if (!workspace) {
+      this.send(ws, { type: 'error', message: 'Workspace not found or access denied' });
+      return;
+    }
+
+    // Subscribe to workspace
+    this.connectionManager.subscribeToWorkspace(ws, workspaceId);
+    this.send(ws, { type: 'workspace.subscribed', workspaceId });
+    console.log(`[WS] User ${userId} subscribed to workspace ${workspaceId}`);
+  }
+
+  /**
+   * Handle workspace unsubscription
+   */
+  private async handleWorkspaceUnsubscribe(
+    ws: WebSocket,
+    workspaceId: string
+  ): Promise<void> {
+    this.connectionManager.unsubscribeFromWorkspace(ws, workspaceId);
+    console.log(`[WS] Connection unsubscribed from workspace ${workspaceId}`);
+  }
+
+  /**
+   * Handle workspace chat message send
+   */
+  private async handleWorkspaceChatSend(
+    ws: WebSocket,
+    userId: string,
+    workspaceId: string,
+    content: string
+  ): Promise<void> {
+    if (!content?.trim()) {
+      this.send(ws, { type: 'error', message: 'Message content is required' });
+      return;
+    }
+
+    // Verify access
+    const workspace = await prisma.workspace.findFirst({
+      where: {
+        id: workspaceId,
+        OR: [
+          { userId },
+          { shares: { some: { sharedWithId: userId } } },
+          { team: { members: { some: { userId } } } },
+        ],
+      },
+    });
+
+    if (!workspace) {
+      this.send(ws, { type: 'error', message: 'Workspace not found or access denied' });
+      return;
+    }
+
+    // Create message
+    const message = await prisma.workspaceMessage.create({
+      data: {
+        workspaceId,
+        userId,
+        content: content.trim(),
+      },
+      include: {
+        user: { select: { id: true, email: true, name: true, image: true } },
+      },
+    });
+
+    // Broadcast to all workspace subscribers
+    const serverMessage: ServerMessage = {
+      type: 'chat.workspace.message',
+      workspaceId,
+      message: {
+        id: message.id,
+        workspaceId: message.workspaceId,
+        userId: message.userId,
+        content: message.content,
+        user: message.user,
+        createdAt: message.createdAt,
+      } as WorkspaceMessage,
+    };
+
+    this.connectionManager.broadcastToWorkspace(workspaceId, JSON.stringify(serverMessage));
+  }
+
+  /**
+   * Handle workspace chat history request
+   */
+  private async handleWorkspaceChatHistory(
+    ws: WebSocket,
+    userId: string,
+    workspaceId: string,
+    limit: number = 50,
+    before?: string
+  ): Promise<void> {
+    // Verify access
+    const workspace = await prisma.workspace.findFirst({
+      where: {
+        id: workspaceId,
+        OR: [
+          { userId },
+          { shares: { some: { sharedWithId: userId } } },
+          { team: { members: { some: { userId } } } },
+        ],
+      },
+    });
+
+    if (!workspace) {
+      this.send(ws, { type: 'error', message: 'Workspace not found or access denied' });
+      return;
+    }
+
+    // Fetch messages
+    const messages = await prisma.workspaceMessage.findMany({
+      where: {
+        workspaceId,
+        ...(before ? { createdAt: { lt: new Date(before) } } : {}),
+      },
+      include: {
+        user: { select: { id: true, email: true, name: true, image: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit, 100),
+    });
+
+    // Send messages in chronological order
+    this.send(ws, {
+      type: 'chat.workspace.messages',
+      workspaceId,
+      messages: messages.reverse().map((m) => ({
+        id: m.id,
+        workspaceId: m.workspaceId,
+        userId: m.userId,
+        content: m.content,
+        user: m.user,
+        createdAt: m.createdAt,
+      })),
+    });
+
+    // Also send online users
+    const onlineUsers = this.connectionManager.getWorkspaceOnlineUsers(workspaceId);
+    this.send(ws, {
+      type: 'chat.workspace.online',
+      workspaceId,
+      users: onlineUsers,
+    });
+  }
+
+  /**
+   * Broadcast a message to all subscribers of a workspace
+   */
+  broadcastToWorkspace(workspaceId: string, message: ServerMessage): void {
+    this.connectionManager.broadcastToWorkspace(workspaceId, JSON.stringify(message));
   }
 
   /**

@@ -43,6 +43,9 @@ import { TeamNotificationSettings } from './TeamNotificationSettings';
 import { TeamRolesManager } from './TeamRolesManager';
 import { useTeamPresence } from '@/hooks/useTeamPresence';
 import { useTeamHistory } from '@/hooks/useTeamHistory';
+import { useTeamChat } from '@/hooks/useTeamChat';
+import { TeamChatPanel, TeamChatToggleButton } from '@/components/chat';
+import { useSession } from 'next-auth/react';
 
 interface TeamDetailProps {
   team: Team;
@@ -88,12 +91,27 @@ export function TeamDetail({
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [resourceSubTab, setResourceSubTab] = useState<ResourceSubTab>('terminals');
   const [showAuditLogs, setShowAuditLogs] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const router = useRouter();
+  const { data: session } = useSession();
 
   // Fetch presence and recent activity for overview
   const { presence } = useTeamPresence(team.id);
   const { history } = useTeamHistory(team.id);
+
+  // Team chat
+  const {
+    messages: chatMessages,
+    onlineMembers: chatOnlineMembers,
+    isLoading: chatLoading,
+    isConnected: chatConnected,
+    sendMessage: sendChatMessage,
+  } = useTeamChat({
+    token: session?.accessToken ?? null,
+    teamId: team.id,
+    enabled: chatOpen,
+  });
 
   const canEdit = team.role === 'OWNER' || team.role === 'ADMIN';
   const canDelete = team.role === 'OWNER';
@@ -209,6 +227,10 @@ export function TeamDetail({
               <p className="text-sm text-muted-foreground truncate">{team.description}</p>
             )}
           </div>
+          <TeamChatToggleButton
+            isOpen={chatOpen}
+            onClick={() => setChatOpen(!chatOpen)}
+          />
           {canEdit && (
             <Button variant="outline" size="sm" onClick={() => setActiveTab('settings')}>
               <Settings className="h-4 w-4 mr-2" />
@@ -705,6 +727,17 @@ export function TeamDetail({
         description="This will remove all tasks and member associations."
         onConfirm={handleDelete}
         onCancel={() => setShowDeleteConfirm(false)}
+      />
+
+      <TeamChatPanel
+        isOpen={chatOpen}
+        messages={chatMessages}
+        onlineMembers={chatOnlineMembers}
+        currentUserId={session?.user?.id || ''}
+        isLoading={chatLoading}
+        isConnected={chatConnected}
+        onSendMessage={sendChatMessage}
+        onClose={() => setChatOpen(false)}
       />
     </div>
   );
