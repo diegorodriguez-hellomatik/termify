@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, Terminal, Server } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -71,6 +72,13 @@ export function CreateTeamTerminalModal({
     }
   };
 
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
+
   const handleClose = () => {
     setName('');
     setType('LOCAL');
@@ -81,15 +89,15 @@ export function CreateTeamTerminalModal({
     onOpenChange(false);
   };
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  const modalContent = (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div
         className="fixed inset-0 bg-black/60 backdrop-blur-sm"
         onClick={handleClose}
       />
-      <div className="relative bg-background border rounded-lg shadow-xl w-full max-w-md p-6 z-10 animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative bg-background border rounded-lg shadow-xl w-full max-w-md p-6 z-[101] animate-in fade-in zoom-in-95 duration-200">
         <h2 className="text-xl font-semibold mb-4">Create Team Terminal</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -202,4 +210,6 @@ export function CreateTeamTerminalModal({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

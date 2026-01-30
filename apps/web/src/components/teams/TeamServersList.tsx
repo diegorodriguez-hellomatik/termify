@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useTeamServers } from '@/hooks/useTeamServers';
 import { DeleteConfirmModal } from '@/components/ui/DeleteConfirmModal';
+import { AddTeamServerModal } from './AddTeamServerModal';
 import { TeamServer, ServerStatus } from '@/lib/api';
 
 interface TeamServersListProps {
@@ -112,6 +113,11 @@ export function TeamServersList({
             Add Server
           </Button>
         )}
+        <AddTeamServerModal
+          open={createModalOpen}
+          onOpenChange={setCreateModalOpen}
+          onCreate={createServer}
+        />
       </div>
     );
   }
@@ -238,6 +244,12 @@ export function TeamServersList({
           </Card>
         ))}
       </div>
+
+      <AddTeamServerModal
+        open={createModalOpen}
+        onOpenChange={setCreateModalOpen}
+        onCreate={createServer}
+      />
 
       <DeleteConfirmModal
         isOpen={deleteModalOpen}

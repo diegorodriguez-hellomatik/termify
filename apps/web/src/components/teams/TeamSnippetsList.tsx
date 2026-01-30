@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useTeamSnippets } from '@/hooks/useTeamSnippets';
 import { DeleteConfirmModal } from '@/components/ui/DeleteConfirmModal';
+import { CreateTeamSnippetModal } from './CreateTeamSnippetModal';
 import { TeamSnippet } from '@/lib/api';
 
 interface TeamSnippetsListProps {
@@ -99,6 +100,11 @@ export function TeamSnippetsList({
             Create Snippet
           </Button>
         )}
+        <CreateTeamSnippetModal
+          open={createModalOpen}
+          onOpenChange={setCreateModalOpen}
+          onCreate={createSnippet}
+        />
       </div>
     );
   }
@@ -224,6 +230,12 @@ export function TeamSnippetsList({
           </Card>
         ))}
       </div>
+
+      <CreateTeamSnippetModal
+        open={createModalOpen}
+        onOpenChange={setCreateModalOpen}
+        onCreate={createSnippet}
+      />
 
       <DeleteConfirmModal
         isOpen={deleteModalOpen}

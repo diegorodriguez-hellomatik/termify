@@ -36,6 +36,7 @@ import { TeamServersList } from './TeamServersList';
 import { TeamHistoryPage } from './TeamHistoryPage';
 import { TeamAuditLogs } from './TeamAuditLogs';
 import { TeamNotificationSettings } from './TeamNotificationSettings';
+import { TeamRolesManager } from './TeamRolesManager';
 import { useTeamPresence } from '@/hooks/useTeamPresence';
 import { useTeamHistory } from '@/hooks/useTeamHistory';
 
@@ -498,6 +499,13 @@ export function TeamDetail({
               <CardContent className="p-4">
                 <h3 className="text-sm font-medium mb-4">Notification Preferences</h3>
                 <TeamNotificationSettings teamId={team.id} />
+              </CardContent>
+            </Card>
+
+            {/* Custom Roles */}
+            <Card>
+              <CardContent className="p-4">
+                <TeamRolesManager teamId={team.id} canManage={canEdit} />
               </CardContent>
             </Card>
 

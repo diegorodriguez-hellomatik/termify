@@ -3,53 +3,30 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
-import { Monitor, Loader2, Eye, Edit3 } from 'lucide-react';
+import { Layout, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { terminalsApi, SharePermission } from '@/lib/api';
+import { workspacesApi, Workspace } from '@/lib/api';
 
-interface ShareTerminalWithTeamModalProps {
+interface ShareWorkspaceWithTeamModalProps {
   teamId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onShare: (terminalId: string, permission: SharePermission) => Promise<void>;
+  onShare: (workspaceId: string) => Promise<void>;
 }
 
-interface Terminal {
-  id: string;
-  name: string;
-  status: string;
-  type: string;
-}
-
-export function ShareTerminalWithTeamModal({
+export function ShareWorkspaceWithTeamModal({
   teamId,
   open,
   onOpenChange,
   onShare,
-}: ShareTerminalWithTeamModalProps) {
+}: ShareWorkspaceWithTeamModalProps) {
   const { data: session } = useSession();
-  const [terminals, setTerminals] = useState<Terminal[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
-  const [permission, setPermission] = useState<SharePermission>('VIEW');
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (open && session?.accessToken) {
-      setLoading(true);
-      terminalsApi
-        .list(session.accessToken)
-        .then((response) => {
-          if (response.success && response.data) {
-            setTerminals(response.data.terminals);
-          }
-        })
-        .finally(() => setLoading(false));
-    }
-  }, [open, session?.accessToken]);
-
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -57,19 +34,33 @@ export function ShareTerminalWithTeamModal({
     return () => setMounted(false);
   }, []);
 
-  const filteredTerminals = terminals.filter((t) =>
-    t.name.toLowerCase().includes(search.toLowerCase())
+  useEffect(() => {
+    if (open && session?.accessToken) {
+      setLoading(true);
+      workspacesApi
+        .list(session.accessToken)
+        .then((response) => {
+          if (response.success && response.data) {
+            setWorkspaces(response.data.workspaces);
+          }
+        })
+        .finally(() => setLoading(false));
+    }
+  }, [open, session?.accessToken]);
+
+  const filteredWorkspaces = workspaces.filter((w) =>
+    w.name.toLowerCase().includes(search.toLowerCase())
   );
 
   const handleSubmit = async () => {
-    if (!selectedTerminalId) return;
+    if (!selectedWorkspaceId) return;
 
     setSubmitting(true);
     try {
-      await onShare(selectedTerminalId, permission);
-      setSelectedTerminalId(null);
-      setPermission('VIEW');
+      await onShare(selectedWorkspaceId);
+      setSelectedWorkspaceId(null);
       setSearch('');
+      onOpenChange(false);
     } finally {
       setSubmitting(false);
     }
@@ -84,13 +75,13 @@ export function ShareTerminalWithTeamModal({
         onClick={() => onOpenChange(false)}
       />
       <div className="relative bg-background border rounded-lg shadow-xl w-full max-w-md p-6 z-[101] animate-in fade-in zoom-in-95 duration-200">
-        <h2 className="text-lg font-semibold mb-4">Share Terminal with Team</h2>
+        <h2 className="text-lg font-semibold mb-4">Share Workspace with Team</h2>
 
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Search Terminals</label>
+            <label className="text-sm font-medium mb-1.5 block">Search Workspaces</label>
             <Input
-              placeholder="Search your terminals..."
+              placeholder="Search your workspaces..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -101,57 +92,31 @@ export function ShareTerminalWithTeamModal({
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
-            ) : filteredTerminals.length === 0 ? (
+            ) : filteredWorkspaces.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
-                {search ? 'No terminals found' : 'No terminals available'}
+                {search ? 'No workspaces found' : 'No workspaces available'}
               </p>
             ) : (
-              filteredTerminals.map((terminal) => (
+              filteredWorkspaces.map((workspace) => (
                 <div
-                  key={terminal.id}
-                  onClick={() => setSelectedTerminalId(terminal.id)}
+                  key={workspace.id}
+                  onClick={() => setSelectedWorkspaceId(workspace.id)}
                   className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
-                    selectedTerminalId === terminal.id
+                    selectedWorkspaceId === workspace.id
                       ? 'bg-primary/10 border border-primary'
                       : 'hover:bg-muted'
                   }`}
                 >
-                  <Monitor className="h-4 w-4 text-muted-foreground" />
+                  <Layout className="h-4 w-4 text-muted-foreground" />
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{terminal.name}</p>
+                    <p className="font-medium truncate">{workspace.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {terminal.type} • {terminal.status.toLowerCase()}
+                      {workspace.terminalCount || 0} terminals
                     </p>
                   </div>
                 </div>
               ))
             )}
-          </div>
-
-          <div>
-            <label className="text-sm font-medium mb-2 block">Permission Level</label>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant={permission === 'VIEW' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setPermission('VIEW')}
-                className="flex-1 gap-2"
-              >
-                <Eye size={14} />
-                View Only
-              </Button>
-              <Button
-                type="button"
-                variant={permission === 'CONTROL' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setPermission('CONTROL')}
-                className="flex-1 gap-2"
-              >
-                <Edit3 size={14} />
-                Can Control
-              </Button>
-            </div>
           </div>
         </div>
 
@@ -161,10 +126,10 @@ export function ShareTerminalWithTeamModal({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={!selectedTerminalId || submitting}
+            disabled={!selectedWorkspaceId || submitting}
           >
             {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Share Terminal
+            Share Workspace
           </Button>
         </div>
       </div>

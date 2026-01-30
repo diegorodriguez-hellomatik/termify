@@ -139,6 +139,26 @@ export const authApi = {
       method: 'POST',
       body: { email },
     }),
+
+  changePassword: (currentPassword: string, newPassword: string, token: string) =>
+    api<{ message: string }>('/api/auth/change-password', {
+      method: 'POST',
+      body: { currentPassword, newPassword },
+      token,
+    }),
+
+  changeEmail: (newEmail: string, password: string, token: string) =>
+    api<{ message: string }>('/api/auth/change-email', {
+      method: 'POST',
+      body: { newEmail, password },
+      token,
+    }),
+
+  confirmEmailChange: (token: string) =>
+    api<{ message: string; newEmail: string }>('/api/auth/confirm-email-change', {
+      method: 'POST',
+      body: { token },
+    }),
 };
 
 // SSH Test Connection Response
@@ -751,10 +771,60 @@ export interface TeamMember {
   id: string;
   userId: string;
   role: TeamRole;
+  customRoleId?: string | null;
+  customRole?: TeamCustomRole | null;
   email: string;
   name: string | null;
   image: string | null;
   createdAt: string;
+}
+
+// Team Permissions
+export enum TeamPermission {
+  // Terminals
+  CREATE_TERMINAL = 'create_terminal',
+  EDIT_TERMINAL = 'edit_terminal',
+  DELETE_TERMINAL = 'delete_terminal',
+  SHARE_TERMINAL = 'share_terminal',
+  // Workspaces
+  CREATE_WORKSPACE = 'create_workspace',
+  EDIT_WORKSPACE = 'edit_workspace',
+  DELETE_WORKSPACE = 'delete_workspace',
+  // Snippets
+  CREATE_SNIPPET = 'create_snippet',
+  EDIT_SNIPPET = 'edit_snippet',
+  DELETE_SNIPPET = 'delete_snippet',
+  // Servers
+  CREATE_SERVER = 'create_server',
+  EDIT_SERVER = 'edit_server',
+  DELETE_SERVER = 'delete_server',
+  // Members
+  INVITE_MEMBER = 'invite_member',
+  REMOVE_MEMBER = 'remove_member',
+  CHANGE_MEMBER_ROLE = 'change_member_role',
+  // Tasks
+  CREATE_TASK = 'create_task',
+  EDIT_TASK = 'edit_task',
+  DELETE_TASK = 'delete_task',
+  ASSIGN_TASK = 'assign_task',
+  // Team Settings
+  EDIT_TEAM_SETTINGS = 'edit_team_settings',
+  MANAGE_ROLES = 'manage_roles',
+  VIEW_AUDIT_LOG = 'view_audit_log',
+  VIEW_HISTORY = 'view_history',
+}
+
+export interface TeamCustomRole {
+  id: string;
+  teamId: string;
+  name: string;
+  description: string | null;
+  color: string;
+  permissions: string[];
+  position: number;
+  isSystem: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Task {
@@ -844,6 +914,73 @@ export const teamsApi = {
       method: 'DELETE',
       token,
     }),
+};
+
+// Team Roles API
+export const teamRolesApi = {
+  list: (teamId: string, token: string) =>
+    api<{ roles: TeamCustomRole[] }>(`/api/teams/${teamId}/roles`, { token }),
+
+  get: (teamId: string, roleId: string, token: string) =>
+    api<TeamCustomRole>(`/api/teams/${teamId}/roles/${roleId}`, { token }),
+
+  create: (
+    teamId: string,
+    data: {
+      name: string;
+      description?: string;
+      color?: string;
+      permissions: string[];
+    },
+    token: string
+  ) =>
+    api<TeamCustomRole>(`/api/teams/${teamId}/roles`, {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  update: (
+    teamId: string,
+    roleId: string,
+    data: {
+      name?: string;
+      description?: string | null;
+      color?: string;
+      permissions?: string[];
+      position?: number;
+    },
+    token: string
+  ) =>
+    api<TeamCustomRole>(`/api/teams/${teamId}/roles/${roleId}`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
+
+  delete: (teamId: string, roleId: string, token: string) =>
+    api<void>(`/api/teams/${teamId}/roles/${roleId}`, {
+      method: 'DELETE',
+      token,
+    }),
+
+  assignToMember: (
+    teamId: string,
+    memberId: string,
+    data: { customRoleId: string | null },
+    token: string
+  ) =>
+    api<TeamMember>(`/api/teams/${teamId}/members/${memberId}/custom-role`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
+
+  getMemberPermissions: (teamId: string, memberId: string, token: string) =>
+    api<{ permissions: string[] }>(
+      `/api/teams/${teamId}/members/${memberId}/permissions`,
+      { token }
+    ),
 };
 
 // Tasks API

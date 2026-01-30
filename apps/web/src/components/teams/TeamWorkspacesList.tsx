@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useTeamWorkspaces } from '@/hooks/useTeamWorkspaces';
 import { DeleteConfirmModal } from '@/components/ui/DeleteConfirmModal';
+import { ShareWorkspaceWithTeamModal } from './ShareWorkspaceWithTeamModal';
 import { TeamWorkspace } from '@/lib/api';
 
 interface TeamWorkspacesListProps {
@@ -32,6 +33,11 @@ export function TeamWorkspacesList({
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedWorkspace, setSelectedWorkspace] = useState<TeamWorkspace | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+
+  const handleShare = async (workspaceId: string) => {
+    await shareWorkspace(workspaceId);
+    setShareModalOpen(false);
+  };
 
   const handleRemove = async () => {
     if (!selectedWorkspace) return;
@@ -86,6 +92,12 @@ export function TeamWorkspacesList({
             Share Workspace
           </Button>
         )}
+        <ShareWorkspaceWithTeamModal
+          teamId={teamId}
+          open={shareModalOpen}
+          onOpenChange={setShareModalOpen}
+          onShare={handleShare}
+        />
       </div>
     );
   }
@@ -197,6 +209,13 @@ export function TeamWorkspacesList({
           </Card>
         ))}
       </div>
+
+      <ShareWorkspaceWithTeamModal
+        teamId={teamId}
+        open={shareModalOpen}
+        onOpenChange={setShareModalOpen}
+        onShare={handleShare}
+      />
 
       <DeleteConfirmModal
         isOpen={deleteModalOpen}
