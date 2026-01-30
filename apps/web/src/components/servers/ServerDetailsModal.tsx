@@ -24,6 +24,7 @@ import {
   Terminal,
   Square,
   ExternalLink,
+  Activity,
 } from 'lucide-react';
 import {
   serversApi,
@@ -35,6 +36,7 @@ import {
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { cn, formatRelativeTime } from '@/lib/utils';
+import { ServerStatsPanel } from './ServerStatsPanel';
 
 interface ServerDetailsModalProps {
   server: ServerType;
@@ -67,7 +69,7 @@ export function ServerDetailsModal({
   const router = useRouter();
   const [details, setDetails] = useState<ServerDetails | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'info' | 'active' | 'connect' | 'history'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'stats' | 'active' | 'connect' | 'history'>('info');
 
   // Active terminals
   const [activeTerminals, setActiveTerminals] = useState<ActiveServerTerminal[]>([]);
@@ -311,7 +313,19 @@ export function ServerDetailsModal({
                 : 'text-muted-foreground hover:text-foreground'
             )}
           >
-            Information
+            Info
+          </button>
+          <button
+            onClick={() => setActiveTab('stats')}
+            className={cn(
+              'flex-1 py-3 text-sm font-medium transition-colors flex items-center justify-center gap-1.5',
+              activeTab === 'stats'
+                ? 'text-primary border-b-2 border-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Activity size={14} />
+            Stats
           </button>
           <button
             onClick={() => {
@@ -362,6 +376,8 @@ export function ServerDetailsModal({
             <div className="flex items-center justify-center py-12">
               <Loader2 size={24} className="animate-spin text-muted-foreground" />
             </div>
+          ) : activeTab === 'stats' ? (
+            <ServerStatsPanel serverId={server.id} />
           ) : activeTab === 'info' ? (
             <div className="space-y-4">
               {/* Connection Info */}
