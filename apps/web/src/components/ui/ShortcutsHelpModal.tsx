@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Keyboard } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTheme } from '@/context/ThemeContext';
 
 // Default shortcuts for standalone use
 const DEFAULT_SHORTCUTS = [
@@ -37,10 +38,12 @@ export interface ShortcutsHelpModalProps {
 export function ShortcutsHelpModal({
   isOpen,
   onClose,
-  isDark = true,
+  isDark: isDarkProp,
   showHelp: contextShowHelp,
   setShowHelp: contextSetShowHelp,
 }: ShortcutsHelpModalProps) {
+  const { isDark: themeIsDark } = useTheme();
+  const isDark = isDarkProp ?? themeIsDark;
   const shortcuts = DEFAULT_SHORTCUTS;
 
   // Use either props or context values

@@ -31,9 +31,10 @@ import { FileExplorer } from '@/components/files/FileExplorer';
 import { TasksPanel } from '@/components/tasks/TasksPanel';
 import { NotificationsDropdown } from '@/components/notifications/NotificationsDropdown';
 
-interface SidebarProps {
+export interface SidebarProps {
   userName?: string | null;
   userEmail?: string | null;
+  userImage?: string | null;
   onSignOut: () => void;
 }
 
@@ -52,7 +53,7 @@ const settingsSubItems = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
 ];
 
-export function Sidebar({ userName, userEmail, onSignOut }: SidebarProps) {
+export function Sidebar({ userName, userEmail, userImage, onSignOut }: SidebarProps) {
   const pathname = usePathname();
   const params = useParams();
   const [isCollapsed, setIsCollapsed] = useState(false);

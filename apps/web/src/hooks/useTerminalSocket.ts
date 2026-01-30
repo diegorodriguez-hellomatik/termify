@@ -151,13 +151,17 @@ export function useTerminalSocket({
       return;
     }
 
-    // Use 'dev' token in development if no real token
-    const authToken = token || 'dev';
+    // Require a real token - don't fallback to 'dev' to avoid identity issues
+    if (!token) {
+      console.error('[WS] No authentication token available');
+      callbacksRef.current.onError('No authentication token');
+      return;
+    }
     console.log('[WS] Creating new WebSocket connection');
     // Include shareToken in URL if provided (for share link access)
     const wsUrl = shareToken
-      ? `${WS_URL}?token=${authToken}&shareToken=${shareToken}`
-      : `${WS_URL}?token=${authToken}`;
+      ? `${WS_URL}?token=${token}&shareToken=${shareToken}`
+      : `${WS_URL}?token=${token}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 

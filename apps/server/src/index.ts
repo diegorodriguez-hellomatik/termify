@@ -13,8 +13,27 @@ import profilesRoutes from './api/profiles.js';
 import auditlogsRoutes from './api/auditlogs.js';
 import apikeysRoutes from './api/apikeys.js';
 import shareRoutes from './api/share.js';
+import workspaceShareRoutes from './api/workspace-share.js';
 import notificationsRoutes from './api/notifications.js';
 import claudeSessionsRoutes from './api/claude-sessions.js';
+import workspacesRoutes from './api/workspaces.js';
+import teamsRoutes from './api/teams.js';
+import tasksRoutes from './api/tasks.js';
+import pushRoutes from './api/push.js';
+import teamTerminalsRoutes from './api/team-terminals.js';
+import teamWorkspacesRoutes from './api/team-workspaces.js';
+import teamSnippetsRoutes from './api/team-snippets.js';
+import teamServersRoutes from './api/team-servers.js';
+import teamHistoryRoutes from './api/team-history.js';
+import teamPresenceRoutes from './api/team-presence.js';
+import teamRolesRoutes from './api/team-roles.js';
+import taskCommandsRoutes from './api/task-commands.js';
+import personalTasksRoutes from './api/personal-tasks.js';
+import usersRoutes from './api/users.js';
+import terminalQueueRoutes from './api/terminal-queue.js';
+import taskStatusRoutes from './api/task-status.js';
+import teamTaskStatusRoutes from './api/team-task-status.js';
+import serversRoutes from './api/servers.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',');
@@ -30,7 +49,7 @@ app.use(cors({
 app.use(express.json());
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -41,6 +60,7 @@ app.get('/health', (req, res) => {
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api', shareRoutes); // Must be before terminalsRoutes to handle /terminals/shared
+app.use('/api', workspaceShareRoutes); // Must be before workspacesRoutes to handle /workspaces/shared
 app.use('/api/terminals', terminalsRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/snippets', snippetsRoutes);
@@ -49,9 +69,27 @@ app.use('/api/auditlogs', auditlogsRoutes);
 app.use('/api/apikeys', apikeysRoutes);
 app.use('/api', notificationsRoutes);
 app.use('/api/claude-sessions', claudeSessionsRoutes);
+app.use('/api/workspaces', workspacesRoutes);
+app.use('/api/teams', teamsRoutes);
+app.use('/api/teams', teamTerminalsRoutes);
+app.use('/api/teams', teamWorkspacesRoutes);
+app.use('/api/teams', teamSnippetsRoutes);
+app.use('/api/teams', teamServersRoutes);
+app.use('/api/teams', teamHistoryRoutes);
+app.use('/api/teams', teamPresenceRoutes);
+app.use('/api/teams', teamRolesRoutes);
+app.use('/api/tasks', tasksRoutes);
+app.use('/api/tasks', taskCommandsRoutes);
+app.use('/api/personal-tasks', personalTasksRoutes);
+app.use('/api', pushRoutes);
+app.use('/api/users', usersRoutes);
+app.use('/api', terminalQueueRoutes);
+app.use('/api/task-statuses', taskStatusRoutes);
+app.use('/api/teams', teamTaskStatusRoutes);
+app.use('/api/servers', serversRoutes);
 
 // Stats endpoint
-app.get('/api/stats', (req, res) => {
+app.get('/api/stats', (_req, res) => {
   const ptyManager = getPTYManager();
   res.json({
     ptyInstances: ptyManager.count,
@@ -66,7 +104,7 @@ const server = createServer(app);
 const wsServer = new TerminalWebSocketServer({ server });
 
 // Update stats endpoint with WebSocket stats
-app.get('/api/stats', (req, res) => {
+app.get('/api/stats', (_req, res) => {
   const ptyManager = getPTYManager();
   res.json({
     ptyInstances: ptyManager.count,

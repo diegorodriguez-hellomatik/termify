@@ -7,7 +7,18 @@ import {
   useEffect,
   useCallback,
   ReactNode,
+  useRef,
 } from 'react';
+import { useSession } from 'next-auth/react';
+import {
+  workspacesApi,
+  terminalsApi,
+  Workspace,
+  WorkspaceLayout,
+  WorkspaceTerminalItem,
+  FloatingLayout,
+  FloatingWindowPosition,
+} from '@/lib/api';
 
 // Tab represents an open terminal or file
 export type TabType = 'terminal' | 'file';
@@ -51,6 +62,21 @@ export interface WorkspaceState {
 }
 
 interface WorkspaceContextType {
+  // Workspaces
+  workspaces: Workspace[];
+  currentWorkspace: Workspace | null;
+  currentWorkspaceId: string | null;
+  loadingWorkspaces: boolean;
+  switchWorkspace: (workspaceId: string) => Promise<void>;
+  createWorkspace: (data: { name: string; description?: string; color?: string; icon?: string }) => Promise<Workspace | null>;
+  updateWorkspace: (workspaceId: string, data: Partial<Workspace>) => Promise<void>;
+  deleteWorkspace: (workspaceId: string) => Promise<void>;
+  reorderWorkspaces: (workspaceIds: string[]) => Promise<void>;
+  refreshWorkspaces: () => Promise<void>;
+
+  // Pre-connection: terminal IDs that should establish WebSocket connections
+  preConnectTerminalIds: string[];
+
   // Tabs
   tabs: Tab[];
   activeTabId: string | null;
@@ -69,28 +95,42 @@ interface WorkspaceContextType {
   updatePaneSizes: (paneId: string, sizes: number[]) => void;
   setSimpleLayout: (terminalId: string) => void;
 
+  // Floating layout
+  floatingLayout: FloatingLayout | null;
+  updateFloatingLayout: (layout: FloatingLayout) => void;
+
   // Quick switcher
   showQuickSwitcher: boolean;
   setShowQuickSwitcher: (show: boolean) => void;
 
+  // Fullscreen mode
+  isFullscreen: boolean;
+  setFullscreen: (fullscreen: boolean) => void;
+  toggleFullscreen: () => void;
+
   // Persistence
   clearWorkspace: () => void;
+  saveLayoutToServer: () => Promise<void>;
+
+  // Terminal actions
+  renameTerminal: (terminalId: string, newName: string) => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'terminal-workspace';
+const LOCAL_STORAGE_KEY = 'terminal-workspace';
+const CURRENT_WORKSPACE_KEY = 'terminal-current-workspace-id';
 
 // Generate unique ID
 function generateId(): string {
   return Math.random().toString(36).substring(2, 9);
 }
 
-// Get initial state from localStorage
+// Get initial state from localStorage (fallback for offline/unauthenticated)
 function getInitialState(): WorkspaceState {
   if (typeof window !== 'undefined') {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
@@ -107,31 +147,345 @@ function getInitialState(): WorkspaceState {
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const { data: session, status: sessionStatus } = useSession();
+
+  // Workspaces state
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null);
+  const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
+
+  // Local state (tabs, layout)
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [layout, setLayout] = useState<PaneNode | null>(null);
+  const [floatingLayout, setFloatingLayout] = useState<FloatingLayout | null>(null);
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
+  const [isFullscreen, setFullscreen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
-  // Load state on mount
-  useEffect(() => {
-    const state = getInitialState();
-    setTabs(state.tabs);
-    setActiveTabId(state.activeTabId);
-    setLayout(state.layout);
-    setMounted(true);
+  // Toggle fullscreen
+  const toggleFullscreen = useCallback(() => {
+    setFullscreen(prev => !prev);
   }, []);
 
-  // Save state on change
-  useEffect(() => {
-    if (mounted) {
-      const state: WorkspaceState = { tabs, activeTabId, layout };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  // Terminal IDs that should pre-connect (establish WebSocket before being visible)
+  const [preConnectTerminalIds, setPreConnectTerminalIds] = useState<string[]>([]);
+
+  // Track if we've loaded initial workspaces
+  const initialLoadDone = useRef(false);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Get current workspace object
+  const currentWorkspace = workspaces.find((w) => w.id === currentWorkspaceId) || null;
+
+  // Load workspaces from server
+  const loadWorkspaces = useCallback(async () => {
+    if (!session?.accessToken) return;
+
+    try {
+      setLoadingWorkspaces(true);
+      const response = await workspacesApi.list(session.accessToken);
+
+      if (response.success && response.data) {
+        setWorkspaces(response.data.workspaces);
+
+        // If no workspaces exist, create a default one
+        if (response.data.workspaces.length === 0) {
+          const createResponse = await workspacesApi.create(
+            { name: 'Default Workspace', isDefault: true },
+            session.accessToken
+          );
+          if (createResponse.success && createResponse.data) {
+            setWorkspaces([createResponse.data]);
+            setCurrentWorkspaceId(createResponse.data.id);
+            localStorage.setItem(CURRENT_WORKSPACE_KEY, createResponse.data.id);
+          }
+        } else {
+          // Try to restore last used workspace from localStorage
+          const savedWorkspaceId = localStorage.getItem(CURRENT_WORKSPACE_KEY);
+          const workspaceExists = response.data.workspaces.some((w) => w.id === savedWorkspaceId);
+
+          if (savedWorkspaceId && workspaceExists) {
+            setCurrentWorkspaceId(savedWorkspaceId);
+          } else {
+            // Use the default workspace or the first one
+            const defaultWorkspace = response.data.workspaces.find((w) => w.isDefault) || response.data.workspaces[0];
+            setCurrentWorkspaceId(defaultWorkspace.id);
+            localStorage.setItem(CURRENT_WORKSPACE_KEY, defaultWorkspace.id);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load workspaces:', error);
+    } finally {
+      setLoadingWorkspaces(false);
     }
-  }, [tabs, activeTabId, layout, mounted]);
+  }, [session?.accessToken]);
+
+  // Load workspace details (including layout)
+  const loadWorkspaceDetails = useCallback(async (workspaceId: string) => {
+    if (!session?.accessToken) return;
+
+    try {
+      const response = await workspacesApi.get(workspaceId, session.accessToken);
+
+      if (response.success && response.data) {
+        // Update workspace in list with full details
+        setWorkspaces((prev) =>
+          prev.map((w) => (w.id === workspaceId ? { ...w, ...response.data } : w))
+        );
+
+        // Restore layout from server
+        if (response.data.layout) {
+          setLayout(response.data.layout as PaneNode);
+        } else {
+          setLayout(null);
+        }
+
+        // Restore floating layout from server
+        if (response.data.floatingLayout) {
+          setFloatingLayout(response.data.floatingLayout);
+        } else {
+          setFloatingLayout(null);
+        }
+
+        // Create tabs from workspace terminals
+        if (response.data.terminals && response.data.terminals.length > 0) {
+          const newTabs: Tab[] = response.data.terminals.map((t: WorkspaceTerminalItem) => ({
+            id: generateId(),
+            type: 'terminal' as TabType,
+            terminalId: t.id,
+            name: t.name,
+            status: t.status,
+          }));
+          setTabs(newTabs);
+          setActiveTabId(newTabs[0]?.id || null);
+
+          // Set all terminal IDs for pre-connection
+          const terminalIds = response.data.terminals.map((t: WorkspaceTerminalItem) => t.id);
+          setPreConnectTerminalIds(terminalIds);
+        } else {
+          setTabs([]);
+          setActiveTabId(null);
+          setPreConnectTerminalIds([]);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load workspace details:', error);
+    }
+  }, [session?.accessToken]);
+
+  // Load workspaces on mount (when authenticated)
+  useEffect(() => {
+    if (sessionStatus === 'authenticated' && !initialLoadDone.current) {
+      initialLoadDone.current = true;
+      loadWorkspaces();
+    }
+  }, [sessionStatus, loadWorkspaces]);
+
+  // Load workspace details when current workspace changes
+  useEffect(() => {
+    if (currentWorkspaceId && session?.accessToken) {
+      loadWorkspaceDetails(currentWorkspaceId);
+    }
+  }, [currentWorkspaceId, loadWorkspaceDetails, session?.accessToken]);
+
+  // Fallback: Load state from localStorage if not authenticated
+  useEffect(() => {
+    if (sessionStatus === 'unauthenticated') {
+      const state = getInitialState();
+      setTabs(state.tabs);
+      setActiveTabId(state.activeTabId);
+      setLayout(state.layout);
+      setLoadingWorkspaces(false);
+    }
+    setMounted(true);
+  }, [sessionStatus]);
+
+  // Save state to localStorage (fallback for offline)
+  useEffect(() => {
+    if (mounted && sessionStatus === 'unauthenticated') {
+      const state: WorkspaceState = { tabs, activeTabId, layout };
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
+    }
+  }, [tabs, activeTabId, layout, mounted, sessionStatus]);
+
+  // Save layout to server (debounced)
+  const saveLayoutToServer = useCallback(async () => {
+    if (!session?.accessToken || !currentWorkspaceId) return;
+
+    try {
+      await workspacesApi.update(
+        currentWorkspaceId,
+        {
+          layout: layout as WorkspaceLayout | null,
+          floatingLayout: floatingLayout,
+        },
+        session.accessToken
+      );
+    } catch (error) {
+      console.error('Failed to save layout:', error);
+    }
+  }, [session?.accessToken, currentWorkspaceId, layout, floatingLayout]);
+
+  // Update floating layout
+  const updateFloatingLayout = useCallback((newLayout: FloatingLayout) => {
+    setFloatingLayout(newLayout);
+  }, []);
+
+  // Rename terminal
+  const renameTerminal = useCallback(async (terminalId: string, newName: string) => {
+    if (!session?.accessToken) return;
+
+    try {
+      await terminalsApi.update(terminalId, { name: newName }, session.accessToken);
+      // Update local tab name
+      setTabs((prev) =>
+        prev.map((tab) =>
+          tab.terminalId === terminalId ? { ...tab, name: newName } : tab
+        )
+      );
+    } catch (error) {
+      console.error('Failed to rename terminal:', error);
+    }
+  }, [session?.accessToken]);
+
+  // Debounced save when layout changes
+  useEffect(() => {
+    if (!mounted || !currentWorkspaceId || sessionStatus !== 'authenticated') return;
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      saveLayoutToServer();
+    }, 2000); // Save after 2 seconds of inactivity
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [layout, floatingLayout, mounted, currentWorkspaceId, sessionStatus, saveLayoutToServer]);
 
   // Get active tab object
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
+
+  // Switch workspace
+  const switchWorkspace = useCallback(async (workspaceId: string) => {
+    if (workspaceId === currentWorkspaceId) return;
+
+    // Save current layout before switching
+    await saveLayoutToServer();
+
+    setCurrentWorkspaceId(workspaceId);
+    localStorage.setItem(CURRENT_WORKSPACE_KEY, workspaceId);
+
+    // Clear current state - it will be loaded by the effect
+    setTabs([]);
+    setActiveTabId(null);
+    setLayout(null);
+    setFloatingLayout(null);
+    setPreConnectTerminalIds([]);
+  }, [currentWorkspaceId, saveLayoutToServer]);
+
+  // Create workspace
+  const createWorkspace = useCallback(async (data: { name: string; description?: string; color?: string; icon?: string }) => {
+    if (!session?.accessToken) return null;
+
+    try {
+      const response = await workspacesApi.create(data, session.accessToken);
+
+      if (response.success && response.data) {
+        setWorkspaces((prev) => [...prev, response.data!]);
+        return response.data;
+      }
+    } catch (error) {
+      console.error('Failed to create workspace:', error);
+    }
+    return null;
+  }, [session?.accessToken]);
+
+  // Update workspace
+  const updateWorkspace = useCallback(async (workspaceId: string, data: Partial<Workspace>) => {
+    if (!session?.accessToken) return;
+
+    try {
+      const response = await workspacesApi.update(
+        workspaceId,
+        {
+          name: data.name,
+          description: data.description,
+          color: data.color,
+          icon: data.icon,
+          isDefault: data.isDefault,
+          position: data.position,
+        },
+        session.accessToken
+      );
+
+      if (response.success && response.data) {
+        setWorkspaces((prev) =>
+          prev.map((w) => (w.id === workspaceId ? { ...w, ...response.data } : w))
+        );
+      }
+    } catch (error) {
+      console.error('Failed to update workspace:', error);
+    }
+  }, [session?.accessToken]);
+
+  // Delete workspace
+  const deleteWorkspace = useCallback(async (workspaceId: string) => {
+    if (!session?.accessToken) return;
+
+    try {
+      const response = await workspacesApi.delete(workspaceId, session.accessToken);
+
+      if (response.success) {
+        setWorkspaces((prev) => prev.filter((w) => w.id !== workspaceId));
+
+        // If we deleted the current workspace, switch to another
+        if (currentWorkspaceId === workspaceId) {
+          const remaining = workspaces.filter((w) => w.id !== workspaceId);
+          const defaultWs = remaining.find((w) => w.isDefault) || remaining[0];
+          if (defaultWs) {
+            switchWorkspace(defaultWs.id);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to delete workspace:', error);
+    }
+  }, [session?.accessToken, currentWorkspaceId, workspaces, switchWorkspace]);
+
+  // Reorder workspaces
+  const reorderWorkspaces = useCallback(async (workspaceIds: string[]) => {
+    if (!session?.accessToken) return;
+
+    // Optimistic update
+    setWorkspaces((prev) => {
+      const ordered: Workspace[] = [];
+      for (const id of workspaceIds) {
+        const ws = prev.find((w) => w.id === id);
+        if (ws) ordered.push(ws);
+      }
+      return ordered;
+    });
+
+    try {
+      await workspacesApi.reorder({ workspaceIds }, session.accessToken);
+    } catch (error) {
+      console.error('Failed to reorder workspaces:', error);
+      // Revert on error
+      await loadWorkspaces();
+    }
+  }, [session?.accessToken, loadWorkspaces]);
+
+  // Refresh workspaces
+  const refreshWorkspaces = useCallback(async () => {
+    await loadWorkspaces();
+  }, [loadWorkspaces]);
 
   // Open a new terminal tab
   const openTab = useCallback((terminalId: string, name: string) => {
@@ -163,9 +517,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return currentLayout;
       });
 
+      // Save terminal to workspace on server (fire and forget)
+      if (session?.accessToken && currentWorkspaceId) {
+        workspacesApi.addTerminal(
+          currentWorkspaceId,
+          { terminalId },
+          session.accessToken
+        ).catch((err) => console.error('Failed to add terminal to workspace:', err));
+      }
+
       return [...prev, newTab];
     });
-  }, []);
+  }, [session?.accessToken, currentWorkspaceId]);
 
   // Open a new file tab
   const openFileTab = useCallback((filePath: string, fileName: string, extension?: string) => {
@@ -213,7 +576,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const index = prev.findIndex((t) => t.id === tabId);
       if (index === -1) return prev;
 
+      const closedTab = prev[index];
       const newTabs = prev.filter((t) => t.id !== tabId);
+
+      // Remove terminal from workspace on server (fire and forget)
+      if (closedTab.type === 'terminal' && closedTab.terminalId && session?.accessToken && currentWorkspaceId) {
+        workspacesApi.removeTerminal(
+          currentWorkspaceId,
+          closedTab.terminalId,
+          session.accessToken
+        ).catch((err) => console.error('Failed to remove terminal from workspace:', err));
+      }
 
       // If closing active tab, activate adjacent tab
       if (activeTabId === tabId && newTabs.length > 0) {
@@ -244,7 +617,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
       return newTabs;
     });
-  }, [activeTabId]);
+  }, [activeTabId, session?.accessToken, currentWorkspaceId]);
 
   // Set active tab
   const handleSetActiveTab = useCallback((tabId: string) => {
@@ -413,12 +786,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setTabs([]);
     setActiveTabId(null);
     setLayout(null);
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
   }, []);
 
   return (
     <WorkspaceContext.Provider
       value={{
+        // Workspaces
+        workspaces,
+        currentWorkspace,
+        currentWorkspaceId,
+        loadingWorkspaces,
+        switchWorkspace,
+        createWorkspace,
+        updateWorkspace,
+        deleteWorkspace,
+        reorderWorkspaces,
+        refreshWorkspaces,
+        preConnectTerminalIds,
+        // Tabs
         tabs,
         activeTabId,
         activeTab,
@@ -428,14 +814,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setActiveTab: handleSetActiveTab,
         reorderTabs,
         updateTabName,
+        // Layout
         layout,
         splitPane,
         closePane,
         updatePaneSizes,
         setSimpleLayout,
+        // Floating layout
+        floatingLayout,
+        updateFloatingLayout,
+        // Quick switcher
         showQuickSwitcher,
         setShowQuickSwitcher,
+        // Fullscreen
+        isFullscreen,
+        setFullscreen,
+        toggleFullscreen,
+        // Persistence
         clearWorkspace,
+        saveLayoutToServer,
+        // Terminal actions
+        renameTerminal,
       }}
     >
       {children}

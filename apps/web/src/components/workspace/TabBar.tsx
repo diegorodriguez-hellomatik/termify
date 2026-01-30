@@ -3,18 +3,7 @@
 import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
   SortableContext,
-  sortableKeyboardCoordinates,
   useSortable,
   horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
@@ -31,6 +20,9 @@ import {
   FileImage,
   FileVideo,
   FileCog,
+  Minimize,
+  Maximize,
+  LayoutGrid,
 } from 'lucide-react';
 import { useWorkspace, Tab } from '@/contexts/WorkspaceContext';
 import { cn } from '@/lib/utils';
@@ -142,9 +134,10 @@ interface TabItemProps {
   onClose: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
   isDark: boolean;
+  isCompact?: boolean;
 }
 
-function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark }: TabItemProps) {
+function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark, isCompact }: TabItemProps) {
   const {
     attributes,
     listeners,
@@ -152,7 +145,16 @@ function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: tab.id });
+  } = useSortable({
+    id: tab.id,
+    data: {
+      type: 'tab',
+      tabId: tab.id,
+      terminalId: tab.terminalId,
+      tabType: tab.type,
+      name: tab.name,
+    },
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -170,7 +172,8 @@ function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark
       ref={setNodeRef}
       style={style}
       className={cn(
-        'group flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-b-2 cursor-pointer transition-all min-w-[120px] max-w-[200px]',
+        'group flex items-center gap-1.5 rounded-t-lg border-b-2 cursor-pointer transition-all',
+        isCompact ? 'px-2 py-0.5 min-w-[80px] max-w-[150px]' : 'px-3 py-1.5 min-w-[120px] max-w-[200px]',
         isActive
           ? 'bg-background border-primary'
           : 'bg-muted/50 border-transparent hover:bg-muted',
@@ -181,8 +184,11 @@ function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark
       {...attributes}
       {...listeners}
     >
-      <Icon size={14} className={cn('flex-shrink-0', iconColor)} />
-      <span className="text-sm font-medium truncate flex-1">{tab.name}</span>
+      <Icon size={isCompact ? 12 : 14} className={cn('flex-shrink-0', iconColor)} />
+      <span className={cn(
+        'font-medium truncate flex-1',
+        isCompact ? 'text-xs' : 'text-sm'
+      )}>{tab.name}</span>
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -193,7 +199,7 @@ function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark
           isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
         )}
       >
-        <X size={12} className="text-muted-foreground hover:text-destructive" />
+        <X size={isCompact ? 10 : 12} className="text-muted-foreground hover:text-destructive" />
       </button>
     </div>
   );
@@ -202,10 +208,13 @@ function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark
 interface TabBarProps {
   onAddTab: () => void;
   isDark: boolean;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
+  onAutoLayout?: () => void;
 }
 
-export function TabBar({ onAddTab, isDark }: TabBarProps) {
-  const { tabs, activeTabId, setActiveTab, closeTab, reorderTabs } = useWorkspace();
+export function TabBar({ onAddTab, isDark, isFullscreen, onToggleFullscreen, onAutoLayout }: TabBarProps) {
+  const { tabs, activeTabId, setActiveTab, closeTab } = useWorkspace();
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -265,31 +274,13 @@ export function TabBar({ onAddTab, isDark }: TabBarProps) {
     closeContextMenu();
   }, [tabs, closeTab, closeContextMenu]);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = tabs.findIndex((t) => t.id === active.id);
-    const newIndex = tabs.findIndex((t) => t.id === over.id);
-
-    if (oldIndex !== -1 && newIndex !== -1) {
-      reorderTabs(oldIndex, newIndex);
-    }
-  };
-
   if (tabs.length === 0) {
     return (
       <div
-        className="flex items-center gap-2 px-2 py-1 border-b border-border"
+        className={cn(
+          "flex items-center justify-between gap-2 px-2 border-b border-border",
+          isFullscreen ? "py-0.5" : "py-1"
+        )}
         style={{ backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5' }}
       >
         <button
@@ -299,39 +290,48 @@ export function TabBar({ onAddTab, isDark }: TabBarProps) {
           <Plus size={14} />
           Open Terminal
         </button>
+
+        {/* Exit fullscreen button */}
+        {isFullscreen && onToggleFullscreen && (
+          <button
+            onClick={onToggleFullscreen}
+            className="p-1 rounded hover:bg-muted transition-colors flex-shrink-0"
+            title="Exit Fullscreen (Esc)"
+          >
+            <Minimize size={14} className="text-muted-foreground" />
+          </button>
+        )}
       </div>
     );
   }
 
   return (
     <div
-      className="flex items-center gap-1 px-2 py-1 border-b border-border overflow-x-auto"
+      className={cn(
+        "flex items-center gap-1 px-2 border-b border-border overflow-x-auto",
+        isFullscreen ? "py-0.5" : "py-1"
+      )}
       style={{ backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5' }}
     >
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
+      <SortableContext
+        items={tabs.map((t) => t.id)}
+        strategy={horizontalListSortingStrategy}
       >
-        <SortableContext
-          items={tabs.map((t) => t.id)}
-          strategy={horizontalListSortingStrategy}
-        >
-          <div className="flex items-center gap-1">
-            {tabs.map((tab) => (
-              <SortableTab
-                key={tab.id}
-                tab={tab}
-                isActive={tab.id === activeTabId}
-                onActivate={() => setActiveTab(tab.id)}
-                onClose={() => closeTab(tab.id)}
-                onContextMenu={(e) => handleContextMenu(e, tab.id)}
-                isDark={isDark}
-              />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
+        <div className={cn("flex items-center", isFullscreen ? "gap-0.5" : "gap-1")}>
+          {tabs.map((tab) => (
+            <SortableTab
+              key={tab.id}
+              tab={tab}
+              isActive={tab.id === activeTabId}
+              onActivate={() => setActiveTab(tab.id)}
+              onClose={() => closeTab(tab.id)}
+              onContextMenu={(e) => handleContextMenu(e, tab.id)}
+              isDark={isDark}
+              isCompact={isFullscreen}
+            />
+          ))}
+        </div>
+      </SortableContext>
 
       {/* Add new tab button */}
       <button
@@ -341,6 +341,35 @@ export function TabBar({ onAddTab, isDark }: TabBarProps) {
       >
         <Plus size={16} className="text-muted-foreground" />
       </button>
+
+      {/* Spacer to push buttons to the right */}
+      <div className="flex-1" />
+
+      {/* Auto layout button */}
+      {onAutoLayout && (
+        <button
+          onClick={onAutoLayout}
+          className="p-1 rounded hover:bg-muted transition-colors flex-shrink-0"
+          title="Auto Layout (reorganize terminals)"
+        >
+          <LayoutGrid size={14} className="text-muted-foreground" />
+        </button>
+      )}
+
+      {/* Fullscreen toggle button - always visible */}
+      {onToggleFullscreen && (
+        <button
+          onClick={onToggleFullscreen}
+          className="p-1 rounded hover:bg-muted transition-colors flex-shrink-0"
+          title={isFullscreen ? "Exit Fullscreen (Esc)" : "Fullscreen (F11)"}
+        >
+          {isFullscreen ? (
+            <Minimize size={14} className="text-muted-foreground" />
+          ) : (
+            <Maximize size={14} className="text-muted-foreground" />
+          )}
+        </button>
+      )}
 
       {/* Context Menu */}
       {contextMenu && typeof window !== 'undefined' && createPortal(

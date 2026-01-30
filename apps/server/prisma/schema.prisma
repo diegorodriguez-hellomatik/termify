@@ -33,7 +33,88 @@ enum NotificationType {
   TERMINAL_SHARED
   TERMINAL_SHARE_REVOKED
   TERMINAL_SHARE_UPDATED
+  WORKSPACE_SHARED
+  WORKSPACE_SHARE_REVOKED
+  WORKSPACE_SHARE_UPDATED
   SYSTEM
+  // Team notifications
+  TEAM_INVITE
+  TEAM_MEMBER_JOINED
+  TEAM_MEMBER_LEFT
+  TEAM_ROLE_CHANGED
+  // Task notifications
+  TASK_ASSIGNED
+  TASK_UNASSIGNED
+  TASK_STATUS_CHANGED
+  TASK_DUE_SOON
+  TASK_OVERDUE
+  // Push notification events
+  TERMINAL_CRASHED
+  SSH_CONNECTION_FAILED
+  VIEWER_JOINED
+  VIEWER_LEFT
+  COMMAND_COMPLETED
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+// TaskStatus enum removed - now using custom statuses from TaskStatusConfig table
+// Status values are lowercase strings: "backlog", "todo", "in_progress", "in_review", "done"
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// ========================
+// Custom Task Statuses
+// ========================
+
+model TaskStatusConfig {
+  id        String   @id @default(cuid())
+
+  // Scope: puede ser para un usuario (tareas personales) o un equipo
+  userId    String?  @map("user_id")
+  teamId    String?  @map("team_id")
+
+  // Configuración
+  key       String            // Identificador único (ej: "backlog", "qa", "waiting")
+  name      String            // Nombre visible (ej: "Backlog", "QA", "Waiting")
+  color     String            // Color hex (ej: "#6b7280", "#3b82f6")
+  position  Int               // Orden en el tablero (0, 1, 2...)
+  isDefault Boolean @default(false) @map("is_default")  // Si es el estado por defecto para nuevas tareas
+
+  // Relaciones
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Solo uno de userId o teamId debe estar presente
+  @@unique([userId, key])
+  @@unique([teamId, key])
+  @@index([userId])
+  @@index([teamId])
+  @@map("task_status_configs")
+}
+
+enum ServerAuthMethod {
+  PASSWORD
+  KEY
+  AGENT
+}
+
+enum ServerStatus {
+  ONLINE
+  OFFLINE
+  UNKNOWN
 }
 
 model User {
@@ -58,6 +139,34 @@ model User {
   sharesCreated TerminalShare[] @relation("SharedByMe")
   sharesReceived TerminalShare[] @relation("SharedWithMe")
   notifications  Notification[]
+  pushSubscriptions PushSubscription[]
+  workspaces    Workspace[]
+  workspaceSharesCreated  WorkspaceShare[] @relation("WorkspaceSharedByMe")
+  workspaceSharesReceived WorkspaceShare[] @relation("WorkspaceSharedWithMe")
+
+  // Team relations
+  teamMemberships TeamMember[]
+  tasksCreated    Task[]       @relation("TaskCreator")
+  personalTasks   PersonalTask[]
+
+  // Custom task statuses for personal tasks
+  taskStatusConfigs  TaskStatusConfig[]
+
+  // Team collaboration relations
+  teamSnippetsCreated    TeamSnippet[]
+  teamServersCreated     TeamServer[]
+  teamCommandHistory     TeamCommandHistory[]
+  teamAuditLogs          TeamAuditLog[]
+  collaborativeMessages  CollaborativeMessage[]
+  teamNotificationPrefs  TeamNotificationPrefs[]
+
+  // Terminal task queues
+  terminalTaskQueues     TerminalTaskQueue[]
+
+  // AI Projects
+  servers                Server[]
+  aiProjects             AIProject[]
+  aiTasksReviewed        AIProjectTask[] @relation("AITaskReviewer")
 
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
@@ -135,6 +244,10 @@ model Terminal {
   outputBuffer  Bytes?         @map("output_buffer")
   position      Int            @default(0)
   isFavorite    Boolean        @default(false) @map("is_favorite")
+  isEphemeral   Boolean        @default(false) @map("is_ephemeral")
+
+  // Team ownership - if set, terminal belongs to the team
+  teamId        String?        @map("team_id")
 
   // Claude Code session (for resuming)
   claudeSessionId String?      @map("claude_session_id")
@@ -149,9 +262,35 @@ model Terminal {
   // Metadata
   lastActiveAt  DateTime?      @map("last_active_at")
 
+  // Display settings (per-terminal customization)
+  fontSize      Int?           @map("font_size")
+  fontFamily    String?        @map("font_family")
+  theme         String?        // Terminal theme override (null = use global theme)
+
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   category      Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  team          Team?          @relation("TeamTerminals", fields: [teamId], references: [id], onDelete: Cascade)
   shares        TerminalShare[]
+  workspaces    WorkspaceTerminal[]
+
+  // Active task being worked on
+  activeTaskId  String?        @map("active_task_id")
+  activeTask    Task?          @relation("TerminalActiveTask", fields: [activeTaskId], references: [id], onDelete: SetNull)
+  taskHistory   TaskTerminalHistory[]
+
+  // Team sharing
+  teamShares    TeamTerminalShare[]
+  collaborativeMessages CollaborativeMessage[]
+  teamCommandHistory    TeamCommandHistory[]
+
+  // Task linking
+  linkedTasks   Task[]         @relation("TaskLinkedTerminal")
+
+  // Terminal task queues
+  taskQueues    TerminalTaskQueue[]
+
+  // AI Project tasks using this terminal
+  aiProjectTasks AIProjectTask[] @relation("AITaskTerminal")
 
   createdAt     DateTime       @default(now()) @map("created_at")
   updatedAt     DateTime       @updatedAt @map("updated_at")
@@ -159,6 +298,8 @@ model Terminal {
   @@index([userId])
   @@index([categoryId])
   @@index([status])
+  @@index([activeTaskId])
+  @@index([teamId])
   @@map("terminals")
 }
 
@@ -313,4 +454,694 @@ model Notification {
   @@index([read])
   @@index([createdAt])
   @@map("notifications")
+}
+
+model Workspace {
+  id          String              @id @default(cuid())
+  userId      String              @map("user_id")
+  name        String
+  description String?
+  color       String?             // Color para identificación visual
+  icon        String?             // Icono del workspace
+  isDefault   Boolean             @default(false) @map("is_default")
+  position    Int                 @default(0)
+
+  // Persistencia del layout de split panes
+  layout         Json?            // { type: 'leaf' | 'split', direction?, children?, terminalId? }
+
+  // Layout de ventanas flotantes (Windows-style)
+  floatingLayout Json?            @map("floating_layout") // { mode: 'split' | 'floating', windows?: [...] }
+
+  // Configuraciones del workspace
+  settings       Json?            // { theme?, defaultCols?, defaultRows? }
+
+  // Team workspace support
+  teamId        String?           @map("team_id")
+  isTeamDefault Boolean           @default(false) @map("is_team_default")
+
+  // Relaciones
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team        Team?               @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  terminals   WorkspaceTerminal[]
+  shares      WorkspaceShare[]
+  tasks       PersonalTask[]
+
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([teamId])
+  @@map("workspaces")
+}
+
+model WorkspaceTerminal {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  terminalId  String    @map("terminal_id")
+  position    Int       @default(0) // Orden dentro del workspace
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  terminal    Terminal  @relation(fields: [terminalId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@unique([workspaceId, terminalId])
+  @@index([workspaceId])
+  @@index([terminalId])
+  @@map("workspace_terminals")
+}
+
+model WorkspaceShare {
+  id             String          @id @default(cuid())
+  workspaceId    String          @map("workspace_id")
+
+  // Share type
+  type           ShareType
+
+  // For EMAIL shares
+  sharedWithId   String?         @map("shared_with_id")
+  sharedEmail    String?         @map("shared_email")
+
+  // For LINK shares
+  shareToken     String?         @unique @map("share_token")
+
+  // Permissions
+  permission     SharePermission
+
+  // Metadata
+  createdById    String          @map("created_by_id")
+  expiresAt      DateTime?       @map("expires_at")
+  lastAccessedAt DateTime?       @map("last_accessed_at")
+  accessCount    Int             @default(0) @map("access_count")
+
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sharedWith     User?           @relation("WorkspaceSharedWithMe", fields: [sharedWithId], references: [id], onDelete: Cascade)
+  createdBy      User            @relation("WorkspaceSharedByMe", fields: [createdById], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  @@index([workspaceId])
+  @@index([sharedWithId])
+  @@index([shareToken])
+  @@map("workspace_shares")
+}
+
+// ========================
+// Teams & Tasks Models
+// ========================
+
+model Team {
+  id          String       @id @default(cuid())
+  name        String
+  description String?
+  color       String       @default("#6366f1")
+  icon        String?
+  image       String?
+
+  members     TeamMember[]
+  roles       TeamCustomRole[]
+  tasks       Task[]
+  taskStatusConfigs TaskStatusConfig[]
+
+  // Team-owned resources
+  terminals           Terminal[]  @relation("TeamTerminals")
+
+  // Team collaboration (shared resources)
+  terminalShares      TeamTerminalShare[]
+  workspaces          Workspace[]
+  snippets            TeamSnippet[]
+  envVariables        TeamEnvVariable[]
+  servers             TeamServer[]
+  commandHistory      TeamCommandHistory[]
+  auditLogs           TeamAuditLog[]
+  notificationPrefs   TeamNotificationPrefs[]
+
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@map("teams")
+}
+
+// Custom roles for granular permissions
+model TeamCustomRole {
+  id          String   @id @default(cuid())
+  teamId      String   @map("team_id")
+  name        String
+  description String?
+  color       String   @default("#6366f1")
+
+  // Permissions as array of permission keys
+  permissions String[] @default([])
+
+  // Role ordering (lower = more important)
+  position    Int      @default(0)
+
+  // System roles cannot be deleted
+  isSystem    Boolean  @default(false) @map("is_system")
+
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  members     TeamMember[]
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([teamId, name])
+  @@index([teamId])
+  @@map("team_custom_roles")
+}
+
+model TeamMember {
+  id           String          @id @default(cuid())
+  teamId       String          @map("team_id")
+  userId       String          @map("user_id")
+  role         TeamRole        @default(MEMBER) // Legacy field for backwards compatibility
+  customRoleId String?         @map("custom_role_id") // New: reference to custom role
+
+  team         Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customRole   TeamCustomRole? @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
+  taskAssignments TaskAssignee[]
+
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+  @@index([customRoleId])
+  @@map("team_members")
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  teamId      String       @map("team_id")
+  createdById String       @map("created_by_id")
+  title       String
+  description String?      @db.Text
+  status      String       @default("backlog")  // Custom status key from TaskStatusConfig
+  priority    TaskPriority @default(MEDIUM)
+  position    Int          @default(0)
+  dueDate     DateTime?    @map("due_date")
+
+  // Linked terminal for task context
+  linkedTerminalId       String?   @map("linked_terminal_id")
+  linkedTerminal         Terminal? @relation("TaskLinkedTerminal", fields: [linkedTerminalId], references: [id], onDelete: SetNull)
+  terminalOutputSnapshot String?   @map("terminal_output_snapshot") @db.Text
+
+  team        Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy   User         @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  assignees   TaskAssignee[]
+  terminalsActive Terminal[] @relation("TerminalActiveTask")
+  terminalHistory TaskTerminalHistory[]
+  commands    TaskCommand[]
+
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@index([teamId])
+  @@index([createdById])
+  @@index([status])
+  @@index([priority])
+  @@index([dueDate])
+  @@index([linkedTerminalId])
+  @@map("tasks")
+}
+
+model TaskAssignee {
+  id           String     @id @default(cuid())
+  taskId       String     @map("task_id")
+  teamMemberId String     @map("team_member_id")
+
+  task         Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  teamMember   TeamMember @relation(fields: [teamMemberId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@unique([taskId, teamMemberId])
+  @@index([taskId])
+  @@index([teamMemberId])
+  @@map("task_assignees")
+}
+
+model TaskTerminalHistory {
+  id         String   @id @default(cuid())
+  taskId     String   @map("task_id")
+  terminalId String   @map("terminal_id")
+  startedAt  DateTime @default(now()) @map("started_at")
+  endedAt    DateTime? @map("ended_at")
+  duration   Int?     // Duration in seconds
+
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  terminal   Terminal @relation(fields: [terminalId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([terminalId])
+  @@index([startedAt])
+  @@map("task_terminal_history")
+}
+
+// ========================
+// Push Notifications
+// ========================
+
+model PushSubscription {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  endpoint    String   @unique
+  p256dh      String
+  auth        String
+  userAgent   String?  @map("user_agent")
+
+  // Preferences per notification type
+  terminalCrashed     Boolean @default(true) @map("terminal_crashed")
+  sshConnectionFailed Boolean @default(true) @map("ssh_connection_failed")
+  viewerActivity      Boolean @default(true) @map("viewer_activity")
+  commandCompleted    Boolean @default(true) @map("command_completed")
+  shareNotifications  Boolean @default(true) @map("share_notifications")
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+// ========================
+// Team Collaboration Models
+// ========================
+
+model TeamTerminalShare {
+  id           String          @id @default(cuid())
+  terminalId   String          @map("terminal_id")
+  teamId       String          @map("team_id")
+  permission   SharePermission @default(VIEW)
+
+  terminal     Terminal        @relation(fields: [terminalId], references: [id], onDelete: Cascade)
+  team         Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  @@unique([terminalId, teamId])
+  @@index([terminalId])
+  @@index([teamId])
+  @@map("team_terminal_shares")
+}
+
+model TeamSnippet {
+  id          String   @id @default(cuid())
+  teamId      String   @map("team_id")
+  createdById String   @map("created_by_id")
+  name        String
+  command     String   @db.Text
+  description String?
+  category    String?
+  tags        String[] @default([])
+  usageCount  Int      @default(0) @map("usage_count")
+
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy   User     @relation(fields: [createdById], references: [id])
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([teamId])
+  @@index([createdById])
+  @@index([category])
+  @@map("team_snippets")
+}
+
+model TeamEnvVariable {
+  id       String  @id @default(cuid())
+  teamId   String  @map("team_id")
+  name     String
+  value    String  @db.Text
+  isSecret Boolean @default(false) @map("is_secret")
+
+  team     Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([teamId, name])
+  @@index([teamId])
+  @@map("team_env_variables")
+}
+
+model TeamServer {
+  id            String           @id @default(cuid())
+  teamId        String           @map("team_id")
+  createdById   String           @map("created_by_id")
+  name          String
+  host          String
+  port          Int              @default(22)
+  username      String?
+  authMethod    ServerAuthMethod @default(PASSWORD)
+  description   String?
+  documentation String?          @db.Text
+  tags          String[]         @default([])
+  lastStatus    ServerStatus?    @map("last_status")
+  lastCheckedAt DateTime?        @map("last_checked_at")
+
+  team          Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy     User             @relation(fields: [createdById], references: [id])
+
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  @@index([teamId])
+  @@index([createdById])
+  @@map("team_servers")
+}
+
+model TeamCommandHistory {
+  id         String   @id @default(cuid())
+  teamId     String   @map("team_id")
+  userId     String   @map("user_id")
+  terminalId String   @map("terminal_id")
+  command    String   @db.Text
+  exitCode   Int?     @map("exit_code")
+  duration   Int?     // Duration in milliseconds
+
+  team       Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id])
+  terminal   Terminal @relation(fields: [terminalId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([teamId])
+  @@index([userId])
+  @@index([terminalId])
+  @@index([createdAt])
+  @@map("team_command_history")
+}
+
+model TeamAuditLog {
+  id         String   @id @default(cuid())
+  teamId     String   @map("team_id")
+  userId     String   @map("user_id")
+  action     String
+  resource   String
+  resourceId String?  @map("resource_id")
+  details    Json?
+
+  team       Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id])
+
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([teamId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("team_audit_logs")
+}
+
+model TeamNotificationPrefs {
+  id                   String  @id @default(cuid())
+  teamId               String  @map("team_id")
+  userId               String  @map("user_id")
+  terminalErrors       Boolean @default(true) @map("terminal_errors")
+  longCommands         Boolean @default(true) @map("long_commands")
+  longCommandThreshold Int     @default(300) @map("long_command_threshold") // seconds
+  taskMentions         Boolean @default(true) @map("task_mentions")
+  serverStatus         Boolean @default(true) @map("server_status")
+
+  team                 Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+  @@map("team_notification_prefs")
+}
+
+model CollaborativeMessage {
+  id         String   @id @default(cuid())
+  terminalId String   @map("terminal_id")
+  userId     String   @map("user_id")
+  content    String   @db.Text
+
+  terminal   Terminal @relation(fields: [terminalId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id])
+
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([terminalId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("collaborative_messages")
+}
+
+model TaskCommand {
+  id          String    @id @default(cuid())
+  taskId      String    @map("task_id")
+  command     String    @db.Text
+  description String?
+  position    Int       @default(0)
+  isCompleted Boolean   @default(false) @map("is_completed")
+  completedAt DateTime? @map("completed_at")
+  exitCode    Int?      @map("exit_code")
+
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([taskId])
+  @@index([position])
+  @@map("task_commands")
+}
+
+// ========================
+// Personal Tasks
+// ========================
+
+model PersonalTask {
+  id          String       @id @default(cuid())
+  userId      String       @map("user_id")
+  title       String
+  description String?      @db.Text
+  status      String       @default("backlog")  // Custom status key from TaskStatusConfig
+  priority    TaskPriority @default(MEDIUM)
+  position    Int          @default(0)
+  dueDate     DateTime?    @map("due_date")
+
+  // Workspace organization (replaces boardId)
+  workspaceId String?      @map("workspace_id")
+  workspace   Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  // Commands for terminal execution
+  commands    String?      @db.Text  // JSON array: ["npm install", "npm build"]
+
+  // Terminal execution tracking
+  terminalQueueId String?  @map("terminal_queue_id")
+  executedAt      DateTime? @map("executed_at")
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([status])
+  @@index([workspaceId])
+  @@map("personal_tasks")
+}
+
+// ========================
+// Terminal Task Queue
+// ========================
+
+enum QueueStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum CommandStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
+model TerminalTaskQueue {
+  id          String       @id @default(cuid())
+  terminalId  String       @map("terminal_id")
+  userId      String       @map("user_id")
+  name        String
+  status      QueueStatus  @default(PENDING)
+  position    Int          @default(0)
+
+  commands    TerminalQueueCommand[]
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  terminal    Terminal     @relation(fields: [terminalId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  startedAt   DateTime?    @map("started_at")
+  completedAt DateTime?    @map("completed_at")
+
+  @@index([terminalId])
+  @@index([userId])
+  @@index([status])
+  @@map("terminal_task_queues")
+}
+
+model TerminalQueueCommand {
+  id          String        @id @default(cuid())
+  queueId     String        @map("queue_id")
+  command     String        @db.Text
+  status      CommandStatus @default(PENDING)
+  position    Int           @default(0)
+  output      String?       @db.Text
+  exitCode    Int?          @map("exit_code")
+
+  queue       TerminalTaskQueue @relation(fields: [queueId], references: [id], onDelete: Cascade)
+
+  startedAt   DateTime?     @map("started_at")
+  completedAt DateTime?     @map("completed_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  @@index([queueId])
+  @@index([status])
+  @@map("terminal_queue_commands")
+}
+
+// ========================
+// AI Projects
+// ========================
+
+enum AIProjectStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum AITaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+  FAILED
+  CANCELLED
+}
+
+enum AITaskReviewStatus {
+  APPROVED
+  REJECTED
+  NEEDS_CHANGES
+}
+
+// Personal SSH servers
+model Server {
+  id            String            @id @default(cuid())
+  userId        String            @map("user_id")
+  name          String
+  host          String
+  port          Int               @default(22)
+  username      String?
+  authMethod    ServerAuthMethod  @default(PASSWORD)
+  password      String?           @db.Text  // Encrypted
+  privateKey    String?           @db.Text  // Encrypted
+  description   String?
+  documentation String?           @db.Text  // Notes/documentation for the server
+  tags          String[]          @default([])
+  lastStatus    ServerStatus?     @map("last_status")
+  lastCheckedAt DateTime?         @map("last_checked_at")
+  isDefault     Boolean           @default(false) @map("is_default")  // For localhost
+
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiProjects    AIProject[]
+  connections   ServerConnection[]  // Connection history
+
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("servers")
+}
+
+// Server connection history
+model ServerConnection {
+  id         String   @id @default(cuid())
+  serverId   String   @map("server_id")
+  terminalId String?  @map("terminal_id")  // Terminal that was created
+  success    Boolean  @default(true)
+  error      String?  // Error message if connection failed
+
+  server     Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([serverId])
+  @@index([createdAt])
+  @@map("server_connections")
+}
+
+model AIProject {
+  id               String          @id @default(cuid())
+  userId           String          @map("user_id")
+  serverId         String          @map("server_id")
+  name             String
+  description      String?         @db.Text
+  workingDirectory String          @map("working_directory")
+  status           AIProjectStatus @default(ACTIVE)
+  systemPrompt     String?         @map("system_prompt") @db.Text
+  claudeModel      String?         @map("claude_model") @default("claude-sonnet-4-20250514")
+
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server           Server          @relation(fields: [serverId], references: [id], onDelete: Restrict)
+  tasks            AIProjectTask[]
+
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([serverId])
+  @@map("ai_projects")
+}
+
+model AIProjectTask {
+  id              String              @id @default(cuid())
+  projectId       String              @map("project_id")
+  title           String
+  description     String?             @db.Text
+  status          AITaskStatus        @default(TODO)
+  priority        TaskPriority        @default(MEDIUM)
+  position        Int                 @default(0)
+
+  // Execution
+  terminalId      String?             @map("terminal_id")
+  startedAt       DateTime?           @map("started_at")
+  completedAt     DateTime?           @map("completed_at")
+
+  // Results
+  result          String?             @db.Text  // Claude's summary
+  logs            String?             @db.Text  // Terminal output
+  errorMessage    String?             @map("error_message") @db.Text
+
+  // Review
+  reviewedAt      DateTime?           @map("reviewed_at")
+  reviewedById    String?             @map("reviewed_by_id")
+  reviewNotes     String?             @map("review_notes") @db.Text
+  reviewStatus    AITaskReviewStatus? @map("review_status")
+
+  project         AIProject           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  terminal        Terminal?           @relation("AITaskTerminal", fields: [terminalId], references: [id], onDelete: SetNull)
+  reviewedBy      User?               @relation("AITaskReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  @@index([projectId])
+  @@index([status])
+  @@map("ai_project_tasks")
 }

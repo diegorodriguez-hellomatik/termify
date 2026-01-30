@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import { Bell, Check, CheckCheck, Trash2, Share2, ShieldAlert, Info, X } from 'lucide-react';
+import {
+  Bell, Check, CheckCheck, Trash2, Share2, ShieldAlert, Info, X,
+  Users, UserPlus, UserMinus, Shield, ListChecks, Clock, AlertCircle,
+  Terminal, Wifi, Eye, PlayCircle
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { notificationsApi, Notification, NotificationType } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -13,6 +17,20 @@ const notificationIcons: Record<NotificationType, typeof Bell> = {
   TERMINAL_SHARE_REVOKED: ShieldAlert,
   TERMINAL_SHARE_UPDATED: Share2,
   SYSTEM: Info,
+  TEAM_INVITE: UserPlus,
+  TEAM_MEMBER_JOINED: UserPlus,
+  TEAM_MEMBER_LEFT: UserMinus,
+  TEAM_ROLE_CHANGED: Shield,
+  TASK_ASSIGNED: ListChecks,
+  TASK_UNASSIGNED: ListChecks,
+  TASK_STATUS_CHANGED: ListChecks,
+  TASK_DUE_SOON: Clock,
+  TASK_OVERDUE: AlertCircle,
+  TERMINAL_CRASHED: AlertCircle,
+  SSH_CONNECTION_FAILED: Wifi,
+  VIEWER_JOINED: Eye,
+  VIEWER_LEFT: Eye,
+  COMMAND_COMPLETED: PlayCircle,
 };
 
 export function NotificationsDropdown() {

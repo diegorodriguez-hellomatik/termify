@@ -8,7 +8,7 @@ import { TerminalStatus } from '@termify/shared';
 import { useTerminalSocket } from '@/hooks/useTerminalSocket';
 import { useTheme } from '@/context/ThemeContext';
 import { getXtermTheme, getTerminalTheme } from '@/lib/terminal-themes';
-import { Play, Square, RefreshCw, Maximize2 } from 'lucide-react';
+import { Play, Square, RefreshCw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TerminalThemeSelector } from '@/components/settings/TerminalThemeSelector';
 import { cn } from '@/lib/utils';
@@ -23,6 +23,17 @@ interface TerminalProps {
   className?: string;
   onReady?: () => void;
   isActive?: boolean;
+  onClose?: () => void;
+  /** Hide the toolbar completely (for use in floating windows with custom header) */
+  hideToolbar?: boolean;
+  /** Callback to receive status updates */
+  onStatusUpdate?: (status: TerminalStatus, isConnected: boolean) => void;
+  /** Override font size */
+  fontSize?: number;
+  /** Override font family */
+  fontFamily?: string;
+  /** Override theme */
+  themeOverride?: string;
 }
 
 const STATUS_COLORS: Record<TerminalStatus, string> = {
@@ -48,6 +59,12 @@ export function Terminal({
   className,
   onReady,
   isActive = true,
+  onClose,
+  hideToolbar = false,
+  onStatusUpdate,
+  fontSize,
+  fontFamily,
+  themeOverride,
 }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<XTerm | null>(null);
@@ -92,6 +109,11 @@ export function Terminal({
       onConnected: handleConnected,
       onError: handleError,
     });
+
+  // Notify parent of status updates
+  useEffect(() => {
+    onStatusUpdate?.(status, isConnected);
+  }, [status, isConnected, onStatusUpdate]);
 
   // Track if we've initialized to prevent double-init in StrictMode
   const initializedRef = useRef(false);
@@ -295,44 +317,48 @@ export function Terminal({
 
   return (
     <div className={cn('flex flex-col', className)}>
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-card border-b border-border">
-        <div className="flex items-center gap-3">
+      {/* Toolbar - can be hidden when using custom header */}
+      {!hideToolbar && (
+        <div className="flex items-center justify-between px-4 py-2 bg-card border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className={cn('w-2 h-2 rounded-full', STATUS_COLORS[status])} />
+              <span className="text-sm text-muted-foreground">
+                {STATUS_LABELS[status]}
+              </span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {isConnected ? 'Connected' : 'Disconnected'}
+            </div>
+          </div>
+
           <div className="flex items-center gap-2">
-            <div className={cn('w-2 h-2 rounded-full', STATUS_COLORS[status])} />
-            <span className="text-sm text-muted-foreground">
-              {STATUS_LABELS[status]}
-            </span>
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {isConnected ? 'Connected' : 'Disconnected'}
+            <TerminalThemeSelector showLabel={false} />
+
+            {status === TerminalStatus.STOPPED || status === TerminalStatus.CRASHED ? (
+              <Button size="sm" variant="outline" onClick={handleStart}>
+                <Play className="h-4 w-4 mr-1" />
+                Start
+              </Button>
+            ) : status === TerminalStatus.RUNNING ? (
+              <Button size="sm" variant="outline" onClick={handleStop}>
+                <Square className="h-4 w-4 mr-1" />
+                Stop
+              </Button>
+            ) : null}
+
+            <Button size="sm" variant="ghost" onClick={handleReconnect}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+
+            {onClose && (
+              <Button size="sm" variant="ghost" onClick={onClose} title="Remove from workspace">
+                <X className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
-
-        <div className="flex items-center gap-2">
-          <TerminalThemeSelector showLabel={false} />
-
-          {status === TerminalStatus.STOPPED || status === TerminalStatus.CRASHED ? (
-            <Button size="sm" variant="outline" onClick={handleStart}>
-              <Play className="h-4 w-4 mr-1" />
-              Start
-            </Button>
-          ) : status === TerminalStatus.RUNNING ? (
-            <Button size="sm" variant="outline" onClick={handleStop}>
-              <Square className="h-4 w-4 mr-1" />
-              Stop
-            </Button>
-          ) : null}
-
-          <Button size="sm" variant="ghost" onClick={handleReconnect}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-
-          <Button size="sm" variant="ghost" onClick={handleFitTerminal}>
-            <Maximize2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      )}
 
       {error && (
         <div className="px-4 py-2 bg-destructive/10 text-destructive text-sm">

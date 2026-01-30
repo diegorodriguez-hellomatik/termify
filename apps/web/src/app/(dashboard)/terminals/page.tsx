@@ -3,24 +3,16 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import {
   DndContext,
   closestCenter,
   KeyboardSensor,
   PointerSensor,
-  MouseSensor,
-  TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent,
-  DragOverlay,
-  DragStartEvent,
-  DragMoveEvent,
   useDroppable,
-  pointerWithin,
-  rectIntersection,
   MeasuringStrategy,
 } from '@dnd-kit/core';
 import {
@@ -28,7 +20,6 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
-  verticalListSortingStrategy,
   rectSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -37,7 +28,6 @@ import {
   Terminal as TerminalIcon,
   Trash2,
   Play,
-  GripVertical,
   Folder,
   FolderPlus,
   X,
@@ -53,10 +43,13 @@ import {
   Keyboard,
   Users,
   Share2,
-  ExternalLink,
+  Eye,
+  Edit3,
+  User,
 } from 'lucide-react';
 import { TerminalStatus } from '@termify/shared';
-import { terminalsApi, categoriesApi } from '@/lib/api';
+import { terminalsApi, categoriesApi, shareApi, SharedTerminal } from '@/lib/api';
+import { Button } from '@/components/ui/button';
 import { formatRelativeTime } from '@/lib/utils';
 import { useTheme } from '@/context/ThemeContext';
 import { TerminalListView } from '@/components/terminals/TerminalListView';
@@ -213,24 +206,22 @@ function DraggableTerminalCard({
   onRename,
   onToggleFavorite,
   onContextMenu,
+  onConnect,
   isRenaming,
   onRenameComplete,
   isDark,
   isCompact,
-  isDragging,
-  isOverlay,
 }: {
   terminal: TerminalData;
   onDelete: (id: string) => void;
   onRename: (id: string, newName: string) => void;
   onToggleFavorite: (id: string, isFavorite: boolean) => void;
   onContextMenu?: (e: React.MouseEvent, terminal: TerminalData) => void;
+  onConnect?: (id: string) => void;
   isRenaming?: boolean;
   onRenameComplete?: () => void;
   isDark: boolean;
   isCompact?: boolean;
-  isDragging?: boolean;
-  isOverlay?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(terminal.name);
@@ -258,24 +249,23 @@ function DraggableTerminalCard({
     setNodeRef,
     transform,
     transition,
-    isDragging: isSortableDragging,
-    over,
+    isDragging,
   } = useSortable({
     id: terminal.id,
     transition: {
-      duration: 250,
+      duration: 200,
       easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
     },
   });
 
-  const dragging = isDragging || isSortableDragging;
+  // Combine dnd-kit transition with hover transitions for border/shadow
+  const baseTransition = 'border-color 200ms, box-shadow 200ms';
+  const combinedTransition = isDragging ? undefined : (transition ? `${transition}, ${baseTransition}` : baseTransition);
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition: dragging ? undefined : transition,
-    opacity: dragging && !isOverlay ? 0.3 : 1,
-    zIndex: dragging ? 1000 : 1,
-    scale: isOverlay ? 1.02 : 1,
+  const style: React.CSSProperties = {
+    transform: transform ? `translate3d(${Math.round(transform.x)}px, ${Math.round(transform.y)}px, 0)` : undefined,
+    transition: combinedTransition,
+    zIndex: isDragging ? 1000 : 1,
   };
 
   if (isCompact) {
@@ -285,17 +275,21 @@ function DraggableTerminalCard({
         style={style}
         {...attributes}
         {...listeners}
+        onClick={(e) => {
+          if (!isDragging) {
+            onConnect?.(terminal.id);
+          }
+        }}
         onContextMenu={(e) => {
-          if (onContextMenu && !isOverlay) {
+          if (onContextMenu) {
             e.preventDefault();
             onContextMenu(e, terminal);
           }
         }}
         className={cn(
           'group relative bg-card border border-border rounded-lg overflow-hidden cursor-grab active:cursor-grabbing',
-          dragging && !isOverlay && 'opacity-30',
-          isOverlay && 'shadow-2xl ring-2 ring-primary/50 scale-[1.02] rotate-1',
-          !dragging && 'hover:border-primary/50 transition-colors'
+          !isDragging && 'transition-shadow transition-border duration-200 hover:border-primary/50 hover:shadow-md',
+          isDragging && 'shadow-2xl ring-2 ring-primary/50'
         )}
       >
         <div className="p-3">
@@ -339,11 +333,16 @@ function DraggableTerminalCard({
                 {terminal.isFavorite ? <Star size={14} fill="currentColor" /> : <StarOff size={14} />}
               </button>
 
-              <Link href={`/terminals/${terminal.id}`}>
-                <button className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
-                  <Play size={14} />
-                </button>
-              </Link>
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onConnect?.(terminal.id);
+                }}
+                className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+              >
+                <Play size={14} />
+              </button>
 
               <button
                 onClick={(e) => {
@@ -368,18 +367,21 @@ function DraggableTerminalCard({
       style={style}
       {...attributes}
       {...listeners}
+      onClick={(e) => {
+        if (!isDragging) {
+          onConnect?.(terminal.id);
+        }
+      }}
       onContextMenu={(e) => {
-        if (onContextMenu && !isOverlay) {
+        if (onContextMenu) {
           e.preventDefault();
           onContextMenu(e, terminal);
         }
       }}
       className={cn(
         'group relative bg-card border border-border rounded-xl overflow-hidden cursor-grab active:cursor-grabbing',
-        'transition-colors duration-200',
-        dragging && !isOverlay && 'opacity-30',
-        isOverlay && 'shadow-2xl ring-2 ring-primary/50 scale-[1.02] rotate-1 bg-card/95 backdrop-blur-sm',
-        !dragging && 'hover:border-primary/50'
+        !isDragging && 'transition-shadow transition-border duration-200 hover:border-primary/50 hover:shadow-md',
+        isDragging && 'shadow-2xl ring-2 ring-primary/50'
       )}
     >
       <div className="p-5">
@@ -499,21 +501,234 @@ function DraggableTerminalCard({
           <span className="capitalize">{terminal.status.toLowerCase()}</span>
         </div>
 
-        <Link href={`/terminals/${terminal.id}`}>
-          <button className="w-full py-2.5 rounded-lg border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center gap-2 font-medium text-sm">
-            {terminal.status === TerminalStatus.RUNNING ? (
-              <>
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onConnect?.(terminal.id);
+          }}
+          className="w-full py-2.5 rounded-lg border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center gap-2 font-medium text-sm"
+        >
+          {terminal.status === TerminalStatus.RUNNING ? (
+            <>
+              <Play size={14} />
+              Connect
+            </>
+          ) : (
+            <>
+              <TerminalIcon size={14} />
+              Open
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Shared Terminal Card Component
+function SharedTerminalCard({
+  terminal,
+  onConnect,
+  isDark,
+  isCompact,
+  hideOwner,
+}: {
+  terminal: SharedTerminal;
+  onConnect?: (id: string) => void;
+  isDark: boolean;
+  isCompact?: boolean;
+  hideOwner?: boolean;
+}) {
+  const STATUS_COLORS_SHARED: Record<string, string> = {
+    STOPPED: 'bg-gray-500',
+    STARTING: 'bg-yellow-500',
+    RUNNING: 'bg-green-500',
+    CRASHED: 'bg-red-500',
+  };
+
+  if (isCompact) {
+    return (
+      <div
+        className={cn(
+          'group relative bg-card border border-border rounded-lg overflow-hidden cursor-pointer',
+          'transition-all duration-200 hover:border-primary/50 hover:shadow-md'
+        )}
+        onClick={() => onConnect?.(terminal.id)}
+      >
+        <div className="p-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div
+                className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0"
+                style={{
+                  backgroundColor: terminal.category?.color
+                    ? `${terminal.category.color}20`
+                    : isDark
+                    ? '#333'
+                    : '#f0f0f0',
+                }}
+              >
+                <TerminalIcon
+                  size={14}
+                  style={{ color: terminal.category?.color || (isDark ? '#888' : '#666') }}
+                />
+              </div>
+              <span className="font-medium text-sm truncate max-w-[120px]">{terminal.name}</span>
+              <div className={cn('w-2 h-2 rounded-full', STATUS_COLORS_SHARED[terminal.status] || 'bg-gray-500')} />
+            </div>
+            <div className="flex items-center gap-1">
+              {/* Permission badge */}
+              <span
+                className={cn(
+                  'flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
+                  terminal.share.permission === 'CONTROL'
+                    ? 'bg-green-500/10 text-green-500'
+                    : 'bg-blue-500/10 text-blue-500'
+                )}
+              >
+                {terminal.share.permission === 'CONTROL' ? (
+                  <Edit3 size={10} />
+                ) : (
+                  <Eye size={10} />
+                )}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onConnect?.(terminal.id);
+                }}
+                className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+              >
                 <Play size={14} />
-                Connect
-              </>
-            ) : (
-              <>
-                <TerminalIcon size={14} />
-                Open
-              </>
-            )}
-          </button>
-        </Link>
+              </button>
+            </div>
+          </div>
+          {/* Owner info - hidden when grouped by owner */}
+          {!hideOwner && (
+            <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
+              <User size={10} />
+              <span className="truncate">{terminal.user.name || terminal.user.email}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        'group relative bg-card border border-border rounded-xl overflow-hidden cursor-pointer',
+        'transition-all duration-200 hover:border-primary/50 hover:shadow-md'
+      )}
+      onClick={() => onConnect?.(terminal.id)}
+    >
+      <div className="p-5">
+        {/* Header row */}
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center"
+              style={{
+                backgroundColor: terminal.category?.color
+                  ? `${terminal.category.color}20`
+                  : isDark
+                  ? '#333'
+                  : '#f0f0f0',
+              }}
+            >
+              <TerminalIcon
+                size={20}
+                style={{ color: terminal.category?.color || (isDark ? '#888' : '#666') }}
+              />
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground">{terminal.name}</h3>
+              <p className="text-xs text-muted-foreground">
+                {terminal.cols}x{terminal.rows}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Permission Badge */}
+            <span
+              className={cn(
+                'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium',
+                terminal.share.permission === 'CONTROL'
+                  ? 'bg-green-500/10 text-green-500'
+                  : 'bg-blue-500/10 text-blue-500'
+              )}
+            >
+              {terminal.share.permission === 'CONTROL' ? (
+                <>
+                  <Edit3 size={12} />
+                  Control
+                </>
+              ) : (
+                <>
+                  <Eye size={12} />
+                  View
+                </>
+              )}
+            </span>
+            <div className={cn('w-2 h-2 rounded-full', STATUS_COLORS_SHARED[terminal.status] || 'bg-gray-500')} />
+          </div>
+        </div>
+
+        {/* Owner info - hidden when grouped by owner */}
+        {!hideOwner && (
+          <div
+            className="flex items-center gap-2 py-2 px-3 rounded-lg mb-4"
+            style={{ backgroundColor: isDark ? '#262626' : '#f5f5f5' }}
+          >
+            <div
+              className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
+              style={{ backgroundColor: isDark ? '#444' : '#ddd' }}
+            >
+              {terminal.user.image ? (
+                <img
+                  src={terminal.user.image}
+                  alt=""
+                  className="w-6 h-6 rounded-full"
+                />
+              ) : (
+                <User size={12} className={isDark ? 'text-gray-400' : 'text-gray-600'} />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate" style={{ color: isDark ? '#ccc' : '#444' }}>
+                {terminal.user.name || terminal.user.email}
+              </p>
+            </div>
+            <span className="text-xs text-muted-foreground shrink-0">Owner</span>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between text-xs text-muted-foreground mb-4">
+          <span>Shared {formatRelativeTime(new Date(terminal.share.createdAt))}</span>
+          <span className="capitalize">{terminal.status.toLowerCase()}</span>
+        </div>
+
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onConnect?.(terminal.id);
+          }}
+          className="w-full py-2.5 rounded-lg border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center gap-2 font-medium text-sm"
+        >
+          {terminal.status === 'RUNNING' ? (
+            <>
+              <Play size={14} />
+              Connect
+            </>
+          ) : (
+            <>
+              <TerminalIcon size={14} />
+              Open
+            </>
+          )}
+        </button>
       </div>
     </div>
   );
@@ -747,13 +962,23 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
   const [categories, setCategories] = useState<CategoryData[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [isNavigating, setIsNavigating] = useState(false);
+
+  // Navigate to terminal with transition
+  const navigateToTerminal = useCallback((terminalId: string) => {
+    setIsNavigating(true);
+    setTimeout(() => {
+      router.push(`/terminals/${terminalId}`);
+    }, 100);
+  }, [router]);
   const [creatingCategory, setCreatingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [showCategoryInput, setShowCategoryInput] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [showSharedOnly, setShowSharedOnly] = useState(false);
+  const [sharedTerminals, setSharedTerminals] = useState<SharedTerminal[]>([]);
   const [terminalToDelete, setTerminalToDelete] = useState<TerminalData | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -768,17 +993,11 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
 
   const { setShowHelp } = useKeyboardShortcuts();
 
-  // Smooth drag sensors with minimal activation distance
+  // DnD sensors - minimal distance for responsive drag (same as workspaces)
   const sensors = useSensors(
-    useSensor(MouseSensor, {
+    useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 5, // Start drag after 5px movement
-      },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 150, // Long press on mobile
-        tolerance: 5,
+        distance: 8,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -790,9 +1009,10 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
     if (!session?.accessToken) return;
 
     try {
-      const [terminalsRes, categoriesRes] = await Promise.all([
+      const [terminalsRes, categoriesRes, sharedRes] = await Promise.all([
         terminalsApi.list(session.accessToken),
         categoriesApi.list(session.accessToken),
+        shareApi.getSharedWithMe(session.accessToken),
       ]);
 
       if (terminalsRes.success && terminalsRes.data) {
@@ -800,6 +1020,9 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
       }
       if (categoriesRes.success && categoriesRes.data) {
         setCategories(categoriesRes.data.categories);
+      }
+      if (sharedRes.success && sharedRes.data) {
+        setSharedTerminals(sharedRes.data.terminals);
       }
     } catch (error) {
       console.error('Failed to load data:', error);
@@ -839,7 +1062,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
 
       if (response.success && response.data) {
         // Redirect immediately to terminal page (spinner will show there)
-        router.push(`/terminals/${response.data.id}`);
+        navigateToTerminal(response.data.id);
       }
     } catch (error) {
       console.error('Failed to create terminal:', error);
@@ -867,7 +1090,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
             (t: any) => t.name === (config.name || `${config.username}@${config.host}`)
           );
           if (sshTerminal) {
-            router.push(`/terminals/${sshTerminal.id}`);
+            navigateToTerminal(sshTerminal.id);
             return;
           }
           // Fallback to the most recent terminal
@@ -875,7 +1098,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
             (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           )[0];
           if (newest) {
-            router.push(`/terminals/${newest.id}`);
+            navigateToTerminal(newest.id);
           }
         }
       } catch (error) {
@@ -968,7 +1191,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
 
   const handleContextMenuConnect = () => {
     if (contextMenu) {
-      router.push(`/terminals/${contextMenu.terminal.id}`);
+      navigateToTerminal(contextMenu.terminal.id);
     }
   };
 
@@ -1028,10 +1251,6 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
     }
   };
 
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
-
   const handleDragOver = (event: DragEndEvent) => {
     const { over } = event;
     setOverId(over?.id as string | null);
@@ -1039,7 +1258,6 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
-    setActiveId(null);
     setOverId(null);
 
     if (!over) return;
@@ -1110,26 +1328,38 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
     }
   };
 
-  // Filter terminals by selected category, favorites, and search
-  const filteredTerminals = terminals
-    .filter((t) => {
-      if (showFavoritesOnly && !t.isFavorite) return false;
-      if (selectedCategory && t.categoryId !== selectedCategory) return false;
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        return (
-          t.name.toLowerCase().includes(query) ||
-          t.category?.name.toLowerCase().includes(query)
-        );
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      // Sort favorites to top
-      if (a.isFavorite && !b.isFavorite) return -1;
-      if (!a.isFavorite && b.isFavorite) return 1;
-      return 0;
-    });
+  // Filter terminals by selected category, favorites, shared, and search
+  const filteredTerminals = showSharedOnly
+    ? sharedTerminals.filter((t) => {
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          return (
+            t.name.toLowerCase().includes(query) ||
+            t.user?.name?.toLowerCase().includes(query) ||
+            t.user?.email?.toLowerCase().includes(query)
+          );
+        }
+        return true;
+      })
+    : terminals
+        .filter((t) => {
+          if (showFavoritesOnly && !t.isFavorite) return false;
+          if (selectedCategory && t.categoryId !== selectedCategory) return false;
+          if (searchQuery) {
+            const query = searchQuery.toLowerCase();
+            return (
+              t.name.toLowerCase().includes(query) ||
+              t.category?.name.toLowerCase().includes(query)
+            );
+          }
+          return true;
+        })
+        .sort((a, b) => {
+          // Sort favorites to top
+          if (a.isFavorite && !b.isFavorite) return -1;
+          if (!a.isFavorite && b.isFavorite) return 1;
+          return 0;
+        });
 
   const favoritesCount = terminals.filter((t) => t.isFavorite).length;
 
@@ -1172,10 +1402,13 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
       </div>
 
       {/* Desktop View - Full feature interface */}
+      <div className={cn(
+        "transition-opacity duration-150",
+        isNavigating ? "opacity-0" : "opacity-100"
+      )}>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
         measuring={{
@@ -1186,7 +1419,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
       >
         <div className="hidden md:block p-8">
           {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Terminals</h1>
             <p className="text-muted-foreground mt-1">
@@ -1209,14 +1442,14 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
             {/* View mode toggle */}
             <ViewModeToggle viewMode={viewMode} onChange={setViewMode} isDark={isDark} />
 
-            <button
+            <Button
               onClick={handleOpenCreateModal}
               disabled={creating}
-              className="flex items-center gap-2 px-4 py-2.5 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-all disabled:opacity-50"
+              className="gap-2"
             >
-              <Plus size={18} />
+              <Plus size={16} />
               {creating ? 'Creating...' : 'New Terminal'}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -1233,12 +1466,12 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search terminals... (Ctrl+F)"
-              className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full h-9 pl-10 pr-8 text-sm rounded-md border border-border bg-background focus:outline-none focus:border-primary focus:shadow-sm transition-all duration-200"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
               >
                 <X size={16} />
               </button>
@@ -1253,10 +1486,11 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
               onClick={() => {
                 setSelectedCategory(null);
                 setShowFavoritesOnly(false);
+                setShowSharedOnly(false);
               }}
               className={cn(
                 'px-4 py-2 rounded-full text-sm font-medium transition-all',
-                !selectedCategory && !showFavoritesOnly
+                !selectedCategory && !showFavoritesOnly && !showSharedOnly
                   ? 'bg-foreground text-background'
                   : 'bg-muted text-muted-foreground hover:text-foreground',
                 overId === 'category-all' && 'ring-2 ring-primary'
@@ -1271,6 +1505,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
             onClick={() => {
               setShowFavoritesOnly(!showFavoritesOnly);
               setSelectedCategory(null);
+              setShowSharedOnly(false);
             }}
             className={cn(
               'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all',
@@ -1283,14 +1518,23 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
             Favorites ({favoritesCount})
           </button>
 
-          {/* Shared with me link */}
-          <Link
-            href="/terminals/shared"
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-muted text-muted-foreground hover:text-foreground transition-all"
+          {/* Shared with me filter */}
+          <button
+            onClick={() => {
+              setShowSharedOnly(!showSharedOnly);
+              setSelectedCategory(null);
+              setShowFavoritesOnly(false);
+            }}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all',
+              showSharedOnly
+                ? 'bg-purple-500 text-white'
+                : 'bg-muted text-muted-foreground hover:text-foreground'
+            )}
           >
             <Users size={14} />
-            Shared with me
-          </Link>
+            Shared with me ({sharedTerminals.length})
+          </button>
 
           {categories.map((category) => (
             <DroppableCategory
@@ -1303,6 +1547,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
                   onClick={() => {
                     setSelectedCategory(category.id);
                     setShowFavoritesOnly(false);
+                    setShowSharedOnly(false);
                   }}
                   className={cn(
                     'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all',
@@ -1380,10 +1625,16 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
         {/* Terminal grid/list */}
         {filteredTerminals.length === 0 ? (
           <div className="text-center py-16 bg-card border border-border rounded-xl">
-            <TerminalIcon size={48} className="mx-auto text-muted-foreground mb-4" />
+            {showSharedOnly ? (
+              <Users size={48} className="mx-auto text-muted-foreground mb-4" />
+            ) : (
+              <TerminalIcon size={48} className="mx-auto text-muted-foreground mb-4" />
+            )}
             <h3 className="text-lg font-semibold mb-2 text-foreground">
               {searchQuery
                 ? 'No terminals found'
+                : showSharedOnly
+                ? 'No shared terminals'
                 : showFavoritesOnly
                 ? 'No favorite terminals'
                 : selectedCategory
@@ -1393,31 +1644,107 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
             <p className="text-muted-foreground mb-6">
               {searchQuery
                 ? 'Try a different search term'
+                : showSharedOnly
+                ? 'When someone shares a terminal with you, it will appear here'
                 : showFavoritesOnly
                 ? 'Star a terminal to add it to favorites'
                 : selectedCategory
                 ? 'Create a terminal and assign it to this category'
                 : 'Create your first terminal to get started'}
             </p>
-            {!searchQuery && !showFavoritesOnly && (
-              <button
+            {!searchQuery && !showFavoritesOnly && !showSharedOnly && (
+              <Button
                 onClick={handleOpenCreateModal}
                 disabled={creating}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-all disabled:opacity-50"
+                className="gap-2"
               >
-                <Plus size={18} />
+                <Plus size={16} />
                 Create Terminal
-              </button>
+              </Button>
             )}
           </div>
-        ) : viewMode === 'list' ? (
+        ) : viewMode === 'list' && !showSharedOnly ? (
           <div className="bg-card border border-border rounded-xl overflow-hidden">
             <TerminalListView
-              terminals={filteredTerminals}
+              terminals={filteredTerminals as TerminalData[]}
               onDelete={handleDeleteTerminal}
               onToggleFavorite={handleToggleFavorite}
               isDark={isDark}
             />
+          </div>
+        ) : showSharedOnly ? (
+          // Shared terminals grouped by owner
+          <div className="space-y-8">
+            {(() => {
+              // Group terminals by owner
+              const grouped = (filteredTerminals as SharedTerminal[]).reduce((acc, terminal) => {
+                const ownerId = terminal.user.id;
+                if (!acc[ownerId]) {
+                  acc[ownerId] = {
+                    user: terminal.user,
+                    terminals: [],
+                  };
+                }
+                acc[ownerId].terminals.push(terminal);
+                return acc;
+              }, {} as Record<string, { user: SharedTerminal['user']; terminals: SharedTerminal[] }>);
+
+              return Object.values(grouped).map(({ user, terminals: userTerminals }) => (
+                <div key={user.id}>
+                  {/* User section header */}
+                  <div className="flex items-center gap-3 mb-4">
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: isDark ? '#333' : '#e5e5e5' }}
+                    >
+                      {user.image ? (
+                        <img
+                          src={user.image}
+                          alt=""
+                          className="w-8 h-8 rounded-full"
+                        />
+                      ) : (
+                        <User size={16} className="text-muted-foreground" />
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-foreground">
+                        Terminals de {user.name || user.email}
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        {userTerminals.length} terminal{userTerminals.length !== 1 ? 'es' : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* User's terminals grid */}
+                  <div
+                    className={cn(
+                      'grid gap-4 transition-all',
+                      viewMode === 'compact'
+                        ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
+                        : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+                    )}
+                  >
+                    {userTerminals.map((terminal, index) => (
+                      <div
+                        key={terminal.id}
+                        className="animate-in fade-in slide-in-from-bottom-2 duration-200"
+                        style={{ animationDelay: `${Math.min(index * 30, 300)}ms`, animationFillMode: 'both' }}
+                      >
+                        <SharedTerminalCard
+                          terminal={terminal}
+                          onConnect={navigateToTerminal}
+                          isDark={isDark}
+                          isCompact={viewMode === 'compact'}
+                          hideOwner
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ));
+            })()}
           </div>
         ) : (
           <SortableContext
@@ -1432,11 +1759,11 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
                   : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
               )}
             >
-              {filteredTerminals.map((terminal, index) => (
+              {(filteredTerminals as TerminalData[]).map((terminal, index) => (
                 <div
                   key={terminal.id}
-                  className="slide-up"
-                  style={{ animationDelay: `${index * 0.05}s` }}
+                  className="animate-in fade-in slide-in-from-bottom-2 duration-200"
+                  style={{ animationDelay: `${Math.min(index * 30, 300)}ms`, animationFillMode: 'both' }}
                 >
                   <DraggableTerminalCard
                     terminal={terminal}
@@ -1444,35 +1771,15 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
                     onRename={handleRenameTerminal}
                     onToggleFavorite={handleToggleFavorite}
                     onContextMenu={handleContextMenu}
+                    onConnect={navigateToTerminal}
                     isRenaming={terminalToRename === terminal.id}
                     onRenameComplete={() => setTerminalToRename(null)}
                     isDark={isDark}
                     isCompact={viewMode === 'compact'}
-                    isDragging={activeId === terminal.id}
                   />
                 </div>
               ))}
             </div>
-
-            {/* Drag Overlay - Ghost preview that follows cursor */}
-            <DragOverlay
-              dropAnimation={{
-                duration: 200,
-                easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
-              }}
-            >
-              {activeId ? (
-                <DraggableTerminalCard
-                  terminal={filteredTerminals.find((t) => t.id === activeId)!}
-                  onDelete={() => {}}
-                  onRename={() => {}}
-                  onToggleFavorite={() => {}}
-                  isDark={isDark}
-                  isCompact={viewMode === 'compact'}
-                  isOverlay
-                />
-              ) : null}
-            </DragOverlay>
           </SortableContext>
         )}
 
@@ -1536,6 +1843,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
         )}
         </div>
       </DndContext>
+      </div>
     </>
   );
 }

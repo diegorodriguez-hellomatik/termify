@@ -505,7 +505,7 @@ export function ClaudeSessionsModal({
               )}
 
               {/* Connection status */}
-              {connectionStatus !== 'idle' && connectionStatus !== 'success' && (
+              {connectionStatus !== 'idle' && (
                 <div
                   className={cn(
                     'flex items-center gap-2 p-3 rounded-lg text-sm',

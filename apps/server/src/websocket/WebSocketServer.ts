@@ -14,6 +14,8 @@ import { ConnectionManager } from './ConnectionManager.js';
 import { getPTYManager } from '../pty/PTYManager.js';
 import { SSHManager } from '../ssh/SSHManager.js';
 import { prisma } from '../lib/prisma.js';
+import { NotificationService } from '../services/NotificationService.js';
+import { ephemeralManager } from '../ephemeral/EphemeralTerminalManager.js';
 
 interface TokenPayload {
   userId: string;
@@ -27,12 +29,20 @@ interface UserInfo {
   image: string | null;
 }
 
+// Singleton instance
+let wsServerInstance: TerminalWebSocketServer | null = null;
+
+export function getWebSocketServer(): TerminalWebSocketServer | null {
+  return wsServerInstance;
+}
+
 export class TerminalWebSocketServer {
   private wss: WSServer;
   private connectionManager: ConnectionManager;
   private jwtSecret: string;
 
   constructor(options: { port?: number; server?: any }) {
+    wsServerInstance = this;
     this.jwtSecret = process.env.JWT_SECRET || 'development-secret';
     this.connectionManager = new ConnectionManager();
 
@@ -160,7 +170,11 @@ export class TerminalWebSocketServer {
 
         // Broadcast viewer left if was connected to a terminal
         if (terminalId && conn) {
-          this.broadcastViewerLeft(terminalId, conn.visitorId);
+          this.broadcastViewerLeft(terminalId, conn.visitorId, {
+            userId: conn.userId,
+            name: conn.name || undefined,
+            email: conn.email,
+          });
         }
       });
 
@@ -172,7 +186,11 @@ export class TerminalWebSocketServer {
 
         // Broadcast viewer left if was connected to a terminal
         if (terminalId && conn) {
-          this.broadcastViewerLeft(terminalId, conn.visitorId);
+          this.broadcastViewerLeft(terminalId, conn.visitorId, {
+            userId: conn.userId,
+            name: conn.name || undefined,
+            email: conn.email,
+          });
         }
       });
     });
@@ -219,6 +237,14 @@ export class TerminalWebSocketServer {
         );
         break;
 
+      case 'team.subscribe':
+        await this.handleTeamSubscribe(ws, userId, message.teamId);
+        break;
+
+      case 'team.unsubscribe':
+        await this.handleTeamUnsubscribe(ws, message.teamId);
+        break;
+
       default:
         this.send(ws, { type: 'error', message: 'Unknown message type' });
     }
@@ -234,6 +260,52 @@ export class TerminalWebSocketServer {
   ): Promise<void> {
     const isDev = process.env.NODE_ENV === 'development';
     const shareToken = (ws as any).shareToken as string | undefined;
+
+    // Check if this is an ephemeral terminal first
+    const ephemeralTerminal = ephemeralManager.get(terminalId);
+    if (ephemeralTerminal) {
+      // Verify ownership for ephemeral terminal
+      if (!ephemeralManager.verifyOwnership(terminalId, userId)) {
+        this.send(ws, {
+          type: 'terminal.error',
+          terminalId,
+          error: 'Access denied',
+        });
+        return;
+      }
+
+      // Associate connection with ephemeral terminal (owner has full control)
+      console.log('[WS] Connecting to ephemeral terminal:', { terminalId, userId });
+      this.connectionManager.associateTerminal(ws, terminalId, {
+        permission: SharePermission.CONTROL,
+        isOwner: true,
+      });
+
+      const ptyManager = getPTYManager();
+      const sshManager = SSHManager.getInstance();
+      const ptyInstance = ptyManager.get(terminalId);
+      const sshRunning = sshManager.hasSession(terminalId);
+
+      // Get buffered output if PTY/SSH is running
+      const bufferedOutput = ptyInstance?.outputBuffer.getContents();
+
+      this.send(ws, {
+        type: 'terminal.connected',
+        terminalId,
+        bufferedOutput,
+        permission: SharePermission.CONTROL,
+      });
+
+      this.send(ws, {
+        type: 'terminal.status',
+        terminalId,
+        status: (ptyInstance?.status || (sshRunning ? TerminalStatus.RUNNING : ephemeralTerminal.status)) as TerminalStatus,
+      });
+
+      // Send viewers list (for ephemeral, just the owner)
+      this.sendViewersList(ws, terminalId);
+      return;
+    }
 
     // Check access: owner, email share, or link share
     let terminal = await prisma.terminal.findUnique({
@@ -396,6 +468,28 @@ export class TerminalWebSocketServer {
     terminalId: string
   ): Promise<void> {
     const isDev = process.env.NODE_ENV === 'development';
+
+    // Check if this is an ephemeral terminal first
+    const ephemeralTerminal = ephemeralManager.get(terminalId);
+    if (ephemeralTerminal) {
+      // Verify ownership for ephemeral terminal
+      if (!ephemeralManager.verifyOwnership(terminalId, userId)) {
+        this.send(ws, {
+          type: 'terminal.error',
+          terminalId,
+          error: 'Access denied',
+        });
+        return;
+      }
+
+      // Route to appropriate handler based on type
+      if (ephemeralTerminal.type === 'SSH') {
+        await this.handleEphemeralSSHStart(ws, userId, terminalId, ephemeralTerminal);
+      } else {
+        await this.handleEphemeralPTYStart(ws, userId, terminalId, ephemeralTerminal);
+      }
+      return;
+    }
 
     // Verify ownership (relaxed in dev mode)
     let terminal = await prisma.terminal.findFirst({
@@ -591,6 +685,128 @@ export class TerminalWebSocketServer {
   }
 
   /**
+   * Handle ephemeral PTY (local) terminal start
+   */
+  private async handleEphemeralPTYStart(
+    ws: WebSocket,
+    userId: string,
+    terminalId: string,
+    ephemeral: ReturnType<typeof ephemeralManager.get>
+  ): Promise<void> {
+    if (!ephemeral) return;
+
+    const ptyManager = getPTYManager();
+
+    // Check if already running
+    if (ptyManager.has(terminalId)) {
+      this.send(ws, {
+        type: 'terminal.status',
+        terminalId,
+        status: TerminalStatus.RUNNING,
+      });
+      return;
+    }
+
+    try {
+      // Update ephemeral status to starting
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.STARTING);
+      this.broadcastStatus(terminalId, TerminalStatus.STARTING);
+
+      // Create PTY instance
+      await ptyManager.create(terminalId, userId, {
+        cols: ephemeral.cols,
+        rows: ephemeral.rows,
+      });
+
+      // Update ephemeral status to running
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.RUNNING);
+      this.broadcastStatus(terminalId, TerminalStatus.RUNNING);
+    } catch (error) {
+      console.error(`[WS] Failed to start ephemeral PTY terminal ${terminalId}:`, error);
+
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.CRASHED);
+
+      this.send(ws, {
+        type: 'terminal.error',
+        terminalId,
+        error: error instanceof Error ? error.message : 'Failed to start terminal',
+      });
+
+      this.broadcastStatus(terminalId, TerminalStatus.CRASHED);
+    }
+  }
+
+  /**
+   * Handle ephemeral SSH terminal start
+   */
+  private async handleEphemeralSSHStart(
+    ws: WebSocket,
+    userId: string,
+    terminalId: string,
+    ephemeral: ReturnType<typeof ephemeralManager.get>
+  ): Promise<void> {
+    if (!ephemeral) return;
+
+    const sshManager = SSHManager.getInstance();
+
+    // Check if already running
+    if (sshManager.hasSession(terminalId)) {
+      this.send(ws, {
+        type: 'terminal.status',
+        terminalId,
+        status: TerminalStatus.RUNNING,
+      });
+      return;
+    }
+
+    // Validate SSH config
+    if (!ephemeral.sshHost || !ephemeral.sshUsername) {
+      this.send(ws, {
+        type: 'terminal.error',
+        terminalId,
+        error: 'SSH configuration is incomplete',
+      });
+      return;
+    }
+
+    try {
+      // Update ephemeral status to starting
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.STARTING);
+      this.broadcastStatus(terminalId, TerminalStatus.STARTING);
+
+      // Create SSH session
+      await sshManager.createSession(
+        terminalId,
+        {
+          host: ephemeral.sshHost,
+          port: ephemeral.sshPort || 22,
+          username: ephemeral.sshUsername,
+          password: ephemeral.sshPassword || undefined,
+          privateKey: ephemeral.sshPrivateKey || undefined,
+        },
+        ephemeral.cols,
+        ephemeral.rows
+      );
+
+      // Update ephemeral status to running
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.RUNNING);
+      this.broadcastStatus(terminalId, TerminalStatus.RUNNING);
+    } catch (error) {
+      console.error(`[WS] Failed to start ephemeral SSH terminal ${terminalId}:`, error);
+
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.CRASHED);
+
+      this.send(ws, {
+        type: 'terminal.error',
+        terminalId,
+        error: error instanceof Error ? error.message : 'Failed to connect to SSH server',
+      });
+
+      this.broadcastStatus(terminalId, TerminalStatus.CRASHED);
+    }
+  }
+
+  /**
    * Handle terminal stop request
    */
   private async handleTerminalStop(
@@ -598,7 +814,35 @@ export class TerminalWebSocketServer {
     userId: string,
     terminalId: string
   ): Promise<void> {
-    // Verify ownership
+    const ptyManager = getPTYManager();
+    const sshManager = SSHManager.getInstance();
+
+    // Check if this is an ephemeral terminal
+    const ephemeralTerminal = ephemeralManager.get(terminalId);
+    if (ephemeralTerminal) {
+      // Verify ownership
+      if (!ephemeralManager.verifyOwnership(terminalId, userId)) {
+        this.send(ws, {
+          type: 'terminal.error',
+          terminalId,
+          error: 'Access denied',
+        });
+        return;
+      }
+
+      // Kill PTY or SSH (no buffer saving for ephemeral)
+      if (ptyManager.has(terminalId)) {
+        ptyManager.kill(terminalId);
+      } else if (sshManager.hasSession(terminalId)) {
+        sshManager.destroySession(terminalId);
+      }
+
+      ephemeralManager.updateStatus(terminalId, TerminalStatus.STOPPED);
+      this.broadcastStatus(terminalId, TerminalStatus.STOPPED);
+      return;
+    }
+
+    // Verify ownership for persistent terminal
     const terminal = await prisma.terminal.findFirst({
       where: { id: terminalId, userId },
     });
@@ -611,8 +855,6 @@ export class TerminalWebSocketServer {
       });
       return;
     }
-
-    const ptyManager = getPTYManager();
 
     // Save output buffer before killing
     const instance = ptyManager.get(terminalId);
@@ -710,14 +952,16 @@ export class TerminalWebSocketServer {
       return;
     }
 
-    // Update last active (ignore if terminal was deleted)
-    try {
-      await prisma.terminal.update({
-        where: { id: terminalId },
-        data: { lastActiveAt: new Date() },
-      });
-    } catch (error) {
-      // Terminal might have been deleted, ignore
+    // Update last active (skip for ephemeral terminals, ignore if terminal was deleted)
+    if (!ephemeralManager.isEphemeral(terminalId)) {
+      try {
+        await prisma.terminal.update({
+          where: { id: terminalId },
+          data: { lastActiveAt: new Date() },
+        });
+      } catch (error) {
+        // Terminal might have been deleted, ignore
+      }
     }
   }
 
@@ -748,14 +992,16 @@ export class TerminalWebSocketServer {
       return;
     }
 
-    // Update dimensions (ignore if terminal was deleted)
-    try {
-      await prisma.terminal.update({
-        where: { id: terminalId },
-        data: { cols, rows },
-      });
-    } catch (error) {
-      // Terminal might have been deleted, ignore
+    // Update dimensions (skip for ephemeral terminals, ignore if terminal was deleted)
+    if (!ephemeralManager.isEphemeral(terminalId)) {
+      try {
+        await prisma.terminal.update({
+          where: { id: terminalId },
+          data: { cols, rows },
+        });
+      } catch (error) {
+        // Terminal might have been deleted, ignore
+      }
     }
   }
 
@@ -849,14 +1095,16 @@ export class TerminalWebSocketServer {
 
     // Handle CWD changes
     ptyManager.on('cwd', async (terminalId: string, cwd: string) => {
-      // Update the database with the new CWD
-      try {
-        await prisma.terminal.update({
-          where: { id: terminalId },
-          data: { cwd },
-        });
-      } catch (error) {
-        // Terminal might have been deleted, ignore
+      // Update the database with the new CWD (skip for ephemeral terminals)
+      if (!ephemeralManager.isEphemeral(terminalId)) {
+        try {
+          await prisma.terminal.update({
+            where: { id: terminalId },
+            data: { cwd },
+          });
+        } catch (error) {
+          // Terminal might have been deleted, ignore
+        }
       }
 
       // Broadcast CWD change to connected clients
@@ -876,13 +1124,34 @@ export class TerminalWebSocketServer {
       const status =
         exitCode === 0 ? TerminalStatus.STOPPED : TerminalStatus.CRASHED;
 
+      // Check if this is an ephemeral terminal
+      if (ephemeralManager.isEphemeral(terminalId)) {
+        ephemeralManager.updateStatus(terminalId, status);
+        this.broadcastStatus(terminalId, status);
+        console.log(`[WS] Ephemeral terminal ${terminalId} exited with code ${exitCode}`);
+        return;
+      }
+
       try {
         // Try to update, but the terminal might have been deleted
-        await prisma.terminal.update({
+        const terminal = await prisma.terminal.update({
           where: { id: terminalId },
           data: { status },
         });
         this.broadcastStatus(terminalId, status);
+
+        // Send push notification if terminal crashed (non-zero exit code)
+        if (exitCode !== 0) {
+          const notificationService = NotificationService.getInstance();
+          notificationService.notifyTerminalCrashed({
+            userId: terminal.userId,
+            terminalId: terminal.id,
+            terminalName: terminal.name,
+            exitCode,
+          }).catch((err) => {
+            console.error('[WS] Failed to send terminal crashed notification:', err);
+          });
+        }
       } catch (error) {
         // Terminal was likely deleted, ignore the error
         console.log(`[WS] Terminal ${terminalId} no longer exists, skipping status update`);
@@ -911,6 +1180,14 @@ export class TerminalWebSocketServer {
 
     // Handle SSH session close
     sshManager.on('close', async (terminalId: string) => {
+      // Check if this is an ephemeral terminal
+      if (ephemeralManager.isEphemeral(terminalId)) {
+        ephemeralManager.updateStatus(terminalId, TerminalStatus.STOPPED);
+        this.broadcastStatus(terminalId, TerminalStatus.STOPPED);
+        console.log(`[WS] Ephemeral SSH terminal ${terminalId} closed`);
+        return;
+      }
+
       try {
         await prisma.terminal.update({
           where: { id: terminalId },
@@ -925,8 +1202,28 @@ export class TerminalWebSocketServer {
     // Handle SSH errors
     sshManager.on('error', async (terminalId: string, error: Error) => {
       console.error(`[WS] SSH error for terminal ${terminalId}:`, error);
+
+      // Check if this is an ephemeral terminal
+      if (ephemeralManager.isEphemeral(terminalId)) {
+        ephemeralManager.updateStatus(terminalId, TerminalStatus.CRASHED);
+        this.broadcastStatus(terminalId, TerminalStatus.CRASHED);
+
+        // Send error message to connected clients
+        const message: ServerMessage = {
+          type: 'terminal.error',
+          terminalId,
+          error: error.message,
+        };
+        this.connectionManager.broadcastToTerminal(
+          terminalId,
+          JSON.stringify(message)
+        );
+        console.log(`[WS] Ephemeral SSH terminal ${terminalId} error: ${error.message}`);
+        return;
+      }
+
       try {
-        await prisma.terminal.update({
+        const terminal = await prisma.terminal.update({
           where: { id: terminalId },
           data: { status: TerminalStatus.CRASHED },
         });
@@ -942,6 +1239,18 @@ export class TerminalWebSocketServer {
           terminalId,
           JSON.stringify(message)
         );
+
+        // Send push notification for SSH connection failure
+        const notificationService = NotificationService.getInstance();
+        notificationService.notifySSHConnectionFailed({
+          userId: terminal.userId,
+          terminalId: terminal.id,
+          terminalName: terminal.name,
+          host: terminal.sshHost || 'unknown',
+          error: error.message,
+        }).catch((err) => {
+          console.error('[WS] Failed to send SSH error notification:', err);
+        });
       } catch (err) {
         console.log(`[WS] SSH Terminal ${terminalId} no longer exists, skipping error update`);
       }
@@ -973,7 +1282,7 @@ export class TerminalWebSocketServer {
   /**
    * Broadcast viewer joined to all connections on a terminal
    */
-  private broadcastViewerJoined(ws: WebSocket, terminalId: string): void {
+  private async broadcastViewerJoined(ws: WebSocket, terminalId: string): Promise<void> {
     const connection = this.connectionManager.get(ws);
     if (!connection) return;
 
@@ -1000,12 +1309,53 @@ export class TerminalWebSocketServer {
         socket.send(JSON.stringify(message));
       }
     }
+
+    // Send push notification to terminal owner (if viewer is not the owner)
+    console.log('[WS] broadcastViewerJoined - checking notification:', {
+      isOwner: connection.isOwner,
+      email: connection.email,
+      userId: connection.userId,
+      terminalId,
+    });
+
+    if (!connection.isOwner && connection.email) {
+      try {
+        const terminal = await prisma.terminal.findUnique({
+          where: { id: terminalId },
+          select: { userId: true, name: true },
+        });
+
+        console.log('[WS] broadcastViewerJoined - terminal owner check:', {
+          terminalUserId: terminal?.userId,
+          connectionUserId: connection.userId,
+          shouldNotify: terminal && terminal.userId !== connection.userId,
+        });
+
+        if (terminal && terminal.userId !== connection.userId) {
+          const notificationService = NotificationService.getInstance();
+          console.log('[WS] broadcastViewerJoined - sending notification to owner:', terminal.userId);
+          notificationService.notifyViewerJoined({
+            ownerId: terminal.userId,
+            terminalId,
+            terminalName: terminal.name,
+            viewerName: connection.name || '',
+            viewerEmail: connection.email,
+          }).catch((err) => {
+            console.error('[WS] Failed to send viewer joined notification:', err);
+          });
+        }
+      } catch (err) {
+        console.error('[WS] Failed to fetch terminal for viewer notification:', err);
+      }
+    } else {
+      console.log('[WS] broadcastViewerJoined - skipping notification (isOwner or no email)');
+    }
   }
 
   /**
    * Broadcast viewer left to all connections on a terminal
    */
-  private broadcastViewerLeft(terminalId: string, visitorId: string): void {
+  private async broadcastViewerLeft(terminalId: string, visitorId: string, viewerInfo?: { userId?: string; name?: string; email?: string }): Promise<void> {
     const message: ServerMessage = {
       type: 'terminal.viewer.left',
       terminalId,
@@ -1013,6 +1363,31 @@ export class TerminalWebSocketServer {
     };
 
     this.connectionManager.broadcastToTerminal(terminalId, JSON.stringify(message));
+
+    // Send push notification to terminal owner (if we have viewer info and they're not the owner)
+    if (viewerInfo?.email) {
+      try {
+        const terminal = await prisma.terminal.findUnique({
+          where: { id: terminalId },
+          select: { userId: true, name: true },
+        });
+
+        if (terminal && terminal.userId !== viewerInfo.userId) {
+          const notificationService = NotificationService.getInstance();
+          notificationService.notifyViewerLeft({
+            ownerId: terminal.userId,
+            terminalId,
+            terminalName: terminal.name,
+            viewerName: viewerInfo.name || '',
+            viewerEmail: viewerInfo.email,
+          }).catch((err) => {
+            console.error('[WS] Failed to send viewer left notification:', err);
+          });
+        }
+      } catch (err) {
+        console.error('[WS] Failed to fetch terminal for viewer left notification:', err);
+      }
+    }
   }
 
   /**
@@ -1038,10 +1413,73 @@ export class TerminalWebSocketServer {
   }
 
   /**
+   * Handle team subscription request
+   */
+  private async handleTeamSubscribe(
+    ws: WebSocket,
+    userId: string,
+    teamId: string
+  ): Promise<void> {
+    // Verify membership
+    const membership = await prisma.teamMember.findUnique({
+      where: { teamId_userId: { teamId, userId } },
+    });
+
+    if (!membership) {
+      this.send(ws, {
+        type: 'error',
+        message: 'You are not a member of this team',
+      });
+      return;
+    }
+
+    // Subscribe to team
+    this.connectionManager.subscribeToTeam(ws, teamId);
+    this.send(ws, { type: 'team.subscribed', teamId });
+    console.log(`[WS] User ${userId} subscribed to team ${teamId}`);
+  }
+
+  /**
+   * Handle team unsubscription request
+   */
+  private async handleTeamUnsubscribe(
+    ws: WebSocket,
+    teamId: string
+  ): Promise<void> {
+    this.connectionManager.unsubscribeFromTeam(ws, teamId);
+    console.log(`[WS] Connection unsubscribed from team ${teamId}`);
+  }
+
+  /**
+   * Broadcast a message to all subscribers of a team
+   */
+  broadcastToTeam(teamId: string, message: ServerMessage): void {
+    this.connectionManager.broadcastToTeam(teamId, JSON.stringify(message));
+  }
+
+  /**
+   * Broadcast a message to all connections of a user
+   */
+  broadcastToUser(userId: string, message: any): void {
+    this.connectionManager.sendToUser(userId, message);
+  }
+
+  /**
    * Get server stats
    */
   getStats() {
     return this.connectionManager.getStats();
+  }
+
+  /**
+   * Send a notification to a user via WebSocket
+   */
+  sendNotificationToUser(userId: string, notification: any): void {
+    const message: ServerMessage = {
+      type: 'notification',
+      notification,
+    };
+    this.connectionManager.sendToUser(userId, message);
   }
 
   /**

@@ -17,12 +17,13 @@ import { cn } from '@/lib/utils';
 import { signOutAction } from '@/lib/actions/auth';
 import { NotificationsDropdown } from '@/components/notifications/NotificationsDropdown';
 
-interface MobileNavProps {
+export interface MobileNavProps {
   userName?: string | null;
   userEmail?: string | null;
+  userImage?: string | null;
 }
 
-export function MobileNav({ userName, userEmail }: MobileNavProps) {
+export function MobileNav({ userName, userEmail, userImage }: MobileNavProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
 

@@ -20,6 +20,7 @@ export interface Connection {
   isAlive: boolean;
   messageCount: number;
   lastMessageReset: number;
+  teamSubscriptions: Set<string>;
 }
 
 /**
@@ -29,6 +30,7 @@ export class ConnectionManager {
   private connections: Map<WebSocket, Connection> = new Map();
   private userConnections: Map<string, Set<WebSocket>> = new Map();
   private terminalConnections: Map<string, Set<WebSocket>> = new Map();
+  private teamConnections: Map<string, Set<WebSocket>> = new Map();
   private pingInterval: NodeJS.Timeout | null = null;
 
   constructor() {
@@ -54,6 +56,7 @@ export class ConnectionManager {
       isAlive: true,
       messageCount: 0,
       lastMessageReset: Date.now(),
+      teamSubscriptions: new Set(),
     };
 
     this.connections.set(ws, connection);
@@ -90,6 +93,17 @@ export class ConnectionManager {
         terminalSockets.delete(ws);
         if (terminalSockets.size === 0) {
           this.terminalConnections.delete(connection.terminalId);
+        }
+      }
+    }
+
+    // Remove from team tracking
+    for (const teamId of connection.teamSubscriptions) {
+      const teamSockets = this.teamConnections.get(teamId);
+      if (teamSockets) {
+        teamSockets.delete(ws);
+        if (teamSockets.size === 0) {
+          this.teamConnections.delete(teamId);
         }
       }
     }
@@ -225,11 +239,73 @@ export class ConnectionManager {
   }
 
   /**
+   * Subscribe a connection to a team
+   */
+  subscribeToTeam(ws: WebSocket, teamId: string): void {
+    const connection = this.connections.get(ws);
+    if (!connection) return;
+
+    connection.teamSubscriptions.add(teamId);
+
+    if (!this.teamConnections.has(teamId)) {
+      this.teamConnections.set(teamId, new Set());
+    }
+    this.teamConnections.get(teamId)!.add(ws);
+  }
+
+  /**
+   * Unsubscribe a connection from a team
+   */
+  unsubscribeFromTeam(ws: WebSocket, teamId: string): void {
+    const connection = this.connections.get(ws);
+    if (!connection) return;
+
+    connection.teamSubscriptions.delete(teamId);
+
+    const teamSockets = this.teamConnections.get(teamId);
+    if (teamSockets) {
+      teamSockets.delete(ws);
+      if (teamSockets.size === 0) {
+        this.teamConnections.delete(teamId);
+      }
+    }
+  }
+
+  /**
+   * Broadcast to all connections subscribed to a team
+   */
+  broadcastToTeam(teamId: string, message: string): void {
+    const sockets = this.teamConnections.get(teamId);
+    if (!sockets) return;
+
+    for (const ws of sockets) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+      }
+    }
+  }
+
+  /**
    * Send message to a specific connection
    */
   send(ws: WebSocket, message: object): void {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(message));
+    }
+  }
+
+  /**
+   * Send message to all connections of a user
+   */
+  sendToUser(userId: string, message: object): void {
+    const sockets = this.userConnections.get(userId);
+    if (!sockets) return;
+
+    const messageStr = JSON.stringify(message);
+    for (const ws of sockets) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(messageStr);
+      }
     }
   }
 
@@ -269,11 +345,13 @@ export class ConnectionManager {
     totalConnections: number;
     uniqueUsers: number;
     activeTerminals: number;
+    activeTeams: number;
   } {
     return {
       totalConnections: this.connections.size,
       uniqueUsers: this.userConnections.size,
       activeTerminals: this.terminalConnections.size,
+      activeTeams: this.teamConnections.size,
     };
   }
 
@@ -292,5 +370,6 @@ export class ConnectionManager {
     this.connections.clear();
     this.userConnections.clear();
     this.terminalConnections.clear();
+    this.teamConnections.clear();
   }
 }
