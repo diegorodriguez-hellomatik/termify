@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import {
   ClientMessage,
   ServerMessage,
+  ServerStatsData,
   TerminalStatus,
   SharePermission,
   ShareType,
@@ -16,6 +17,7 @@ import { SSHManager } from '../ssh/SSHManager.js';
 import { prisma } from '../lib/prisma.js';
 import { NotificationService } from '../services/NotificationService.js';
 import { ephemeralManager } from '../ephemeral/EphemeralTerminalManager.js';
+import { serverStatsService } from '../services/ServerStatsService.js';
 
 interface TokenPayload {
   userId: string;
@@ -55,6 +57,7 @@ export class TerminalWebSocketServer {
     this.setupEventHandlers();
     this.setupPTYHandlers();
     this.setupSSHHandlers();
+    this.setupServerStatsHandlers();
 
     console.log('[WS] WebSocket server initialized');
   }
@@ -243,6 +246,14 @@ export class TerminalWebSocketServer {
 
       case 'team.unsubscribe':
         await this.handleTeamUnsubscribe(ws, message.teamId);
+        break;
+
+      case 'server.stats.subscribe':
+        await this.handleServerStatsSubscribe(ws, userId, (message as any).serverId);
+        break;
+
+      case 'server.stats.unsubscribe':
+        await this.handleServerStatsUnsubscribe(ws, (message as any).serverId);
         break;
 
       default:
@@ -1472,6 +1483,135 @@ export class TerminalWebSocketServer {
     this.connectionManager.sendToUser(userId, message);
   }
 
+  // ============================================
+  // Server Stats Methods
+  // ============================================
+
+  /**
+   * Handle server stats subscription
+   */
+  private async handleServerStatsSubscribe(
+    ws: WebSocket,
+    userId: string,
+    serverId: string
+  ): Promise<void> {
+    if (!serverId) {
+      this.send(ws, { type: 'error', message: 'Server ID required' });
+      return;
+    }
+
+    // Verify user owns the server
+    const server = await prisma.server.findFirst({
+      where: { id: serverId, userId },
+    });
+
+    if (!server) {
+      this.send(ws, { type: 'error', message: 'Server not found or access denied' });
+      return;
+    }
+
+    // Track subscription in connection
+    this.connectionManager.subscribeToServer(ws, serverId);
+
+    // Start collecting if not already
+    if (!serverStatsService.isCollecting(serverId)) {
+      serverStatsService.startCollecting(serverId, userId);
+    }
+
+    const msg: ServerMessage = {
+      type: 'server.stats.subscribed',
+      serverId,
+    };
+    this.send(ws, msg);
+
+    console.log(`[WS] User ${userId} subscribed to server stats: ${serverId}`);
+  }
+
+  /**
+   * Handle server stats unsubscription
+   */
+  private async handleServerStatsUnsubscribe(
+    ws: WebSocket,
+    serverId: string
+  ): Promise<void> {
+    if (!serverId) return;
+
+    this.connectionManager.unsubscribeFromServer(ws, serverId);
+
+    // If no one is subscribed, stop collecting
+    const subscribers = this.connectionManager.getServerSubscribers(serverId);
+    if (subscribers.length === 0) {
+      serverStatsService.stopCollecting(serverId);
+    }
+
+    const msg: ServerMessage = {
+      type: 'server.stats.unsubscribed',
+      serverId,
+    };
+    this.send(ws, msg);
+
+    console.log(`[WS] Unsubscribed from server stats: ${serverId}`);
+  }
+
+  /**
+   * Broadcast server stats to subscribers
+   */
+  broadcastServerStats(serverId: string, stats: ServerStatsData): void {
+    const subscribers = this.connectionManager.getServerSubscribers(serverId);
+    const message: ServerMessage = {
+      type: 'server.stats',
+      serverId,
+      stats,
+    };
+
+    for (const ws of subscribers) {
+      this.send(ws, message);
+    }
+  }
+
+  /**
+   * Setup server stats event listeners
+   */
+  private setupServerStatsHandlers(): void {
+    serverStatsService.on('stats', ({ serverId, stats }) => {
+      this.broadcastServerStats(serverId, stats);
+    });
+
+    serverStatsService.on('error', ({ serverId, error }) => {
+      const subscribers = this.connectionManager.getServerSubscribers(serverId);
+      const message: ServerMessage = {
+        type: 'server.stats.error',
+        serverId,
+        error,
+      };
+      for (const ws of subscribers) {
+        this.send(ws, message);
+      }
+    });
+
+    serverStatsService.on('connected', ({ serverId }) => {
+      const subscribers = this.connectionManager.getServerSubscribers(serverId);
+      const message: ServerMessage = {
+        type: 'server.stats.connected',
+        serverId,
+      };
+      for (const ws of subscribers) {
+        this.send(ws, message);
+      }
+    });
+
+    serverStatsService.on('disconnected', ({ serverId }) => {
+      const subscribers = this.connectionManager.getServerSubscribers(serverId);
+      const message: ServerMessage = {
+        type: 'server.stats.disconnected',
+        serverId,
+      };
+      for (const ws of subscribers) {
+        this.send(ws, message);
+      }
+    });
+  }
+
   /**
    * Shutdown the server
    */
@@ -1480,5 +1620,10 @@ export class TerminalWebSocketServer {
     this.wss.close();
     getPTYManager().shutdown();
     SSHManager.getInstance().destroyAll();
+
+    // Stop all stats collectors
+    for (const serverId of serverStatsService.getActiveCollectors()) {
+      serverStatsService.stopCollecting(serverId);
+    }
   }
 }

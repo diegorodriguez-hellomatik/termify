@@ -21,6 +21,7 @@ export interface Connection {
   messageCount: number;
   lastMessageReset: number;
   teamSubscriptions: Set<string>;
+  serverSubscriptions: Set<string>;
 }
 
 /**
@@ -31,6 +32,7 @@ export class ConnectionManager {
   private userConnections: Map<string, Set<WebSocket>> = new Map();
   private terminalConnections: Map<string, Set<WebSocket>> = new Map();
   private teamConnections: Map<string, Set<WebSocket>> = new Map();
+  private serverConnections: Map<string, Set<WebSocket>> = new Map();
   private pingInterval: NodeJS.Timeout | null = null;
 
   constructor() {
@@ -57,6 +59,7 @@ export class ConnectionManager {
       messageCount: 0,
       lastMessageReset: Date.now(),
       teamSubscriptions: new Set(),
+      serverSubscriptions: new Set(),
     };
 
     this.connections.set(ws, connection);
@@ -104,6 +107,17 @@ export class ConnectionManager {
         teamSockets.delete(ws);
         if (teamSockets.size === 0) {
           this.teamConnections.delete(teamId);
+        }
+      }
+    }
+
+    // Remove from server tracking
+    for (const serverId of connection.serverSubscriptions) {
+      const serverSockets = this.serverConnections.get(serverId);
+      if (serverSockets) {
+        serverSockets.delete(ws);
+        if (serverSockets.size === 0) {
+          this.serverConnections.delete(serverId);
         }
       }
     }
@@ -286,6 +300,47 @@ export class ConnectionManager {
   }
 
   /**
+   * Subscribe a connection to server stats
+   */
+  subscribeToServer(ws: WebSocket, serverId: string): void {
+    const connection = this.connections.get(ws);
+    if (!connection) return;
+
+    connection.serverSubscriptions.add(serverId);
+
+    if (!this.serverConnections.has(serverId)) {
+      this.serverConnections.set(serverId, new Set());
+    }
+    this.serverConnections.get(serverId)!.add(ws);
+  }
+
+  /**
+   * Unsubscribe a connection from server stats
+   */
+  unsubscribeFromServer(ws: WebSocket, serverId: string): void {
+    const connection = this.connections.get(ws);
+    if (!connection) return;
+
+    connection.serverSubscriptions.delete(serverId);
+
+    const serverSockets = this.serverConnections.get(serverId);
+    if (serverSockets) {
+      serverSockets.delete(ws);
+      if (serverSockets.size === 0) {
+        this.serverConnections.delete(serverId);
+      }
+    }
+  }
+
+  /**
+   * Get all connections subscribed to a server
+   */
+  getServerSubscribers(serverId: string): WebSocket[] {
+    const sockets = this.serverConnections.get(serverId);
+    return sockets ? Array.from(sockets) : [];
+  }
+
+  /**
    * Send message to a specific connection
    */
   send(ws: WebSocket, message: object): void {
@@ -346,12 +401,14 @@ export class ConnectionManager {
     uniqueUsers: number;
     activeTerminals: number;
     activeTeams: number;
+    activeServers: number;
   } {
     return {
       totalConnections: this.connections.size,
       uniqueUsers: this.userConnections.size,
       activeTerminals: this.terminalConnections.size,
       activeTeams: this.teamConnections.size,
+      activeServers: this.serverConnections.size,
     };
   }
 
@@ -371,5 +428,6 @@ export class ConnectionManager {
     this.userConnections.clear();
     this.terminalConnections.clear();
     this.teamConnections.clear();
+    this.serverConnections.clear();
   }
 }

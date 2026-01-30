@@ -542,6 +542,9 @@ export type ClientMessage =
   | { type: 'terminal.scroll.sync'; terminalId: string; scrollTop: number }
   // Presence messages
   | { type: 'presence.update'; status: 'online' | 'away' | 'busy'; activeTerminalId?: string | null }
+  // Server stats messages
+  | { type: 'server.stats.subscribe'; serverId: string }
+  | { type: 'server.stats.unsubscribe'; serverId: string }
   | { type: 'ping' };
 
 // WebSocket Messages - Server to Client
@@ -617,8 +620,55 @@ export type ServerMessage =
   | { type: 'queue.cancelled'; terminalId: string; queueId: string; name: string }
   | { type: 'queue.command.started'; terminalId: string; queueId: string; commandId: string }
   | { type: 'queue.command.completed'; terminalId: string; queueId: string; commandId: string; exitCode: number }
+  // Server stats events
+  | { type: 'server.stats.subscribed'; serverId: string }
+  | { type: 'server.stats.unsubscribed'; serverId: string }
+  | { type: 'server.stats'; serverId: string; stats: ServerStatsData }
+  | { type: 'server.stats.connected'; serverId: string }
+  | { type: 'server.stats.disconnected'; serverId: string }
+  | { type: 'server.stats.error'; serverId: string; error: string }
   | { type: 'error'; message: string }
   | { type: 'pong' };
+
+// Server Stats model (for WebSocket)
+export interface ServerStatsData {
+  cpu: number[];
+  cpuAvg: number;
+  memory: {
+    total: number;
+    used: number;
+    swapTotal: number;
+    swapUsed: number;
+  };
+  disks: Array<{
+    name: string;
+    available: number;
+    total: number;
+  }>;
+  network: Array<{
+    interface: string;
+    rxBytes: number;
+    txBytes: number;
+    rxPackets: number;
+    txPackets: number;
+    rxErrors: number;
+    txErrors: number;
+  }>;
+  processes: Array<{
+    pid: number;
+    name: string;
+    exe: string;
+    memory: number;
+    cpu: number;
+  }>;
+  os?: {
+    name: string;
+    kernel: string;
+    version: string;
+    arch: string;
+  };
+  timestamp: number;
+}
 
 // API Request/Response types
 export interface CreateTerminalRequest {
