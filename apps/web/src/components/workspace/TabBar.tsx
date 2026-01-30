@@ -132,9 +132,10 @@ interface TabItemProps {
   onClose: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
   isDark: boolean;
+  isCompact?: boolean;
 }
 
-function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark }: TabItemProps) {
+function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark, isCompact }: TabItemProps) {
   const {
     attributes,
     listeners,
@@ -169,7 +170,8 @@ function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark
       ref={setNodeRef}
       style={style}
       className={cn(
-        'group flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-b-2 cursor-pointer transition-all min-w-[120px] max-w-[200px]',
+        'group flex items-center gap-1.5 rounded-t-lg border-b-2 cursor-pointer transition-all',
+        isCompact ? 'px-2 py-0.5 min-w-[80px] max-w-[150px]' : 'px-3 py-1.5 min-w-[120px] max-w-[200px]',
         isActive
           ? 'bg-background border-primary'
           : 'bg-muted/50 border-transparent hover:bg-muted',
@@ -180,8 +182,11 @@ function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark
       {...attributes}
       {...listeners}
     >
-      <Icon size={14} className={cn('flex-shrink-0', iconColor)} />
-      <span className="text-sm font-medium truncate flex-1">{tab.name}</span>
+      <Icon size={isCompact ? 12 : 14} className={cn('flex-shrink-0', iconColor)} />
+      <span className={cn(
+        'font-medium truncate flex-1',
+        isCompact ? 'text-xs' : 'text-sm'
+      )}>{tab.name}</span>
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -192,7 +197,7 @@ function SortableTab({ tab, isActive, onActivate, onClose, onContextMenu, isDark
           isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
         )}
       >
-        <X size={12} className="text-muted-foreground hover:text-destructive" />
+        <X size={isCompact ? 10 : 12} className="text-muted-foreground hover:text-destructive" />
       </button>
     </div>
   );
@@ -309,7 +314,7 @@ export function TabBar({ onAddTab, isDark, isFullscreen, onToggleFullscreen }: T
         items={tabs.map((t) => t.id)}
         strategy={horizontalListSortingStrategy}
       >
-        <div className="flex items-center gap-1">
+        <div className={cn("flex items-center", isFullscreen ? "gap-0.5" : "gap-1")}>
           {tabs.map((tab) => (
             <SortableTab
               key={tab.id}
@@ -319,6 +324,7 @@ export function TabBar({ onAddTab, isDark, isFullscreen, onToggleFullscreen }: T
               onClose={() => closeTab(tab.id)}
               onContextMenu={(e) => handleContextMenu(e, tab.id)}
               isDark={isDark}
+              isCompact={isFullscreen}
             />
           ))}
         </div>
