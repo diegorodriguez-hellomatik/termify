@@ -11,6 +11,10 @@ import {
   Minimize,
   Zap,
   CheckSquare,
+  Lock,
+  Unlock,
+  LayoutGrid,
+  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SnippetsModal } from '@/components/snippets/SnippetsModal';
@@ -18,6 +22,8 @@ import { ProfilesModal } from '@/components/profiles/ProfilesModal';
 import { AutoPilotPanel } from '@/components/workspace/AutoPilotPanel';
 import { TerminalProfile } from '@/lib/api';
 import { useAutoPilot } from '@/hooks/useAutoPilot';
+
+type LayoutMode = 'strict' | 'flexible';
 
 interface QuickActionsToolbarProps {
   token: string;
@@ -31,6 +37,10 @@ interface QuickActionsToolbarProps {
   taskCount?: number;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  isLayoutLocked?: boolean;
+  onToggleLayoutLock?: () => void;
+  layoutMode?: LayoutMode;
+  onLayoutModeChange?: (mode: LayoutMode) => void;
   className?: string;
 }
 
@@ -46,12 +56,18 @@ export function QuickActionsToolbar({
   taskCount = 0,
   isFullscreen = false,
   onToggleFullscreen,
+  isLayoutLocked = false,
+  onToggleLayoutLock,
+  layoutMode = 'flexible',
+  onLayoutModeChange,
   className,
 }: QuickActionsToolbarProps) {
   const [showSnippets, setShowSnippets] = useState(false);
   const [showProfiles, setShowProfiles] = useState(false);
   const [showAutoPilot, setShowAutoPilot] = useState(false);
+  const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   const autoPilotButtonRef = useRef<HTMLButtonElement>(null);
+  const layoutMenuRef = useRef<HTMLDivElement>(null);
 
   const { enabled: autoPilotEnabled, executingTasks } = useAutoPilot();
 
@@ -172,6 +188,85 @@ export function QuickActionsToolbar({
         >
           <Keyboard size={16} />
         </button>
+
+        {/* Layout lock toggle */}
+        {onToggleLayoutLock && (
+          <button
+            onClick={onToggleLayoutLock}
+            className={cn(
+              "p-1.5 rounded transition-colors",
+              isLayoutLocked
+                ? "bg-primary/20 text-primary hover:bg-primary/30"
+                : "hover:bg-muted"
+            )}
+            title={isLayoutLocked ? "Unlock Layout" : "Lock Layout"}
+          >
+            {isLayoutLocked ? <Lock size={16} /> : <Unlock size={16} />}
+          </button>
+        )}
+
+        {/* Layout mode dropdown */}
+        {onLayoutModeChange && (
+          <div className="relative" ref={layoutMenuRef}>
+            <button
+              onClick={() => setShowLayoutMenu(!showLayoutMenu)}
+              className={cn(
+                "flex items-center gap-1 p-1.5 rounded transition-colors",
+                showLayoutMenu ? "bg-muted" : "hover:bg-muted"
+              )}
+              title="Layout Mode"
+            >
+              <LayoutGrid size={16} />
+              <ChevronDown size={12} />
+            </button>
+
+            {showLayoutMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowLayoutMenu(false)}
+                />
+                <div className="absolute right-0 top-full mt-1 w-48 bg-popover border rounded-lg shadow-lg z-50 py-1">
+                  <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground border-b mb-1">
+                    Layout Mode
+                  </div>
+                  <button
+                    onClick={() => {
+                      onLayoutModeChange('strict');
+                      setShowLayoutMenu(false);
+                    }}
+                    className={cn(
+                      "w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-muted transition-colors",
+                      layoutMode === 'strict' && "bg-muted"
+                    )}
+                  >
+                    <div>
+                      <div className="font-medium">Strict</div>
+                      <div className="text-xs text-muted-foreground">No scrolling, fixed bounds</div>
+                    </div>
+                    {layoutMode === 'strict' && <div className="w-2 h-2 rounded-full bg-primary" />}
+                  </button>
+                  <button
+                    onClick={() => {
+                      onLayoutModeChange('flexible');
+                      setShowLayoutMenu(false);
+                    }}
+                    className={cn(
+                      "w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-muted transition-colors",
+                      layoutMode === 'flexible' && "bg-muted"
+                    )}
+                  >
+                    <div>
+                      <div className="font-medium">Flexible</div>
+                      <div className="text-xs text-muted-foreground">Scrollable workspace</div>
+                    </div>
+                    {layoutMode === 'flexible' && <div className="w-2 h-2 rounded-full bg-primary" />}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Fullscreen toggle */}
         {onToggleFullscreen && (

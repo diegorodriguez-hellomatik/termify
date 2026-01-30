@@ -107,7 +107,7 @@ function getGridPosition(
 }
 
 export function FloatingWorkspace({ token, onResetLayoutReady }: FloatingWorkspaceProps) {
-  const { tabs, closeTab, floatingLayout, updateFloatingLayout, getTerminalSettings } = useWorkspace();
+  const { tabs, closeTab, floatingLayout, updateFloatingLayout, getTerminalSettings, isLayoutLocked, layoutMode } = useWorkspace();
   const [windows, setWindows] = useState<WindowState[]>([]);
   const [topZIndex, setTopZIndex] = useState(BASE_Z_INDEX);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -385,7 +385,7 @@ export function FloatingWorkspace({ token, onResetLayoutReady }: FloatingWorkspa
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full overflow-auto bg-background/50"
+      className={`relative h-full w-full bg-background/50 ${layoutMode === 'strict' ? 'overflow-hidden' : 'overflow-auto'}`}
     >
       {/* Inner container with dynamic height */}
       <div
@@ -415,6 +415,7 @@ export function FloatingWorkspace({ token, onResetLayoutReady }: FloatingWorkspa
               initialSize={window.size}
               zIndex={window.zIndex}
               isCustomized={window.isCustomized}
+              isLocked={isLayoutLocked}
               initialSettings={settings}
               onFocus={() => handleFocus(window.id)}
               onClose={() => handleClose(window.id)}

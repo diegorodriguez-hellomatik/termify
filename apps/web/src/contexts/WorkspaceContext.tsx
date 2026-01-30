@@ -70,6 +70,9 @@ export interface WorkspaceState {
   layout: PaneNode | null;
 }
 
+// Layout mode controls scrolling behavior in floating workspace
+export type LayoutMode = 'strict' | 'flexible';
+
 interface WorkspaceContextType {
   // Workspaces
   workspaces: Workspace[];
@@ -111,6 +114,15 @@ interface WorkspaceContextType {
   // Floating layout
   floatingLayout: FloatingLayout | null;
   updateFloatingLayout: (layout: FloatingLayout) => void;
+
+  // Layout lock (prevents window movement/resize)
+  isLayoutLocked: boolean;
+  setLayoutLocked: (locked: boolean) => void;
+  toggleLayoutLock: () => void;
+
+  // Layout mode (strict = no scroll, flexible = scroll enabled)
+  layoutMode: LayoutMode;
+  setLayoutMode: (mode: LayoutMode) => void;
 
   // Quick switcher
   showQuickSwitcher: boolean;
@@ -171,11 +183,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [floatingLayout, setFloatingLayout] = useState<FloatingLayout | null>(null);
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
   const [isFullscreen, setFullscreen] = useState(false);
+  const [isLayoutLocked, setLayoutLocked] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('flexible');
   const [mounted, setMounted] = useState(false);
 
   // Toggle fullscreen
   const toggleFullscreen = useCallback(() => {
     setFullscreen(prev => !prev);
+  }, []);
+
+  // Toggle layout lock
+  const toggleLayoutLock = useCallback(() => {
+    setLayoutLocked(prev => !prev);
   }, []);
 
   // Terminal IDs that should pre-connect (establish WebSocket before being visible)
@@ -883,6 +902,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         // Floating layout
         floatingLayout,
         updateFloatingLayout,
+        // Layout lock
+        isLayoutLocked,
+        setLayoutLocked,
+        toggleLayoutLock,
+        // Layout mode
+        layoutMode,
+        setLayoutMode,
         // Quick switcher
         showQuickSwitcher,
         setShowQuickSwitcher,

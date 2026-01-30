@@ -37,6 +37,8 @@ interface FloatingTerminalProps {
   zIndex: number;
   /** Whether user has customized position/size - if false, syncs with parent */
   isCustomized?: boolean;
+  /** Whether the layout is locked (prevents moving/resizing) */
+  isLocked?: boolean;
   /** Initial display settings from database */
   initialSettings?: {
     fontSize?: number | null;
@@ -63,6 +65,7 @@ export function FloatingTerminal({
   initialSize = { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT },
   zIndex,
   isCustomized = false,
+  isLocked = false,
   initialSettings,
   onFocus,
   onClose,
@@ -690,8 +693,8 @@ export function FloatingTerminal({
       minWidth={MIN_WIDTH}
       minHeight={MIN_HEIGHT}
       dragHandleClassName="floating-terminal-handle"
-      enableResizing={!isMaximized}
-      disableDragging={isMaximized}
+      enableResizing={!isMaximized && !isLocked}
+      disableDragging={isMaximized || isLocked}
       onDragStart={() => { setIsAnimating(false); handleWindowFocus(); }}
       onDragStop={handleDragStop}
       onResizeStart={() => { setIsAnimating(false); handleWindowFocus(); }}
@@ -752,7 +755,10 @@ export function FloatingTerminal({
         )}
 
         {/* Window title bar - compact with status */}
-        <div className="floating-terminal-handle flex items-center justify-between px-3 py-1.5 bg-muted/50 border-b border-border cursor-move select-none">
+        <div className={cn(
+          "floating-terminal-handle flex items-center justify-between px-3 py-1.5 bg-muted/50 border-b border-border select-none",
+          isLocked ? "cursor-default" : "cursor-move"
+        )}>
           <div className="flex items-center gap-3">
             {/* Terminal name with status indicator */}
             <div className="flex items-center gap-2">

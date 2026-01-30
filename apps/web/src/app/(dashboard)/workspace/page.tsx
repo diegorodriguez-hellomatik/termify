@@ -94,7 +94,7 @@ import { Button } from '@/components/ui/button';
 import { DeleteConfirmModal } from '@/components/ui/DeleteConfirmModal';
 import { terminalsApi, TerminalProfile, Workspace, PersonalTask, TaskPriority } from '@/lib/api';
 import { useTheme } from '@/context/ThemeContext';
-import { useWorkspace, PaneNode } from '@/contexts/WorkspaceContext';
+import { useWorkspace, PaneNode, LayoutMode } from '@/contexts/WorkspaceContext';
 import { TabBar } from '@/components/workspace/TabBar';
 import { FloatingWorkspace } from '@/components/workspace/FloatingWorkspace';
 import { WorkspaceDndProvider } from '@/components/workspace/WorkspaceDndProvider';
@@ -632,8 +632,8 @@ function WorkspaceContent() {
     deleteTask,
   } = usePersonalTasks({ workspaceId: currentWorkspaceId || undefined });
 
-  // Get fullscreen state from context
-  const { isFullscreen, toggleFullscreen } = useWorkspace();
+  // Get fullscreen state and layout settings from context
+  const { isFullscreen, toggleFullscreen, isLayoutLocked, toggleLayoutLock, layoutMode, setLayoutMode } = useWorkspace();
 
   // Auto layout function from FloatingWorkspace
   const [autoLayoutFn, setAutoLayoutFn] = useState<(() => void) | null>(null);
@@ -1304,6 +1304,10 @@ function WorkspaceContent() {
                 taskCount={workspaceTasks.length}
                 isFullscreen={isFullscreen}
                 onToggleFullscreen={toggleFullscreen}
+                isLayoutLocked={isLayoutLocked}
+                onToggleLayoutLock={toggleLayoutLock}
+                layoutMode={layoutMode}
+                onLayoutModeChange={setLayoutMode}
               />
             )}
 
