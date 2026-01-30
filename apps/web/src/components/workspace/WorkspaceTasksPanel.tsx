@@ -208,7 +208,7 @@ export function WorkspaceTasksPanel({
     return (
       <button
         onClick={onToggle}
-        className="fixed right-0 top-1/2 -translate-y-1/2 z-50 flex items-center gap-1 px-2 py-3 bg-card border border-border border-r-0 rounded-l-lg shadow-lg hover:bg-muted transition-colors"
+        className="fixed right-0 bottom-16 z-50 flex items-center gap-1 px-2 py-3 bg-card border border-border border-r-0 rounded-l-lg shadow-lg hover:bg-muted transition-colors"
         title="Open tasks panel"
       >
         <CheckSquare size={16} className="text-primary" />
@@ -230,6 +230,15 @@ export function WorkspaceTasksPanel({
           ? "animate-out slide-out-to-right duration-200"
           : "animate-in slide-in-from-right duration-200"
       )}>
+        {/* Close button on left edge - centered vertically */}
+        <button
+          onClick={handleClose}
+          className="absolute -left-3 top-1/2 -translate-y-1/2 z-50 flex items-center justify-center w-6 h-12 bg-card border border-border rounded-l-lg shadow-lg hover:bg-muted transition-colors"
+          title="Close panel"
+        >
+          <ChevronRight size={14} />
+        </button>
+
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <div className="flex items-center gap-2">
