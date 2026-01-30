@@ -1,0 +1,270 @@
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import {
+  Users,
+  ListTodo,
+  Terminal,
+  Code2,
+  Clock,
+  Zap,
+  ArrowRight,
+  UserPlus,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { useTeams } from '@/hooks/useTeams';
+import { useTeamPresence } from '@/hooks/useTeamPresence';
+import { useTeamHistory } from '@/hooks/useTeamHistory';
+import { Team } from '@/lib/api';
+import { InviteMemberModal } from '@/components/teams/InviteMemberModal';
+
+export default function TeamOverviewPage() {
+  const params = useParams();
+  const router = useRouter();
+  const teamId = params?.teamId as string;
+
+  const [team, setTeam] = useState<Team | null>(null);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+
+  const { getTeam, inviteMember } = useTeams();
+  const { presence } = useTeamPresence(teamId);
+  const { history } = useTeamHistory(teamId);
+
+  const loadTeam = useCallback(async () => {
+    if (!teamId) return;
+    const teamData = await getTeam(teamId);
+    if (teamData) {
+      setTeam(teamData);
+    }
+  }, [teamId, getTeam]);
+
+  useEffect(() => {
+    loadTeam();
+  }, [loadTeam]);
+
+  const canInvite = team?.role === 'OWNER' || team?.role === 'ADMIN';
+  const onlineMembers = presence.filter(p => p.status === 'online');
+  const recentActivity = history.slice(0, 5);
+
+  const handleInviteMember = async (email: string, role?: 'ADMIN' | 'MEMBER') => {
+    if (!teamId) return null;
+    const result = await inviteMember(teamId, { email, role });
+    if (result) {
+      loadTeam();
+    }
+    return result;
+  };
+
+  if (!team) return null;
+
+  return (
+    <div className="space-y-6">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard
+          icon={<Users className="h-4 w-4" />}
+          label="Members"
+          value={team.memberCount || 0}
+          subtext={onlineMembers.length > 0 ? `${onlineMembers.length} online` : undefined}
+          onClick={() => router.push(`/teams/${teamId}/members`)}
+        />
+        <StatCard
+          icon={<ListTodo className="h-4 w-4" />}
+          label="Tasks"
+          value={team.taskCount || 0}
+          onClick={() => router.push(`/teams/${teamId}/tasks`)}
+        />
+        <StatCard
+          icon={<Terminal className="h-4 w-4" />}
+          label="Terminals"
+          value="-"
+          onClick={() => router.push(`/teams/${teamId}/terminals`)}
+        />
+        <StatCard
+          icon={<Code2 className="h-4 w-4" />}
+          label="Snippets"
+          value="-"
+          onClick={() => router.push(`/teams/${teamId}/snippets`)}
+        />
+      </div>
+
+      {/* Online Members */}
+      {onlineMembers.length > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                Online Now
+              </h3>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {onlineMembers.slice(0, 8).map((member) => (
+                <div
+                  key={member.userId}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-full"
+                >
+                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium overflow-hidden">
+                    {member.userImage ? (
+                      <img
+                        src={member.userImage}
+                        alt={member.userName || ''}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      member.userName?.charAt(0).toUpperCase() || '?'
+                    )}
+                  </div>
+                  <span className="text-sm">{member.userName}</span>
+                  {member.activeTerminalId && (
+                    <Terminal className="h-3 w-3 text-muted-foreground" />
+                  )}
+                </div>
+              ))}
+              {onlineMembers.length > 8 && (
+                <span className="text-sm text-muted-foreground px-3 py-1.5">
+                  +{onlineMembers.length - 8} more
+                </span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Quick Actions */}
+      <Card>
+        <CardContent className="p-4">
+          <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+            <Zap className="h-4 w-4" />
+            Quick Actions
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <Button variant="outline" className="justify-start" onClick={() => router.push(`/teams/${teamId}/tasks`)}>
+              <ListTodo className="h-4 w-4 mr-2" />
+              View Tasks
+            </Button>
+            <Button
+              variant="outline"
+              className="justify-start"
+              onClick={() => router.push(`/teams/${teamId}/terminals`)}
+            >
+              <Terminal className="h-4 w-4 mr-2" />
+              Terminals
+            </Button>
+            <Button
+              variant="outline"
+              className="justify-start"
+              onClick={() => router.push(`/teams/${teamId}/snippets`)}
+            >
+              <Code2 className="h-4 w-4 mr-2" />
+              Snippets
+            </Button>
+            {canInvite && (
+              <Button variant="outline" className="justify-start" onClick={() => setInviteModalOpen(true)}>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Invite
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Recent Activity */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              Recent Activity
+            </h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              onClick={() => router.push(`/teams/${teamId}/activity`)}
+            >
+              View all
+              <ArrowRight className="h-3 w-3 ml-1" />
+            </Button>
+          </div>
+          {recentActivity.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No recent activity
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {recentActivity.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center gap-3 py-2 border-b last:border-0"
+                >
+                  <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
+                    {item.user?.name?.charAt(0).toUpperCase() || '?'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate">
+                      <span className="font-medium">{item.user?.name || 'Unknown'}</span>
+                      <span className="text-muted-foreground"> ran </span>
+                      <code className="text-xs bg-muted px-1 rounded">{item.command.slice(0, 30)}{item.command.length > 30 ? '...' : ''}</code>
+                    </p>
+                  </div>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {formatTimeAgo(new Date(item.createdAt))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <InviteMemberModal
+        open={inviteModalOpen}
+        onOpenChange={setInviteModalOpen}
+        onInvite={handleInviteMember}
+      />
+    </div>
+  );
+}
+
+// Stat Card Component
+interface StatCardProps {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+  subtext?: string;
+  onClick?: () => void;
+}
+
+function StatCard({ icon, label, value, subtext, onClick }: StatCardProps) {
+  return (
+    <button
+      className="bg-muted/50 rounded-lg p-4 text-left hover:bg-muted/70 transition-colors w-full"
+      onClick={onClick}
+    >
+      <div className="flex items-center gap-2 text-muted-foreground mb-1">
+        {icon}
+        <span className="text-sm">{label}</span>
+      </div>
+      <p className="text-2xl font-semibold">{value}</p>
+      {subtext && (
+        <p className="text-xs text-muted-foreground mt-0.5">{subtext}</p>
+      )}
+    </button>
+  );
+}
+
+function formatTimeAgo(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${diffDays}d ago`;
+}

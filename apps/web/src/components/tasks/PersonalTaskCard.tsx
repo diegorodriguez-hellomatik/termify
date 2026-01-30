@@ -156,26 +156,31 @@ export function PersonalTaskCard({ task, onClick, isOverlay, onExecute, onDelete
         </div>
       )}
 
-      {/* Footer - Due date */}
-      {task.dueDate && (
-        <div className="mt-2 pt-2 border-t border-border">
-          <div
-            className={cn(
-              'flex items-center gap-1 text-xs',
-              isOverdue ? 'text-red-500' : 'text-muted-foreground'
-            )}
-          >
-            {isOverdue ? (
-              <AlertCircle className="h-3 w-3" />
-            ) : (
-              <Calendar className="h-3 w-3" />
-            )}
-            <span>
-              {formatDistanceToNow(new Date(task.dueDate), { addSuffix: true })}
-            </span>
-          </div>
+      {/* Footer */}
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
+        {/* Due date */}
+        <div className="flex items-center gap-1.5">
+          {task.dueDate ? (
+            <div
+              className={cn(
+                'flex items-center gap-1 text-xs',
+                isOverdue ? 'text-red-500' : 'text-muted-foreground'
+              )}
+            >
+              {isOverdue ? (
+                <AlertCircle className="h-3 w-3" />
+              ) : (
+                <Calendar className="h-3 w-3" />
+              )}
+              <span>
+                {formatDistanceToNow(new Date(task.dueDate), { addSuffix: true })}
+              </span>
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">No due date</span>
+          )}
         </div>
-      )}
+      </div>
     </div>
 
     {/* Context Menu */}
