@@ -45,20 +45,20 @@ export function MobileNav({ userName, userEmail, userImage }: MobileNavProps) {
 
   return (
     <>
-      {/* Mobile Header */}
+      {/* Mobile Header - Compact */}
       <header className="md:hidden fixed top-0 left-0 right-0 z-40 bg-card border-b border-border">
-        <div className="flex items-center justify-between px-4 py-3">
-          <Link href="/terminals" className="flex items-center gap-2">
-            <TermifyLogo size={24} className="text-foreground" />
-            <span className="font-semibold">Termify</span>
+        <div className="flex items-center justify-between px-3 py-1.5">
+          <Link href="/terminals" className="flex items-center gap-1.5">
+            <TermifyLogo size={20} className="text-foreground" />
+            <span className="font-semibold text-sm">Termify</span>
           </Link>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             <NotificationsDropdown />
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="p-2 hover:bg-muted rounded-lg transition-colors"
+              className="p-1.5 hover:bg-muted rounded-lg transition-colors"
             >
-              {isOpen ? <X size={24} /> : <Menu size={24} />}
+              {isOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
           </div>
         </div>
@@ -146,22 +146,22 @@ export function MobileNav({ userName, userEmail, userImage }: MobileNavProps) {
         </div>
       )}
 
-      {/* Bottom Navigation for Mobile */}
+      {/* Bottom Navigation for Mobile - Compact */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-card border-t border-border safe-area-inset-bottom">
-        <div className="flex justify-around py-2">
+        <div className="flex justify-around py-1">
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                'flex flex-col items-center gap-1 px-4 py-2 rounded-lg transition-colors min-w-[64px]',
+                'flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors min-w-[56px]',
                 pathname === item.href
                   ? 'text-primary'
                   : 'text-muted-foreground'
               )}
             >
-              <item.icon className="h-5 w-5" />
-              <span className="text-xs">{item.label}</span>
+              <item.icon className="h-4 w-4" />
+              <span className="text-[10px]">{item.label}</span>
             </Link>
           ))}
         </div>

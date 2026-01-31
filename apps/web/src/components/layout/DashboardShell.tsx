@@ -40,7 +40,7 @@ function DashboardContent({ children, userName, userEmail, userImage }: Dashboar
       {/* Main content */}
       <main className={cn(
         "flex-1 flex flex-col md:h-screen overflow-auto",
-        isFullscreen ? "pt-0 pb-0" : "pt-14 pb-20 md:pt-0 md:pb-0"
+        isFullscreen ? "pt-0 pb-0" : "pt-10 pb-16 md:pt-0 md:pb-0"
       )}>
         {children}
       </main>
