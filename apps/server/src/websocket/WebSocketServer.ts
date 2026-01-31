@@ -1780,6 +1780,55 @@ export class TerminalWebSocketServer {
     };
 
     this.connectionManager.broadcastToTeam(teamId, JSON.stringify(serverMessage));
+
+    // Send notifications to team members who are NOT subscribed to the team chat
+    this.sendTeamChatNotifications(teamId, userId, message.user?.name || 'Someone', content.trim()).catch((err) => {
+      console.error('[WS] Failed to send team chat notifications:', err);
+    });
+  }
+
+  /**
+   * Send notifications to team members not currently subscribed to team chat
+   */
+  private async sendTeamChatNotifications(
+    teamId: string,
+    senderId: string,
+    senderName: string,
+    messageContent: string
+  ): Promise<void> {
+    // Get all team members except the sender
+    const teamMembers = await prisma.teamMember.findMany({
+      where: {
+        teamId,
+        userId: { not: senderId },
+      },
+      select: { userId: true },
+    });
+
+    // Get the team name
+    const team = await prisma.team.findUnique({
+      where: { id: teamId },
+      select: { name: true },
+    });
+
+    // Get users who are currently subscribed to this team
+    const subscribedUserIds = this.connectionManager.getTeamSubscriberUserIds(teamId);
+
+    // Send notification only to members who are NOT subscribed
+    const notificationService = NotificationService.getInstance();
+    for (const member of teamMembers) {
+      if (!subscribedUserIds.includes(member.userId)) {
+        notificationService.notifyTeamChatMessage({
+          recipientId: member.userId,
+          teamId,
+          teamName: team?.name || 'Team',
+          senderName,
+          messagePreview: messageContent.length > 50 ? messageContent.slice(0, 50) + '...' : messageContent,
+        }).catch((err) => {
+          console.error('[WS] Failed to send team chat notification to user:', member.userId, err);
+        });
+      }
+    }
   }
 
   /**

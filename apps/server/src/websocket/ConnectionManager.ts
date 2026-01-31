@@ -420,6 +420,24 @@ export class ConnectionManager {
   }
 
   /**
+   * Get user IDs of all connections subscribed to a team
+   */
+  getTeamSubscriberUserIds(teamId: string): string[] {
+    const sockets = this.teamConnections.get(teamId);
+    if (!sockets) return [];
+
+    const userIds = new Set<string>();
+    for (const ws of sockets) {
+      const conn = this.connections.get(ws);
+      if (conn) {
+        userIds.add(conn.userId);
+      }
+    }
+
+    return Array.from(userIds);
+  }
+
+  /**
    * Get online members for a team
    */
   getTeamOnlineMembers(teamId: string): Array<{

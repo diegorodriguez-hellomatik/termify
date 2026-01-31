@@ -19,7 +19,8 @@ import { Button } from '@/components/ui/button';
 import { useTeams } from '@/hooks/useTeams';
 import { useTeamSocket } from '@/hooks/useTeamSocket';
 import { useTeamChat } from '@/hooks/useTeamChat';
-import { TeamChatPanel, TeamChatToggleButton } from '@/components/chat';
+import { TeamChatPanel } from '@/components/chat';
+import { TeamChatBubble } from '@/components/chat/TeamChatBubble';
 import { Team } from '@/lib/api';
 
 interface TeamLayoutProps {
@@ -180,10 +181,6 @@ export default function TeamLayout({ children }: TeamLayoutProps) {
               <p className="text-sm text-muted-foreground truncate">{team.description}</p>
             )}
           </div>
-          <TeamChatToggleButton
-            isOpen={chatOpen}
-            onClick={() => setChatOpen(!chatOpen)}
-          />
           {canEdit && (
             <Button variant="outline" size="sm" onClick={() => router.push(`/teams/${teamId}/settings`)}>
               <Settings className="h-4 w-4 mr-2" />
@@ -238,6 +235,14 @@ export default function TeamLayout({ children }: TeamLayoutProps) {
       <div className="flex-1 overflow-auto">
         {children}
       </div>
+
+      {/* Floating Chat Bubble */}
+      <TeamChatBubble
+        isOpen={chatOpen}
+        onClick={() => setChatOpen(!chatOpen)}
+        unreadCount={0}
+        onlineCount={chatOnlineMembers.length}
+      />
 
       {/* Team Chat Panel */}
       <TeamChatPanel

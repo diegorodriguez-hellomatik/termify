@@ -229,6 +229,28 @@ export class NotificationService {
     });
   }
 
+  /**
+   * Notify user when they receive a team chat message (while not in the team)
+   */
+  async notifyTeamChatMessage(params: {
+    recipientId: string;
+    teamId: string;
+    teamName: string;
+    senderName: string;
+    messagePreview: string;
+  }) {
+    return this.create({
+      userId: params.recipientId,
+      type: 'TEAM_CHAT_MESSAGE',
+      title: `New message in ${params.teamName}`,
+      message: `${params.senderName}: ${params.messagePreview}`,
+      metadata: {
+        teamId: params.teamId,
+        senderName: params.senderName,
+      } as Prisma.InputJsonValue,
+    });
+  }
+
   // ========================
   // Task Notifications
   // ========================

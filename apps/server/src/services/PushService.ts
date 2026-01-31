@@ -51,6 +51,7 @@ const notificationTypeToPreference: Record<NotificationType, keyof Pick<PushSubs
   TEAM_MEMBER_JOINED: 'shareNotifications',
   TEAM_MEMBER_LEFT: 'shareNotifications',
   TEAM_ROLE_CHANGED: 'shareNotifications',
+  TEAM_CHAT_MESSAGE: 'shareNotifications',
   TASK_ASSIGNED: 'shareNotifications',
   TASK_UNASSIGNED: 'shareNotifications',
   TASK_STATUS_CHANGED: 'shareNotifications',
