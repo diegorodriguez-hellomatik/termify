@@ -61,15 +61,7 @@ export function TeamChatPanel({
   if (!isOpen || typeof document === 'undefined') return null;
 
   return createPortal(
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-[100] bg-black/40"
-        onClick={onClose}
-      />
-
-      {/* Panel */}
-      <div className="fixed bottom-4 right-4 w-80 h-[28rem] bg-background border rounded-lg shadow-xl flex flex-col z-[101] animate-in slide-in-from-bottom-4 duration-200">
+    <div className="fixed bottom-4 right-4 w-80 h-[28rem] bg-background border rounded-lg shadow-xl flex flex-col z-[50] animate-in slide-in-from-bottom-4 duration-200">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <div className="flex items-center gap-2">
@@ -188,8 +180,7 @@ export function TeamChatPanel({
             </Button>
           </div>
         </form>
-      </div>
-    </>,
+      </div>,
     document.body
   );
 }

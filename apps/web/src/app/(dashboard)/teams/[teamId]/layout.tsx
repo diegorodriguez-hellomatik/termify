@@ -42,7 +42,7 @@ export default function TeamLayout({ children }: TeamLayoutProps) {
 
   const { getTeam } = useTeams();
 
-  // Team chat
+  // Team chat - always enabled so messages keep loading while navigating
   const {
     messages: chatMessages,
     onlineMembers: chatOnlineMembers,
@@ -52,7 +52,7 @@ export default function TeamLayout({ children }: TeamLayoutProps) {
   } = useTeamChat({
     token: accessToken ?? null,
     teamId,
-    enabled: chatOpen,
+    enabled: true,
   });
 
   // Determine active tab from pathname
