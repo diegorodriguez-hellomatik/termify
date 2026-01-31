@@ -58,7 +58,10 @@ function ServerCard({
   isChecking: boolean;
   isDark: boolean;
 }) {
-  const status = server.lastStatus || 'UNKNOWN';
+  // For AGENT type servers (localhost), they're always available - no SSH check needed
+  const status = server.authMethod === 'AGENT'
+    ? 'ONLINE'
+    : (server.lastStatus || 'UNKNOWN');
 
   return (
     <div

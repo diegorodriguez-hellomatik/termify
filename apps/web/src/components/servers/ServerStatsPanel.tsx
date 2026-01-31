@@ -1,12 +1,11 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   Cpu,
   MemoryStick,
   HardDrive,
   Network,
-  Activity,
   Wifi,
   WifiOff,
   Loader2,
@@ -22,6 +21,19 @@ interface ServerStatsPanelProps {
 
 export function ServerStatsPanel({ serverId, className }: ServerStatsPanelProps) {
   const { stats, isConnected, isConnecting, error, history } = useServerStats(serverId);
+
+  // Don't show error immediately - give connection time to establish
+  const [showError, setShowError] = useState(false);
+
+  useEffect(() => {
+    if (error && !stats) {
+      // Wait 3 seconds before showing error (gives time for reconnection)
+      const timer = setTimeout(() => setShowError(true), 3000);
+      return () => clearTimeout(timer);
+    } else {
+      setShowError(false);
+    }
+  }, [error, stats]);
 
   // CPU chart data (last 30 points)
   const cpuHistory = useMemo(() => {
@@ -40,16 +52,17 @@ export function ServerStatsPanel({ serverId, className }: ServerStatsPanelProps)
     return formatPercent(stats.memory.swapUsed, stats.memory.swapTotal);
   }, [stats]);
 
-  if (isConnecting) {
+  // Show loading state, or when we have an error but haven't timed out yet
+  if (isConnecting || (error && !showError && !stats)) {
     return (
-      <div className={cn('flex flex-col items-center justify-center py-12', className)}>
-        <Loader2 size={32} className="animate-spin text-muted-foreground mb-3" />
-        <p className="text-sm text-muted-foreground">Connecting to server...</p>
+      <div className={cn('flex items-center justify-center gap-2 py-12', className)}>
+        <Loader2 size={16} className="animate-spin text-muted-foreground" />
+        <span className="text-sm text-muted-foreground">Loading stats...</span>
       </div>
     );
   }
 
-  if (error) {
+  if (error && showError) {
     return (
       <div className={cn('flex flex-col items-center justify-center py-12', className)}>
         <AlertCircle size={32} className="text-red-500 mb-3" />
@@ -61,12 +74,9 @@ export function ServerStatsPanel({ serverId, className }: ServerStatsPanelProps)
 
   if (!stats) {
     return (
-      <div className={cn('flex flex-col items-center justify-center py-12', className)}>
-        <Activity size={32} className="text-muted-foreground mb-3" />
-        <p className="text-sm text-muted-foreground">Waiting for stats...</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          Make sure stats-agent is installed on the server
-        </p>
+      <div className={cn('flex items-center justify-center gap-2 py-12', className)}>
+        <Loader2 size={16} className="animate-spin text-muted-foreground" />
+        <span className="text-sm text-muted-foreground">Loading stats...</span>
       </div>
     );
   }
@@ -127,8 +137,8 @@ export function ServerStatsPanel({ serverId, className }: ServerStatsPanelProps)
 
         {/* Per-core usage */}
         {stats.cpu.length > 1 && (
-          <div className="grid grid-cols-4 gap-2 pt-2 border-t border-border">
-            {stats.cpu.slice(0, 8).map((usage, i) => (
+          <div className="grid grid-cols-5 gap-2 pt-2 border-t border-border">
+            {stats.cpu.map((usage, i) => (
               <div key={i} className="text-center">
                 <div className="text-[10px] text-muted-foreground mb-1">Core {i}</div>
                 <div
@@ -145,11 +155,6 @@ export function ServerStatsPanel({ serverId, className }: ServerStatsPanelProps)
                 </div>
               </div>
             ))}
-            {stats.cpu.length > 8 && (
-              <div className="text-center text-xs text-muted-foreground col-span-4">
-                +{stats.cpu.length - 8} more cores
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -260,7 +265,7 @@ export function ServerStatsPanel({ serverId, className }: ServerStatsPanelProps)
           </div>
 
           <div className="space-y-2">
-            {stats.network.slice(0, 3).map((iface, i) => (
+            {stats.network.map((iface, i) => (
               <div key={i} className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground font-mono">{iface.interface}</span>
                 <div className="flex items-center gap-4">
@@ -273,11 +278,6 @@ export function ServerStatsPanel({ serverId, className }: ServerStatsPanelProps)
                 </div>
               </div>
             ))}
-            {stats.network.length > 3 && (
-              <p className="text-xs text-muted-foreground text-center">
-                +{stats.network.length - 3} more interfaces
-              </p>
-            )}
           </div>
         </div>
       )}

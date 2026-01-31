@@ -37,6 +37,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { ServerStatsPanel } from './ServerStatsPanel';
+import { useServerStats } from '@/hooks/useServerStats';
 
 interface ServerDetailsModalProps {
   server: ServerType;
@@ -70,6 +71,9 @@ export function ServerDetailsModal({
   const [details, setDetails] = useState<ServerDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'info' | 'stats' | 'active' | 'connect' | 'history'>('info');
+
+  // Real-time stats connection status
+  const { isConnected: statsConnected, stats: liveStats } = useServerStats(isOpen ? server.id : null);
 
   // Active terminals
   const [activeTerminals, setActiveTerminals] = useState<ActiveServerTerminal[]>([]);
@@ -245,6 +249,9 @@ export function ServerDetailsModal({
   const currentServer = details || server;
   const status = currentServer.lastStatus || 'UNKNOWN';
 
+  // Use live stats connection status if available, otherwise fall back to stored status
+  const effectiveStatus = (statsConnected && liveStats) ? 'ONLINE' : status;
+
   if (!isOpen || typeof window === 'undefined') return null;
 
   return createPortal(
@@ -280,7 +287,7 @@ export function ServerDetailsModal({
                 <div
                   className={cn(
                     'w-2 h-2 rounded-full',
-                    STATUS_COLORS[status as keyof typeof STATUS_COLORS]
+                    STATUS_COLORS[effectiveStatus as keyof typeof STATUS_COLORS]
                   )}
                 />
                 {currentServer.isDefault && (
@@ -418,14 +425,14 @@ export function ServerDetailsModal({
                     <span
                       className={cn(
                         'text-sm font-medium',
-                        status === 'ONLINE'
+                        effectiveStatus === 'ONLINE'
                           ? 'text-green-500'
-                          : status === 'OFFLINE'
+                          : effectiveStatus === 'OFFLINE'
                           ? 'text-red-500'
                           : 'text-muted-foreground'
                       )}
                     >
-                      {status}
+                      {effectiveStatus}
                     </span>
                     <button
                       onClick={handleCheckStatus}

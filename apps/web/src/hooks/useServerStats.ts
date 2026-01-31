@@ -75,13 +75,18 @@ export function useServerStats(
   const subscribedRef = useRef<boolean>(false);
 
   const connect = useCallback(() => {
-    if (!session?.accessToken || !serverId || !enabled) return;
+    // In development, use 'dev' token if no session token available
+    const isDev = process.env.NODE_ENV === 'development';
+    const token = session?.accessToken || (isDev ? 'dev' : null);
+
+    if (!token || !serverId || !enabled) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     setIsConnecting(true);
     setError(null);
 
-    const ws = new WebSocket(`${WS_URL}?token=${session.accessToken}`);
+    console.log('[ServerStats] Connecting with token:', token === 'dev' ? 'dev' : 'session token');
+    const ws = new WebSocket(`${WS_URL}?token=${token}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -103,12 +108,15 @@ export function useServerStats(
           case 'server.stats.subscribed':
             console.log('[ServerStats] Subscribed to', message.serverId);
             subscribedRef.current = true;
+            setError(null); // Clear any previous error
             break;
 
           case 'server.stats':
             if (message.serverId === serverId) {
               const newStats = message.stats as ServerStats;
               setStats(newStats);
+              setError(null); // Clear error when we receive valid stats
+              setIsConnected(true); // We're connected if we're receiving stats
               setHistory(prev => {
                 const updated = [...prev, newStats];
                 return updated.slice(-MAX_HISTORY);

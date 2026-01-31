@@ -67,7 +67,7 @@ class ServerStatsService extends EventEmitter {
 
   // Path to stats-agent binary on remote servers
   private agentPath = '~/.termify/stats-agent';
-  private agentInterval = 5; // seconds
+  private agentInterval = 2; // seconds (faster initial load)
 
   /**
    * Check if the host is localhost
@@ -86,13 +86,16 @@ class ServerStatsService extends EventEmitter {
     }
 
     try {
+      const isDev = process.env.NODE_ENV === 'development';
       const server = await prisma.server.findFirst({
-        where: { id: serverId, userId },
+        where: isDev ? { id: serverId } : { id: serverId, userId },
       });
 
       if (!server) {
         throw new Error('Server not found');
       }
+
+      console.log(`[ServerStats] Found server: ${server.name} (${server.host}), isLocalhost: ${this.isLocalhost(server.host)}`);
 
       // Use local collection for localhost, SSH for remote servers
       if (this.isLocalhost(server.host)) {
@@ -133,7 +136,9 @@ class ServerStatsService extends EventEmitter {
     let buffer = '';
 
     proc.stdout.on('data', (data: Buffer) => {
-      buffer += data.toString();
+      const dataStr = data.toString();
+      console.log(`[ServerStats] Received data from stats-agent (${dataStr.length} bytes)`);
+      buffer += dataStr;
 
       // Process complete lines
       const lines = buffer.split('\n');
@@ -143,9 +148,10 @@ class ServerStatsService extends EventEmitter {
         if (line.trim()) {
           try {
             const stats = this.parseStats(line);
+            console.log(`[ServerStats] Parsed stats, emitting for ${serverId}`);
             this.emit('stats', { serverId, userId, stats });
           } catch (e) {
-            console.error(`[ServerStats] Failed to parse local stats:`, line);
+            console.error(`[ServerStats] Failed to parse local stats:`, line.substring(0, 100));
           }
         }
       }
@@ -393,11 +399,18 @@ class ServerStatsService extends EventEmitter {
         swapTotal: data.memory?.swap_total || 0,
         swapUsed: data.memory?.swap_used || 0,
       },
-      disks: (data.disks || []).map((d: any) => ({
-        name: d.name,
-        available: d.available,
-        total: d.total,
-      })),
+      disks: (data.disks || [])
+        // Filter out small volumes (< 1GB) - these are usually app containers/DMGs
+        .filter((d: any) => d.total > 1024 * 1024 * 1024)
+        // Remove duplicates by name
+        .filter((d: any, i: number, arr: any[]) =>
+          arr.findIndex((x: any) => x.name === d.name) === i
+        )
+        .map((d: any) => ({
+          name: d.name,
+          available: d.available,
+          total: d.total,
+        })),
       network: (data.network || []).map((n: any) => ({
         interface: n.interface,
         rxBytes: n.rx_bytes,
