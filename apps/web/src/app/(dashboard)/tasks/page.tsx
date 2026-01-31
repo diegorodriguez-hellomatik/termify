@@ -95,6 +95,9 @@ export default function TasksPage() {
           <MobileTaskList
             tasksByStatus={tasksByStatus()}
             statuses={statuses}
+            workspaces={workspaces}
+            selectedWorkspaceId={selectedWorkspaceId}
+            onSelectWorkspace={setSelectedWorkspaceId}
             isLoading={true}
           />
         </div>
@@ -123,6 +126,9 @@ export default function TasksPage() {
         <MobileTaskList
           tasksByStatus={tasksByStatus()}
           statuses={statuses}
+          workspaces={workspaces}
+          selectedWorkspaceId={selectedWorkspaceId}
+          onSelectWorkspace={setSelectedWorkspaceId}
           onTaskClick={(task) => setSelectedTask(task)}
           onCreateTask={() => setCreateModalOpen(true)}
           onCreateTaskInStatus={(statusId) => {

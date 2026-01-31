@@ -1,22 +1,25 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { CheckSquare, Circle, Clock, AlertCircle, CheckCircle2, ChevronRight, RefreshCw } from 'lucide-react';
+import { RefreshCw, ChevronDown, ChevronRight, MoreVertical, Plus, Folder } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/utils';
-import { TaskPriority, PersonalTask, TaskStatusConfig } from '@/lib/api';
+import { TaskPriority, PersonalTask, TaskStatusConfig, Workspace } from '@/lib/api';
 import { MobileContentHeader } from './MobileContentHeader';
 
 interface MobileTaskListProps {
   tasksByStatus: Record<string, PersonalTask[]>;
   statuses: TaskStatusConfig[];
+  workspaces?: Workspace[];
+  selectedWorkspaceId?: string | null;
+  onSelectWorkspace?: (workspaceId: string | null) => void;
   onTaskClick?: (task: PersonalTask) => void;
   onCreateTask?: () => void;
+  onCreateTaskInStatus?: (statusId: string) => void;
   onRefresh?: () => Promise<void>;
+  onUpdateTaskStatus?: (taskId: string, newStatus: string) => Promise<void>;
   isLoading?: boolean;
 }
-
-type StatusFilter = string | null;
 
 const PRIORITY_CONFIG: Record<TaskPriority, { color: string; bgColor: string; label: string }> = {
   URGENT: { color: 'text-red-500', bgColor: 'bg-red-500/10', label: 'Urgent' },
@@ -25,80 +28,198 @@ const PRIORITY_CONFIG: Record<TaskPriority, { color: string; bgColor: string; la
   LOW: { color: 'text-green-500', bgColor: 'bg-green-500/10', label: 'Low' },
 };
 
-const STATUS_ICONS: Record<string, typeof Circle> = {
-  todo: Circle,
-  in_progress: Clock,
-  in_review: AlertCircle,
-  done: CheckCircle2,
-};
-
-function MobileTaskCard({
+function TaskCard({
   task,
+  statuses,
+  currentStatusId,
   onClick,
+  onMoveToStatus,
 }: {
   task: PersonalTask;
+  statuses: TaskStatusConfig[];
+  currentStatusId: string;
   onClick?: () => void;
+  onMoveToStatus?: (statusId: string) => void;
 }) {
+  const [showMoveMenu, setShowMoveMenu] = useState(false);
   const priorityConfig = PRIORITY_CONFIG[task.priority as TaskPriority];
-  const StatusIcon = STATUS_ICONS[task.status] || Circle;
 
   return (
-    <div
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-3',
-        'py-3 px-4',
-        'bg-card',
-        'active:bg-muted transition-colors',
-        'touch-manipulation cursor-pointer'
-      )}
-    >
-      {/* Status icon */}
-      <StatusIcon
+    <div className="relative">
+      <div
+        onClick={onClick}
         className={cn(
-          'w-5 h-5 flex-shrink-0',
-          task.status === 'done' ? 'text-green-500' : 'text-muted-foreground'
+          'bg-card border border-border rounded-lg p-3',
+          'active:scale-[0.98] transition-all',
+          'touch-manipulation cursor-pointer'
         )}
-      />
-
-      {/* Content */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+      >
+        <div className="flex items-start gap-2">
           <p className={cn(
-            'font-medium text-foreground truncate',
+            'font-medium text-sm text-foreground line-clamp-2 flex-1',
             task.status === 'done' && 'line-through text-muted-foreground'
           )}>
             {task.title}
           </p>
+          {onMoveToStatus && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMoveMenu(!showMoveMenu);
+              }}
+              className="p-1 -mr-1 -mt-1 rounded hover:bg-muted text-muted-foreground"
+            >
+              <MoreVertical size={14} />
+            </button>
+          )}
         </div>
-        <div className="flex items-center gap-2 mt-0.5">
-          {/* Priority badge */}
-          <span className={cn('text-xs font-medium', priorityConfig.color)}>
+        <div className="flex items-center gap-2 mt-2">
+          <span className={cn(
+            'text-[10px] font-medium px-1.5 py-0.5 rounded',
+            priorityConfig.bgColor,
+            priorityConfig.color
+          )}>
             {priorityConfig.label}
           </span>
-          {/* Due date */}
           {task.dueDate && (
-            <>
-              <span className="text-muted-foreground text-xs">&bull;</span>
-              <span className="text-xs text-muted-foreground">
-                {formatRelativeTime(task.dueDate)}
-              </span>
-            </>
-          )}
-          {/* Workspace ID indicator */}
-          {task.workspaceId && (
-            <>
-              <span className="text-muted-foreground text-xs">&bull;</span>
-              <span className="text-xs text-muted-foreground">
-                In workspace
-              </span>
-            </>
+            <span className="text-[10px] text-muted-foreground">
+              {formatRelativeTime(task.dueDate)}
+            </span>
           )}
         </div>
       </div>
 
-      {/* Chevron */}
-      <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+      {/* Move menu */}
+      {showMoveMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setShowMoveMenu(false)}
+          />
+          <div className="absolute right-0 top-8 z-50 bg-popover border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
+            <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground border-b border-border">
+              Move to
+            </div>
+            {statuses.map((status) => (
+              <button
+                key={status.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMoveMenu(false);
+                  if (status.id !== currentStatusId) {
+                    onMoveToStatus?.(status.id);
+                  }
+                }}
+                disabled={status.id === currentStatusId}
+                className={cn(
+                  'w-full flex items-center gap-2 px-3 py-2 text-sm text-left',
+                  'hover:bg-muted transition-colors',
+                  status.id === currentStatusId && 'opacity-50 cursor-not-allowed bg-muted/50'
+                )}
+              >
+                <span
+                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: status.color }}
+                />
+                <span>{status.name}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatusSection({
+  status,
+  tasks,
+  statuses,
+  isExpanded,
+  onToggle,
+  onTaskClick,
+  onMoveTask,
+  onAddTask,
+}: {
+  status: TaskStatusConfig;
+  tasks: PersonalTask[];
+  statuses: TaskStatusConfig[];
+  isExpanded: boolean;
+  onToggle: () => void;
+  onTaskClick?: (task: PersonalTask) => void;
+  onMoveTask?: (taskId: string, newStatusId: string) => void;
+  onAddTask?: () => void;
+}) {
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      {/* Section Header */}
+      <button
+        onClick={onToggle}
+        className={cn(
+          'w-full flex items-center gap-3 p-3',
+          'bg-muted/30 hover:bg-muted/50 transition-colors'
+        )}
+      >
+        <span
+          className="w-3 h-3 rounded-full flex-shrink-0"
+          style={{ backgroundColor: status.color }}
+        />
+        <span className="font-medium text-sm flex-1 text-left">{status.name}</span>
+        <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded-full">
+          {tasks.length}
+        </span>
+        {isExpanded ? (
+          <ChevronDown size={16} className="text-muted-foreground" />
+        ) : (
+          <ChevronRight size={16} className="text-muted-foreground" />
+        )}
+      </button>
+
+      {/* Tasks */}
+      {isExpanded && (
+        <div className="p-2 space-y-2 bg-background">
+          {tasks.length === 0 ? (
+            <button
+              onClick={onAddTask}
+              className={cn(
+                'w-full flex flex-col items-center justify-center gap-2 py-6',
+                'border-2 border-dashed border-border/50 rounded-lg',
+                'hover:border-primary/50 hover:bg-primary/5 transition-colors',
+                'text-muted-foreground hover:text-primary'
+              )}
+            >
+              <Plus size={20} />
+              <span className="text-xs">Add task</span>
+            </button>
+          ) : (
+            <>
+              {tasks.map((task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  statuses={statuses}
+                  currentStatusId={status.id}
+                  onClick={() => onTaskClick?.(task)}
+                  onMoveToStatus={onMoveTask ? (newStatusId) => onMoveTask(task.id, newStatusId) : undefined}
+                />
+              ))}
+              {/* Add task button at bottom */}
+              <button
+                onClick={onAddTask}
+                className={cn(
+                  'w-full flex items-center justify-center gap-2 py-2',
+                  'border border-dashed border-border/50 rounded-lg',
+                  'hover:border-primary/50 hover:bg-primary/5 transition-colors',
+                  'text-xs text-muted-foreground hover:text-primary'
+                )}
+              >
+                <Plus size={14} />
+                <span>Add task</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -106,17 +227,21 @@ function MobileTaskCard({
 export function MobileTaskList({
   tasksByStatus,
   statuses,
+  workspaces = [],
+  selectedWorkspaceId,
+  onSelectWorkspace,
   onTaskClick,
   onCreateTask,
+  onCreateTaskInStatus,
   onRefresh,
+  onUpdateTaskStatus,
   isLoading = false,
 }: MobileTaskListProps) {
-  const [selectedStatus, setSelectedStatus] = useState<StatusFilter>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const handleStatusFilter = useCallback((status: StatusFilter) => {
-    setSelectedStatus((prev) => (prev === status ? null : status));
-  }, []);
+  // Track which sections are expanded - all expanded by default
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(
+    new Set(statuses.map(s => s.id))
+  );
 
   const handleRefresh = useCallback(async () => {
     if (onRefresh && !isRefreshing) {
@@ -129,104 +254,40 @@ export function MobileTaskList({
     }
   }, [onRefresh, isRefreshing]);
 
-  // Get all tasks
+  const toggleSection = useCallback((statusId: string) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(statusId)) {
+        next.delete(statusId);
+      } else {
+        next.add(statusId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Get all tasks count
   const allTasks = Object.values(tasksByStatus).flat();
 
-  // Filter by selected status
-  const filteredTasks = selectedStatus
-    ? tasksByStatus[selectedStatus] || []
-    : allTasks;
-
-  // Sort by priority then by due date
-  const sortedTasks = [...filteredTasks].sort((a, b) => {
-    const priorityOrder = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-    const aPriority = priorityOrder[a.priority as keyof typeof priorityOrder] ?? 4;
-    const bPriority = priorityOrder[b.priority as keyof typeof priorityOrder] ?? 4;
-    if (aPriority !== bPriority) return aPriority - bPriority;
-
-    // Then by due date
-    if (a.dueDate && b.dueDate) {
-      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-    }
-    if (a.dueDate) return -1;
-    if (b.dueDate) return 1;
-    return 0;
-  });
-
-  // Count tasks by status
-  const statusCounts: Record<string, number> = {};
-  statuses.forEach((status) => {
-    statusCounts[status.id] = (tasksByStatus[status.id] || []).length;
-  });
-
   return (
-    <div className="flex flex-col h-full">
-      <MobileContentHeader
-        title="My Tasks"
-        subtitle={`${allTasks.length} task${allTasks.length !== 1 ? 's' : ''}`}
-        onCreateClick={onCreateTask}
-      />
-
-      {/* Status Filters */}
-      <div className="sticky top-0 z-10 bg-background border-b border-border">
-        <div className="flex items-center gap-2 px-4 py-2 overflow-x-auto scrollbar-hide">
-          {/* All filter */}
-          <button
-            onClick={() => handleStatusFilter(null)}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
-              'min-h-[36px]',
-              selectedStatus === null
-                ? 'bg-foreground text-background'
-                : 'bg-muted text-muted-foreground'
-            )}
-          >
-            All
-            <span className="opacity-70">{allTasks.length}</span>
-          </button>
-
-          {/* Status filters */}
-          {statuses.map((status) => {
-            const count = statusCounts[status.id] || 0;
-            if (count === 0) return null;
-
-            return (
-              <button
-                key={status.id}
-                onClick={() => handleStatusFilter(status.id)}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
-                  'min-h-[36px]',
-                  selectedStatus === status.id
-                    ? 'text-white'
-                    : 'bg-muted text-muted-foreground'
-                )}
-                style={{
-                  backgroundColor: selectedStatus === status.id ? status.color : undefined,
-                }}
-              >
-                <span
-                  className="w-2 h-2 rounded-full"
-                  style={{
-                    backgroundColor: selectedStatus === status.id ? 'white' : status.color,
-                  }}
-                />
-                {status.name}
-                <span className="opacity-70">{count}</span>
-              </button>
-            );
-          })}
-
-          {/* Refresh button */}
+    <div className="flex flex-col h-full bg-background">
+      {/* Header with refresh */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background">
+        <div>
+          <h1 className="text-xl font-bold">My Tasks</h1>
+          <p className="text-sm text-muted-foreground">
+            {allTasks.length} task{allTasks.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
           {onRefresh && (
             <button
               onClick={handleRefresh}
               disabled={isRefreshing || isLoading}
               className={cn(
-                'ml-auto p-2 rounded-full transition-all',
-                'min-h-[36px] min-w-[36px] flex items-center justify-center',
+                'p-2 rounded-full',
                 'text-muted-foreground hover:text-foreground hover:bg-muted',
-                'disabled:opacity-50'
+                'disabled:opacity-50 transition-all'
               )}
             >
               <RefreshCw
@@ -235,53 +296,104 @@ export function MobileTaskList({
               />
             </button>
           )}
+          {onCreateTask && (
+            <button
+              onClick={onCreateTask}
+              className="w-10 h-10 rounded-full bg-foreground text-background flex items-center justify-center"
+            >
+              <Plus size={20} />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Task List */}
-      <div className="flex-1 overflow-y-auto overscroll-y-contain">
-        {isLoading ? (
-          // Loading skeleton
-          <div className="divide-y divide-border">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-16 px-4 flex items-center gap-3 animate-pulse">
-                <div className="w-5 h-5 rounded-full bg-muted" />
-                <div className="flex-1">
-                  <div className="h-4 w-40 bg-muted rounded mb-1" />
-                  <div className="h-3 w-24 bg-muted rounded" />
-                </div>
-                <div className="w-4 h-4 bg-muted rounded" />
+      {/* Workspace Tabs - Horizontal scrollable */}
+      {onSelectWorkspace && (
+        <div className="flex items-center gap-2 px-4 py-2 overflow-x-auto border-b border-border bg-background">
+          {/* All Tasks Tab */}
+          <button
+            onClick={() => onSelectWorkspace(null)}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0',
+              selectedWorkspaceId === null
+                ? 'bg-foreground text-background'
+                : 'bg-muted text-muted-foreground'
+            )}
+          >
+            All
+          </button>
+
+          {/* Workspace Tabs */}
+          {workspaces.map((workspace) => (
+            <button
+              key={workspace.id}
+              onClick={() => onSelectWorkspace(workspace.id)}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0',
+                selectedWorkspaceId === workspace.id
+                  ? 'text-white'
+                  : 'bg-muted text-muted-foreground'
+              )}
+              style={{
+                backgroundColor:
+                  selectedWorkspaceId === workspace.id
+                    ? workspace.color || '#6366f1'
+                    : undefined,
+              }}
+            >
+              <Folder size={12} />
+              {workspace.name}
+            </button>
+          ))}
+
+          {/* Independent Tasks Tab */}
+          <button
+            onClick={() => onSelectWorkspace('independent')}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0',
+              selectedWorkspaceId === 'independent'
+                ? 'bg-foreground text-background'
+                : 'bg-muted text-muted-foreground'
+            )}
+          >
+            Independent
+          </button>
+        </div>
+      )}
+
+      {/* Board sections - vertical */}
+      {isLoading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="animate-pulse text-muted-foreground">Loading...</div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {statuses.map((status) => {
+            const tasks = tasksByStatus[status.id] || [];
+
+            return (
+              <div key={status.id} id={`section-${status.id}`}>
+                <StatusSection
+                  status={status}
+                  tasks={tasks}
+                  statuses={statuses}
+                  isExpanded={expandedSections.has(status.id)}
+                  onToggle={() => toggleSection(status.id)}
+                  onTaskClick={onTaskClick}
+                  onMoveTask={onUpdateTaskStatus}
+                  onAddTask={() => {
+                    if (onCreateTaskInStatus) {
+                      onCreateTaskInStatus(status.id);
+                    } else if (onCreateTask) {
+                      onCreateTask();
+                    }
+                  }}
+                />
               </div>
-            ))}
-          </div>
-        ) : sortedTasks.length === 0 ? (
-          // Empty state
-          <div className="flex flex-col items-center justify-center h-full py-12 px-4 text-center">
-            <CheckSquare size={48} className="text-muted-foreground mb-4" />
-            <h3 className="font-semibold text-lg mb-2">
-              {selectedStatus
-                ? 'No tasks with this status'
-                : 'No tasks yet'}
-            </h3>
-            <p className="text-muted-foreground text-sm">
-              {selectedStatus
-                ? 'Try selecting a different filter'
-                : 'Create a task to get started'}
-            </p>
-          </div>
-        ) : (
-          // Task cards
-          <div className="divide-y divide-border">
-            {sortedTasks.map((task) => (
-              <MobileTaskCard
-                key={task.id}
-                task={task}
-                onClick={() => onTaskClick?.(task)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
