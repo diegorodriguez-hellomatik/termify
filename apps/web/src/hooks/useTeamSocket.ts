@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
-import type { Task, TaskStatus, TeamMember, TeamRole } from '@/lib/api';
+import type { Task, TaskStatus, TeamMember, TeamRole, Workspace, WorkspaceLayout, TeamTerminalShare } from '@/lib/api';
+import type { SharePermission } from '@termify/shared';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
 
@@ -15,6 +16,14 @@ interface TeamSocketCallbacks {
   onTaskStatusChanged?: (taskId: string, status: TaskStatus, changedById: string) => void;
   onTaskAssigned?: (taskId: string, assignee: any) => void;
   onTaskUnassigned?: (taskId: string, assigneeId: string) => void;
+  // Workspace events
+  onWorkspaceAdded?: (workspace: Workspace) => void;
+  onWorkspaceRemoved?: (workspaceId: string) => void;
+  onWorkspaceLayoutChanged?: (workspaceId: string, layout: WorkspaceLayout) => void;
+  // Terminal share events
+  onTerminalAdded?: (terminalShare: TeamTerminalShare) => void;
+  onTerminalRemoved?: (terminalId: string) => void;
+  onTerminalPermissionChanged?: (terminalId: string, permission: SharePermission) => void;
 }
 
 interface UseTeamSocketOptions {
@@ -99,6 +108,38 @@ export function useTeamSocket({ token, teamId, callbacks }: UseTeamSocketOptions
         case 'task.unassigned':
           console.log('[TeamSocket] Task unassigned:', message.taskId, message.assigneeId);
           cb.onTaskUnassigned?.(message.taskId, message.assigneeId);
+          break;
+
+        // Workspace events
+        case 'team.workspace.added':
+          console.log('[TeamSocket] Workspace added:', message.workspace);
+          cb.onWorkspaceAdded?.(message.workspace);
+          break;
+
+        case 'team.workspace.removed':
+          console.log('[TeamSocket] Workspace removed:', message.workspaceId);
+          cb.onWorkspaceRemoved?.(message.workspaceId);
+          break;
+
+        case 'team.workspace.layout.changed':
+          console.log('[TeamSocket] Workspace layout changed:', message.workspaceId);
+          cb.onWorkspaceLayoutChanged?.(message.workspaceId, message.layout);
+          break;
+
+        // Terminal share events
+        case 'team.terminal.added':
+          console.log('[TeamSocket] Terminal added:', message.terminalShare);
+          cb.onTerminalAdded?.(message.terminalShare);
+          break;
+
+        case 'team.terminal.removed':
+          console.log('[TeamSocket] Terminal removed:', message.terminalId);
+          cb.onTerminalRemoved?.(message.terminalId);
+          break;
+
+        case 'team.terminal.permission.changed':
+          console.log('[TeamSocket] Terminal permission changed:', message.terminalId, message.permission);
+          cb.onTerminalPermissionChanged?.(message.terminalId, message.permission);
           break;
 
         case 'pong':
