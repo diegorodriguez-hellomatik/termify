@@ -6,6 +6,7 @@
  * and automatically cleaned up when the connection closes.
  */
 
+import { EventEmitter } from 'events';
 import { TerminalStatus } from '@prisma/client';
 import { DEFAULT_COLS, DEFAULT_ROWS } from '@termify/shared';
 
@@ -27,11 +28,18 @@ export interface EphemeralTerminal {
   sshPrivateKey?: string;
 }
 
-class EphemeralTerminalManager {
+export interface TerminalCountUpdate {
+  serverId: string;
+  count: number;
+}
+
+class EphemeralTerminalManager extends EventEmitter {
   private static instance: EphemeralTerminalManager;
   private terminals: Map<string, EphemeralTerminal> = new Map();
 
-  private constructor() {}
+  private constructor() {
+    super();
+  }
 
   static getInstance(): EphemeralTerminalManager {
     if (!EphemeralTerminalManager.instance) {
@@ -54,6 +62,9 @@ class EphemeralTerminalManager {
 
     this.terminals.set(terminal.id, terminal);
     console.log(`[EphemeralManager] Created ephemeral terminal ${terminal.id} for user ${terminal.userId}`);
+
+    // Emit terminal count update for the server
+    this.emitCountUpdate(terminal.serverId);
 
     return terminal;
   }
@@ -87,12 +98,25 @@ class EphemeralTerminalManager {
    * Delete an ephemeral terminal
    */
   delete(id: string): boolean {
-    const existed = this.terminals.has(id);
+    const terminal = this.terminals.get(id);
+    if (!terminal) return false;
+
+    const serverId = terminal.serverId;
     this.terminals.delete(id);
-    if (existed) {
-      console.log(`[EphemeralManager] Deleted ephemeral terminal ${id}`);
-    }
-    return existed;
+    console.log(`[EphemeralManager] Deleted ephemeral terminal ${id}`);
+
+    // Emit terminal count update for the server
+    this.emitCountUpdate(serverId);
+
+    return true;
+  }
+
+  /**
+   * Emit terminal count update event for a server
+   */
+  private emitCountUpdate(serverId: string): void {
+    const count = this.getCountByServer(serverId);
+    this.emit('terminalCountUpdate', { serverId, count } as TerminalCountUpdate);
   }
 
   /**

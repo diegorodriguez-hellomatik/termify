@@ -1605,7 +1605,16 @@ export class TerminalWebSocketServer {
     };
     this.send(ws, msg);
 
-    console.log(`[WS] User ${userId} subscribed to server stats: ${serverId}`);
+    // Send initial terminal count
+    const terminalCount = ephemeralManager.getCountByServer(serverId);
+    const countMsg: ServerMessage = {
+      type: 'server.terminalCount',
+      serverId,
+      count: terminalCount,
+    };
+    this.send(ws, countMsg);
+
+    console.log(`[WS] User ${userId} subscribed to server stats: ${serverId} (${terminalCount} terminals)`);
 
     // Start collecting if not already (do this AFTER subscription is tracked)
     if (!serverStatsService.isCollecting(serverId)) {
@@ -1696,6 +1705,19 @@ export class TerminalWebSocketServer {
       const message: ServerMessage = {
         type: 'server.stats.disconnected',
         serverId,
+      };
+      for (const ws of subscribers) {
+        this.send(ws, message);
+      }
+    });
+
+    // Listen for terminal count updates from EphemeralTerminalManager
+    ephemeralManager.on('terminalCountUpdate', ({ serverId, count }) => {
+      const subscribers = this.connectionManager.getServerSubscribers(serverId);
+      const message: ServerMessage = {
+        type: 'server.terminalCount',
+        serverId,
+        count,
       };
       for (const ws of subscribers) {
         this.send(ws, message);

@@ -687,6 +687,7 @@ export type ServerMessage =
   | { type: 'server.stats.connected'; serverId: string }
   | { type: 'server.stats.disconnected'; serverId: string }
   | { type: 'server.stats.error'; serverId: string; error: string }
+  | { type: 'server.terminalCount'; serverId: string; count: number }
   | { type: 'error'; message: string }
   | { type: 'pong' };
 

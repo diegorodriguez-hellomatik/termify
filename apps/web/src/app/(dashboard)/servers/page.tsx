@@ -17,8 +17,12 @@ import {
   RefreshCw,
   FileText,
   Tag,
+  Cpu,
+  HardDrive,
+  MemoryStick,
 } from 'lucide-react';
 import { serversApi, Server, ServerStatus } from '@/lib/api';
+import { ServerStats } from '@/context/ServerStatsContext';
 import { Button } from '@/components/ui/button';
 import { PageLayout, PageHeader, PageContent } from '@/components/ui/page-layout';
 import { BlankAreaContextMenu } from '@/components/ui/BlankAreaContextMenu';
@@ -43,6 +47,98 @@ const STATUS_LABELS: Record<ServerStatus | 'null', string> = {
   null: 'Unknown',
 };
 
+// Helper to format bytes to human readable
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+// Mini stats preview component
+function MiniStatsPreview({ stats }: { stats: ServerStats | null }) {
+  if (!stats) {
+    return (
+      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <Cpu size={12} className="opacity-50" />
+          <span className="opacity-50">--</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <MemoryStick size={12} className="opacity-50" />
+          <span className="opacity-50">--</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <HardDrive size={12} className="opacity-50" />
+          <span className="opacity-50">--</span>
+        </span>
+      </div>
+    );
+  }
+
+  const cpuPercent = Math.round(stats.cpuAvg);
+  const memPercent = stats.memory.total > 0
+    ? Math.round((stats.memory.used / stats.memory.total) * 100)
+    : 0;
+  const mainDisk = stats.disks?.[0];
+  const diskPercent = mainDisk && mainDisk.total > 0
+    ? Math.round(((mainDisk.total - mainDisk.available) / mainDisk.total) * 100)
+    : 0;
+
+  const getColorClass = (percent: number) => {
+    if (percent >= 90) return 'text-red-500';
+    if (percent >= 70) return 'text-yellow-500';
+    return 'text-green-500';
+  };
+
+  return (
+    <div className="flex items-center gap-4 text-xs">
+      {/* CPU */}
+      <div className="flex items-center gap-1.5">
+        <Cpu size={12} className={getColorClass(cpuPercent)} />
+        <div className="flex items-center gap-1">
+          <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+            <div
+              className={cn('h-full rounded-full transition-all', getColorClass(cpuPercent).replace('text-', 'bg-'))}
+              style={{ width: `${cpuPercent}%` }}
+            />
+          </div>
+          <span className={cn('w-8 text-right', getColorClass(cpuPercent))}>{cpuPercent}%</span>
+        </div>
+      </div>
+
+      {/* Memory */}
+      <div className="flex items-center gap-1.5">
+        <MemoryStick size={12} className={getColorClass(memPercent)} />
+        <div className="flex items-center gap-1">
+          <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+            <div
+              className={cn('h-full rounded-full transition-all', getColorClass(memPercent).replace('text-', 'bg-'))}
+              style={{ width: `${memPercent}%` }}
+            />
+          </div>
+          <span className={cn('w-8 text-right', getColorClass(memPercent))}>{memPercent}%</span>
+        </div>
+      </div>
+
+      {/* Disk */}
+      <div className="flex items-center gap-1.5">
+        <HardDrive size={12} className={getColorClass(diskPercent)} />
+        <div className="flex items-center gap-1">
+          <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+            <div
+              className={cn('h-full rounded-full transition-all', getColorClass(diskPercent).replace('text-', 'bg-'))}
+              style={{ width: `${diskPercent}%` }}
+            />
+          </div>
+          <span className={cn('w-8 text-right', getColorClass(diskPercent))}>{diskPercent}%</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ServerCard({
   server,
   onCheck,
@@ -51,6 +147,8 @@ function ServerCard({
   onDelete,
   isChecking,
   isDark,
+  stats,
+  terminalCount,
 }: {
   server: Server;
   onCheck: (id: string) => void;
@@ -59,6 +157,8 @@ function ServerCard({
   onDelete: (id: string) => void;
   isChecking: boolean;
   isDark: boolean;
+  stats: ServerStats | null;
+  terminalCount: number;
 }) {
   // For AGENT type servers (localhost), they're always available - no SSH check needed
   const status = server.authMethod === 'AGENT'
@@ -143,6 +243,13 @@ function ServerCard({
           </p>
         )}
 
+        {/* Mini Stats Preview */}
+        {status === 'ONLINE' && (
+          <div className="mb-3 py-2 px-3 bg-muted/50 rounded-lg">
+            <MiniStatsPreview stats={stats} />
+          </div>
+        )}
+
         {/* Footer */}
         <div className="flex items-center justify-between text-xs text-muted-foreground mb-4">
           <span>
@@ -150,9 +257,9 @@ function ServerCard({
               ? `Checked ${formatRelativeTime(server.lastCheckedAt)}`
               : 'Never checked'}
           </span>
-          {(server.activeTerminals ?? 0) > 0 && (
+          {terminalCount > 0 && (
             <span className="text-green-600 dark:text-green-400 font-medium">
-              {server.activeTerminals} active {server.activeTerminals === 1 ? 'terminal' : 'terminals'}
+              {terminalCount} active {terminalCount === 1 ? 'terminal' : 'terminals'}
             </span>
           )}
         </div>
@@ -193,7 +300,7 @@ export default function ServersPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const { isDark } = useTheme();
-  const { subscribeMany } = useServerStatsManager();
+  const { subscribeMany, getServerStats } = useServerStatsManager();
   const [servers, setServers] = useState<Server[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -431,6 +538,8 @@ export default function ServersPage() {
                       onDelete={handleDeleteServer}
                       isChecking={checkingServers.has(server.id)}
                       isDark={isDark}
+                      stats={getServerStats(server.id).stats}
+                      terminalCount={getServerStats(server.id).terminalCount}
                     />
                   </div>
                 ))}

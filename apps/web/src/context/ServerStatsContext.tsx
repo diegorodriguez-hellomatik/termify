@@ -50,6 +50,7 @@ interface ServerStatsState {
   history: ServerStats[];
   isConnected: boolean;
   error: string | null;
+  terminalCount: number;
 }
 
 interface ServerStatsContextValue {
@@ -72,6 +73,7 @@ const defaultState: ServerStatsState = {
   history: [],
   isConnected: false,
   error: null,
+  terminalCount: 0,
 };
 
 const ServerStatsContext = createContext<ServerStatsContextValue | null>(null);
@@ -165,6 +167,10 @@ export function ServerStatsProvider({ children }: { children: React.ReactNode })
 
           case 'server.stats.error':
             updateServerState(message.serverId, { error: message.error });
+            break;
+
+          case 'server.terminalCount':
+            updateServerState(message.serverId, { terminalCount: message.count });
             break;
 
           case 'pong':
