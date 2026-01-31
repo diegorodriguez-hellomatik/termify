@@ -195,23 +195,26 @@ export function useTasks(teamId: string | null) {
 
   // Get tasks grouped by status
   const tasksByStatus = useCallback(() => {
-    const grouped: Record<TaskStatus, Task[]> = {
-      BACKLOG: [],
-      TODO: [],
-      IN_PROGRESS: [],
-      IN_REVIEW: [],
-      DONE: [],
-    };
+    const grouped: Record<TaskStatus, Task[]> = {};
+
+    // Initialize all possible status keys (both lowercase and uppercase for compatibility)
+    const defaultStatuses = ['backlog', 'todo', 'in_progress', 'in_review', 'done'];
+    defaultStatuses.forEach((status) => {
+      grouped[status] = [];
+    });
 
     tasks.forEach((task) => {
-      if (grouped[task.status]) {
-        grouped[task.status].push(task);
+      // Normalize status to lowercase for consistency
+      const normalizedStatus = task.status?.toLowerCase() || 'todo';
+      if (!grouped[normalizedStatus]) {
+        grouped[normalizedStatus] = [];
       }
+      grouped[normalizedStatus].push(task);
     });
 
     // Sort by position within each status
     Object.keys(grouped).forEach((status) => {
-      grouped[status as TaskStatus].sort((a, b) => a.position - b.position);
+      grouped[status as TaskStatus].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
     });
 
     return grouped;
