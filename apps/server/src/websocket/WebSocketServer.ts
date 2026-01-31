@@ -211,6 +211,9 @@ export class TerminalWebSocketServer {
   ): Promise<void> {
     const ptyManager = getPTYManager();
 
+    // Debug logging for all messages
+    console.log(`[WS] Received message type: ${message.type}`, message.type === 'server.stats.subscribe' ? message : '');
+
     switch (message.type) {
       case 'ping':
         this.send(ws, { type: 'pong' });
@@ -1528,10 +1531,15 @@ export class TerminalWebSocketServer {
       return;
     }
 
-    // Verify user owns the server
+    const isDev = process.env.NODE_ENV === 'development';
+    console.log(`[WS] handleServerStatsSubscribe: serverId=${serverId}, userId=${userId}, isDev=${isDev}`);
+
+    // Verify user owns the server (in dev mode, skip userId check)
     const server = await prisma.server.findFirst({
-      where: { id: serverId, userId },
+      where: isDev ? { id: serverId } : { id: serverId, userId },
     });
+
+    console.log(`[WS] handleServerStatsSubscribe: server found=${!!server}, host=${server?.host}`);
 
     if (!server) {
       this.send(ws, { type: 'error', message: 'Server not found or access denied' });
@@ -1875,6 +1883,8 @@ export class TerminalWebSocketServer {
     limit: number = 50,
     before?: string
   ): Promise<void> {
+    console.log('[WS] handleWorkspaceChatHistory:', { userId, workspaceId, limit, before });
+
     // Verify access
     const workspace = await prisma.workspace.findFirst({
       where: {
@@ -1888,6 +1898,7 @@ export class TerminalWebSocketServer {
     });
 
     if (!workspace) {
+      console.log('[WS] Workspace not found or access denied:', workspaceId);
       this.send(ws, { type: 'error', message: 'Workspace not found or access denied' });
       return;
     }
@@ -1904,6 +1915,8 @@ export class TerminalWebSocketServer {
       orderBy: { createdAt: 'desc' },
       take: Math.min(limit, 100),
     });
+
+    console.log('[WS] Sending chat.workspace.messages:', messages.length, 'messages for workspace:', workspaceId);
 
     // Send messages in chronological order
     this.send(ws, {

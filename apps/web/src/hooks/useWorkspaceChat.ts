@@ -25,6 +25,11 @@ export function useWorkspaceChat({ token, workspaceId, enabled = true }: UseWork
     try {
       const data = JSON.parse(event.data);
 
+      // Debug: log all messages related to workspace chat
+      if (data.type?.startsWith('chat.workspace') || data.type?.startsWith('workspace.')) {
+        console.log('[WorkspaceChat] Received:', data.type, data);
+      }
+
       switch (data.type) {
         case 'workspace.subscribed':
           if (data.workspaceId === workspaceId) {
@@ -39,15 +44,16 @@ export function useWorkspaceChat({ token, workspaceId, enabled = true }: UseWork
           break;
 
         case 'chat.workspace.messages':
+          console.log('[WorkspaceChat] Received messages:', data.messages?.length, 'for workspace:', data.workspaceId, 'expected:', workspaceId);
           if (data.workspaceId === workspaceId) {
-            setMessages(data.messages);
+            setMessages(data.messages || []);
             setIsLoading(false);
           }
           break;
 
         case 'chat.workspace.online':
           if (data.workspaceId === workspaceId) {
-            setOnlineUsers(data.users);
+            setOnlineUsers(data.users || []);
           }
           break;
 
@@ -81,6 +87,11 @@ export function useWorkspaceChat({ token, workspaceId, enabled = true }: UseWork
 
       // Request chat history
       ws.send(JSON.stringify({ type: 'chat.workspace.history', workspaceId, limit: 50 }));
+
+      // Set a timeout to stop loading if no response comes (empty chat)
+      setTimeout(() => {
+        setIsLoading(false);
+      }, 3000);
 
       // Start ping interval
       pingIntervalRef.current = setInterval(() => {
