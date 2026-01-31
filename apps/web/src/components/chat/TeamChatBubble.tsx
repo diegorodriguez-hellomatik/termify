@@ -1,5 +1,6 @@
 'use client';
 
+import { createPortal } from 'react-dom';
 import { MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -16,10 +17,10 @@ export function TeamChatBubble({
   unreadCount = 0,
   onlineCount = 0,
 }: TeamChatBubbleProps) {
-  // Don't show bubble when chat is open
-  if (isOpen) return null;
+  // Don't show bubble when chat is open or SSR
+  if (isOpen || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <button
       onClick={onClick}
       className={cn(
@@ -48,6 +49,7 @@ export function TeamChatBubble({
           {onlineCount}
         </span>
       )}
-    </button>
+    </button>,
+    document.body
   );
 }
