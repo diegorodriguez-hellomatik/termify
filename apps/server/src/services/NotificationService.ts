@@ -362,6 +362,7 @@ export class NotificationService {
    */
   async notifyViewerJoined(params: {
     ownerId: string;
+    viewerId: string;
     terminalId: string;
     terminalName: string;
     viewerName: string;
@@ -375,6 +376,7 @@ export class NotificationService {
       metadata: {
         terminalId: params.terminalId,
         terminalName: params.terminalName,
+        viewerId: params.viewerId,
         viewerName: params.viewerName,
         viewerEmail: params.viewerEmail,
       } as Prisma.InputJsonValue,
@@ -386,6 +388,7 @@ export class NotificationService {
    */
   async notifyViewerLeft(params: {
     ownerId: string;
+    viewerId: string;
     terminalId: string;
     terminalName: string;
     viewerName: string;
@@ -399,6 +402,7 @@ export class NotificationService {
       metadata: {
         terminalId: params.terminalId,
         terminalName: params.terminalName,
+        viewerId: params.viewerId,
         viewerName: params.viewerName,
         viewerEmail: params.viewerEmail,
       } as Prisma.InputJsonValue,

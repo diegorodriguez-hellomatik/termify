@@ -1368,6 +1368,7 @@ export class TerminalWebSocketServer {
           console.log('[WS] broadcastViewerJoined - sending notification to owner:', terminal.userId);
           notificationService.notifyViewerJoined({
             ownerId: terminal.userId,
+            viewerId: connection.userId,
             terminalId,
             terminalName: terminal.name,
             viewerName: connection.name || '',
@@ -1397,17 +1398,24 @@ export class TerminalWebSocketServer {
     this.connectionManager.broadcastToTerminal(terminalId, JSON.stringify(message));
 
     // Send push notification to terminal owner (if we have viewer info and they're not the owner)
-    if (viewerInfo?.email) {
+    if (viewerInfo?.email && viewerInfo?.userId) {
       try {
         const terminal = await prisma.terminal.findUnique({
           where: { id: terminalId },
           select: { userId: true, name: true },
         });
 
+        console.log('[WS] broadcastViewerLeft - checking notification:', {
+          terminalUserId: terminal?.userId,
+          viewerUserId: viewerInfo.userId,
+          shouldNotify: terminal && terminal.userId !== viewerInfo.userId,
+        });
+
         if (terminal && terminal.userId !== viewerInfo.userId) {
           const notificationService = NotificationService.getInstance();
           notificationService.notifyViewerLeft({
             ownerId: terminal.userId,
+            viewerId: viewerInfo.userId,
             terminalId,
             terminalName: terminal.name,
             viewerName: viewerInfo.name || '',
@@ -1415,10 +1423,14 @@ export class TerminalWebSocketServer {
           }).catch((err) => {
             console.error('[WS] Failed to send viewer left notification:', err);
           });
+        } else {
+          console.log('[WS] broadcastViewerLeft - skipping notification (owner left their own terminal)');
         }
       } catch (err) {
         console.error('[WS] Failed to fetch terminal for viewer left notification:', err);
       }
+    } else {
+      console.log('[WS] broadcastViewerLeft - skipping notification (no email or userId):', { viewerInfo });
     }
   }
 

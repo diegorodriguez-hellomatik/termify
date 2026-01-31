@@ -25,6 +25,7 @@ import { notificationsApi, Notification, NotificationType } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { useNotificationsSocket } from '@/hooks/useNotificationsSocket';
+import { toast } from '@/hooks/useToast';
 
 const notificationIcons: Record<NotificationType, typeof Bell> = {
   TERMINAL_SHARED: Share2,
@@ -119,7 +120,7 @@ export function NotificationsDropdown({ showLabel = false }: NotificationsDropdo
   // Real-time notifications via WebSocket
   const handleNewNotification = useCallback((notification: Notification) => {
     // Filter out notifications triggered by the current user
-    const actorId = (notification.metadata as any)?.actorId || (notification.metadata as any)?.userId;
+    const actorId = (notification.metadata as any)?.actorId || (notification.metadata as any)?.viewerId;
     const currentUserId = session?.user?.id;
 
     // Skip self-notifications for viewer/action events
@@ -130,11 +131,32 @@ export function NotificationsDropdown({ showLabel = false }: NotificationsDropdo
     ];
 
     if (currentUserId && actorId === currentUserId && selfNotificationTypes.includes(notification.type)) {
+      console.log('[Notifications] Skipping self-notification:', notification.type);
       return; // Don't show notification for own actions
     }
 
+    // Add to notifications list
     setNotifications(prev => [notification, ...prev]);
     setUnreadCount(prev => prev + 1);
+
+    // Determine toast variant based on notification type
+    let variant: 'default' | 'destructive' | 'success' | 'warning' | 'info' = 'default';
+    if (notification.type.includes('JOINED') || notification.type.includes('COMPLETED')) {
+      variant = 'success';
+    } else if (notification.type.includes('LEFT') || notification.type.includes('REVOKED')) {
+      variant = 'warning';
+    } else if (notification.type.includes('FAILED') || notification.type.includes('CRASHED') || notification.type.includes('OVERDUE')) {
+      variant = 'destructive';
+    } else if (notification.type.includes('SHARED') || notification.type.includes('INVITE')) {
+      variant = 'info';
+    }
+
+    // Show toast notification
+    toast({
+      title: notification.title,
+      description: notification.message,
+      variant,
+    });
   }, [session?.user?.id]);
 
   useNotificationsSocket({
