@@ -7,6 +7,7 @@ import {
   Shield,
   User,
   MoreHorizontal,
+  Terminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/context/ThemeContext';
@@ -108,6 +109,10 @@ function TeamCard({
               <ListTodo size={14} />
               <span>{team.taskCount}</span>
             </div>
+            <div className="flex items-center gap-1.5">
+              <Terminal size={14} />
+              <span>{team.terminalCount ?? 0}</span>
+            </div>
           </div>
           {/* Role badge */}
           <div
@@ -190,6 +195,10 @@ function TeamCard({
             <div className="flex items-center gap-1">
               <ListTodo size={12} />
               <span>{team.taskCount}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Terminal size={12} />
+              <span>{team.terminalCount ?? 0}</span>
             </div>
           </div>
         </div>
@@ -282,6 +291,10 @@ function TeamCard({
           <div className="flex items-center gap-1.5">
             <ListTodo size={14} />
             <span>{team.taskCount} tasks</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Terminal size={14} />
+            <span>{team.terminalCount ?? 0} terminals</span>
           </div>
         </div>
       </div>

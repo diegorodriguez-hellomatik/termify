@@ -961,6 +961,7 @@ export interface Team {
   role: TeamRole;
   memberCount: number;
   taskCount: number;
+  terminalCount: number;
   members?: TeamMember[];
   createdAt: string;
   updatedAt: string;

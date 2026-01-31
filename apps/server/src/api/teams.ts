@@ -68,7 +68,7 @@ router.get('/', async (req: Request, res: Response) => {
         team: {
           include: {
             _count: {
-              select: { members: true, tasks: true },
+              select: { members: true, tasks: true, terminals: true },
             },
           },
         },
@@ -86,6 +86,7 @@ router.get('/', async (req: Request, res: Response) => {
       role: membership.role,
       memberCount: membership.team._count.members,
       taskCount: membership.team._count.tasks,
+      terminalCount: membership.team._count.terminals,
       createdAt: membership.team.createdAt,
       updatedAt: membership.team.updatedAt,
     }));
@@ -125,7 +126,7 @@ router.post('/', async (req: Request, res: Response) => {
       },
       include: {
         _count: {
-          select: { members: true, tasks: true },
+          select: { members: true, tasks: true, terminals: true },
         },
       },
     });
@@ -142,6 +143,7 @@ router.post('/', async (req: Request, res: Response) => {
         role: TeamRole.OWNER,
         memberCount: team._count.members,
         taskCount: team._count.tasks,
+        terminalCount: team._count.terminals,
         createdAt: team.createdAt,
         updatedAt: team.updatedAt,
       },
@@ -190,7 +192,7 @@ router.get('/:id', async (req: Request, res: Response) => {
           ],
         },
         _count: {
-          select: { tasks: true },
+          select: { tasks: true, terminals: true },
         },
       },
     });
@@ -212,6 +214,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         role: membership.role,
         memberCount: team.members.length,
         taskCount: team._count.tasks,
+        terminalCount: team._count.terminals,
         members: team.members.map((m) => ({
           id: m.id,
           userId: m.userId,
@@ -267,7 +270,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
       },
       include: {
         _count: {
-          select: { members: true, tasks: true },
+          select: { members: true, tasks: true, terminals: true },
         },
       },
     });
@@ -284,6 +287,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
         role: membership.role,
         memberCount: team._count.members,
         taskCount: team._count.tasks,
+        terminalCount: team._count.terminals,
         createdAt: team.createdAt,
         updatedAt: team.updatedAt,
       },
