@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { TerminalStatus } from '@termify/shared';
-import { RefreshCw, Terminal as TerminalIcon } from 'lucide-react';
+import { RefreshCw, Terminal as TerminalIcon, Star, Activity, Folder } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MobileTerminalCard } from './MobileTerminalCard';
+import { MobileContentHeader } from './MobileContentHeader';
 import { useTerminalStatuses } from '@/hooks/useTerminalStatuses';
 
 interface TerminalData {
@@ -21,13 +22,23 @@ interface TerminalData {
   category?: { id: string; name: string; color: string; icon?: string } | null;
 }
 
+interface CategoryData {
+  id: string;
+  name: string;
+  color: string;
+  icon?: string;
+}
+
 interface MobileTerminalListProps {
   terminals: TerminalData[];
+  categories?: CategoryData[];
   onRefresh?: () => Promise<void>;
+  onCreateTerminal?: () => void;
   isLoading?: boolean;
 }
 
 type StatusFilter = TerminalStatus | null;
+type TabFilter = 'all' | 'favorites' | 'working' | string; // string for custom category IDs
 
 const STATUS_BUTTON_COLORS: Record<TerminalStatus, { bg: string; text: string; activeBg: string }> = {
   [TerminalStatus.RUNNING]: {
@@ -54,15 +65,29 @@ const STATUS_BUTTON_COLORS: Record<TerminalStatus, { bg: string; text: string; a
 
 export function MobileTerminalList({
   terminals,
+  categories = [],
   onRefresh,
+  onCreateTerminal,
   isLoading = false,
 }: MobileTerminalListProps) {
   const [selectedStatus, setSelectedStatus] = useState<StatusFilter>(null);
+  const [selectedTab, setSelectedTab] = useState<TabFilter>('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { summary, filterByStatus } = useTerminalStatuses(terminals);
 
+  // Count special categories
+  const favoritesCount = useMemo(() =>
+    terminals.filter(t => t.isFavorite).length, [terminals]);
+
+  const workingCount = useMemo(() =>
+    terminals.filter(t => t.category?.name?.toLowerCase() === 'working').length, [terminals]);
+
   const handleStatusFilter = useCallback((status: StatusFilter) => {
     setSelectedStatus((prev) => (prev === status ? null : status));
+  }, []);
+
+  const handleTabFilter = useCallback((tab: TabFilter) => {
+    setSelectedTab(tab);
   }, []);
 
   const handleRefresh = useCallback(async () => {
@@ -76,7 +101,18 @@ export function MobileTerminalList({
     }
   }, [onRefresh, isRefreshing]);
 
-  const filteredTerminals = filterByStatus(terminals, selectedStatus);
+  // Filter by status first
+  let filteredTerminals = filterByStatus(terminals, selectedStatus);
+
+  // Then filter by tab
+  if (selectedTab === 'favorites') {
+    filteredTerminals = filteredTerminals.filter(t => t.isFavorite);
+  } else if (selectedTab === 'working') {
+    filteredTerminals = filteredTerminals.filter(t => t.category?.name?.toLowerCase() === 'working');
+  } else if (selectedTab !== 'all') {
+    // Custom category ID
+    filteredTerminals = filteredTerminals.filter(t => t.categoryId === selectedTab);
+  }
 
   // Sort: favorites first, then by last activity
   const sortedTerminals = [...filteredTerminals].sort((a, b) => {
@@ -89,15 +125,105 @@ export function MobileTerminalList({
 
   return (
     <div className="flex flex-col h-full">
+      <MobileContentHeader
+        title="Terminals"
+        subtitle={`${terminals.length} terminal${terminals.length !== 1 ? 's' : ''}`}
+        onCreateClick={onCreateTerminal}
+      />
+
+      {/* Category Tabs - horizontal scroll */}
+      <div className="px-4 pb-2">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-1">
+          {/* All tab */}
+          <button
+            onClick={() => handleTabFilter('all')}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
+              'min-h-[36px]',
+              selectedTab === 'all'
+                ? 'bg-foreground text-background'
+                : 'bg-muted text-muted-foreground'
+            )}
+          >
+            All
+            <span className="opacity-70">({terminals.length})</span>
+          </button>
+
+          {/* Favorites tab */}
+          {favoritesCount > 0 && (
+            <button
+              onClick={() => handleTabFilter('favorites')}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
+                'min-h-[36px]',
+                selectedTab === 'favorites'
+                  ? 'bg-yellow-500 text-white'
+                  : 'bg-yellow-500/10 text-yellow-600'
+              )}
+            >
+              <Star size={14} className={selectedTab === 'favorites' ? 'fill-white' : 'fill-yellow-500'} />
+              Favorites
+              <span className="opacity-70">({favoritesCount})</span>
+            </button>
+          )}
+
+          {/* Working tab */}
+          {workingCount > 0 && (
+            <button
+              onClick={() => handleTabFilter('working')}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
+                'min-h-[36px]',
+                selectedTab === 'working'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-blue-500/10 text-blue-500'
+              )}
+            >
+              <Activity size={14} />
+              Working
+              <span className="opacity-70">({workingCount})</span>
+            </button>
+          )}
+
+          {/* Custom categories */}
+          {categories.filter(c => c.name.toLowerCase() !== 'working').map((category) => {
+            const count = terminals.filter(t => t.categoryId === category.id).length;
+            if (count === 0) return null;
+            return (
+              <button
+                key={category.id}
+                onClick={() => handleTabFilter(category.id)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
+                  'min-h-[36px]',
+                  selectedTab === category.id
+                    ? 'text-white'
+                    : ''
+                )}
+                style={{
+                  backgroundColor: selectedTab === category.id
+                    ? category.color
+                    : `${category.color}20`,
+                  color: selectedTab === category.id ? 'white' : category.color,
+                }}
+              >
+                {category.name}
+                <span className="opacity-70">({count})</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Status Summary Bar */}
       <div className="sticky top-0 z-10 bg-background border-b border-border">
-        <div className="flex items-center gap-2 p-3 overflow-x-auto scrollbar-hide">
+        <div className="flex items-center gap-2 px-4 py-2 overflow-x-auto scrollbar-hide">
           {/* All filter */}
           <button
             onClick={() => handleStatusFilter(null)}
             className={cn(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
-              'min-h-[44px] min-w-[44px]', // Touch target
+              'min-h-[36px]',
               selectedStatus === null
                 ? 'bg-foreground text-background'
                 : 'bg-muted text-muted-foreground'
@@ -113,7 +239,7 @@ export function MobileTerminalList({
               onClick={() => handleStatusFilter(TerminalStatus.RUNNING)}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
-                'min-h-[44px] min-w-[44px]',
+                'min-h-[36px]',
                 selectedStatus === TerminalStatus.RUNNING
                   ? 'bg-green-500 text-white'
                   : 'bg-green-500/10 text-green-500'
@@ -137,7 +263,7 @@ export function MobileTerminalList({
               onClick={() => handleStatusFilter(TerminalStatus.CRASHED)}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
-                'min-h-[44px] min-w-[44px]',
+                'min-h-[36px]',
                 selectedStatus === TerminalStatus.CRASHED
                   ? 'bg-red-500 text-white'
                   : 'bg-red-500/10 text-red-500'
@@ -161,7 +287,7 @@ export function MobileTerminalList({
               onClick={() => handleStatusFilter(TerminalStatus.STARTING)}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
-                'min-h-[44px] min-w-[44px]',
+                'min-h-[36px]',
                 selectedStatus === TerminalStatus.STARTING
                   ? 'bg-yellow-500 text-white'
                   : 'bg-yellow-500/10 text-yellow-500'
@@ -185,7 +311,7 @@ export function MobileTerminalList({
               onClick={() => handleStatusFilter(TerminalStatus.STOPPED)}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
-                'min-h-[44px] min-w-[44px]',
+                'min-h-[36px]',
                 selectedStatus === TerminalStatus.STOPPED
                   ? 'bg-zinc-400 text-white'
                   : 'bg-zinc-400/10 text-zinc-400'
@@ -210,7 +336,7 @@ export function MobileTerminalList({
               disabled={isRefreshing || isLoading}
               className={cn(
                 'ml-auto p-2 rounded-full transition-all',
-                'min-h-[44px] min-w-[44px] flex items-center justify-center',
+                'min-h-[36px] min-w-[36px] flex items-center justify-center',
                 'text-muted-foreground hover:text-foreground hover:bg-muted',
                 'disabled:opacity-50'
               )}

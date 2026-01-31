@@ -43,38 +43,58 @@ export function MobileTerminalCard({ terminal }: MobileTerminalCardProps) {
     <Link href={`/terminals/${terminal.id}`}>
       <div
         className={cn(
-          'flex items-center justify-between',
-          'h-16 px-4',
-          'bg-card border-b border-border',
+          'flex items-center gap-3',
+          'py-3 px-4',
+          'bg-card',
           'active:bg-muted transition-colors',
           'touch-manipulation'
         )}
       >
-        {/* Left side: Status dot + Name */}
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div
-            className={cn(
-              'w-2.5 h-2.5 rounded-full flex-shrink-0',
-              STATUS_COLORS[terminal.status]
-            )}
-          />
-          <div className="min-w-0 flex-1">
-            <p className="font-medium text-foreground truncate">{terminal.name}</p>
-            <p className={cn('text-xs', STATUS_TEXT_COLORS[terminal.status])}>
+        {/* Status indicator */}
+        <div
+          className={cn(
+            'w-2.5 h-2.5 rounded-full flex-shrink-0',
+            STATUS_COLORS[terminal.status],
+            terminal.status === TerminalStatus.RUNNING && 'animate-pulse'
+          )}
+        />
+
+        {/* Content */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-semibold text-foreground truncate">{terminal.name}</p>
+            <span className="text-xs text-muted-foreground flex-shrink-0">{timeAgo}</span>
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className={cn('text-xs font-medium', STATUS_TEXT_COLORS[terminal.status])}>
               {statusLabel}
-              {terminal.category && (
-                <span className="text-muted-foreground">
-                  {' '}&bull; {terminal.category.name}
+            </span>
+            {terminal.category && (
+              <>
+                <span className="text-muted-foreground text-xs">&bull;</span>
+                <span
+                  className="text-xs px-1.5 py-0.5 rounded"
+                  style={{
+                    backgroundColor: `${terminal.category.color}20`,
+                    color: terminal.category.color,
+                  }}
+                >
+                  {terminal.category.name}
                 </span>
-              )}
-            </p>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Right side: Time ago */}
-        <div className="flex-shrink-0 ml-3">
-          <span className="text-xs text-muted-foreground">{timeAgo}</span>
-        </div>
+        {/* Chevron */}
+        <svg
+          className="w-4 h-4 text-muted-foreground flex-shrink-0"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
       </div>
     </Link>
   );

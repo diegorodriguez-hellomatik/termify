@@ -1597,6 +1597,13 @@ export const serversApi = {
       targetPlatform?: string;
       instructions?: string[];
     }>('/api/servers/install-stats-agent', { method: 'POST', body: data, token }),
+
+  preWarmStats: (serverIds: string[], token: string) =>
+    api<{ message: string }>('/api/servers/stats/prewarm', {
+      method: 'POST',
+      body: { serverIds },
+      token,
+    }),
 };
 
 // ========================

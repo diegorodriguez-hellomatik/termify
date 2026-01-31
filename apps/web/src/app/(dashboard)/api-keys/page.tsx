@@ -31,6 +31,7 @@ import {
 import { apikeysApi, ApiKey } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/context/ThemeContext';
+import { MobileApiKeyList } from '@/components/mobile';
 
 export default function ApiKeysPage() {
   const { data: session } = useSession();
@@ -120,18 +121,39 @@ export default function ApiKeysPage() {
 
   if (loading) {
     return (
-      <div className="p-8 max-w-6xl">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 w-48 bg-muted rounded" />
-          <div className="h-4 w-96 bg-muted rounded" />
-          <div className="h-64 bg-muted rounded-xl" />
+      <>
+        {/* Mobile loading */}
+        <div className="md:hidden h-[calc(100vh-4rem)]">
+          <MobileApiKeyList apiKeys={[]} isLoading={true} />
         </div>
-      </div>
+        {/* Desktop loading */}
+        <div className="hidden md:block p-8 max-w-6xl">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 w-48 bg-muted rounded" />
+            <div className="h-4 w-96 bg-muted rounded" />
+            <div className="h-64 bg-muted rounded-xl" />
+          </div>
+        </div>
+      </>
     );
   }
 
   return (
-    <PageLayout>
+    <>
+      {/* Mobile View */}
+      <div className="md:hidden h-[calc(100vh-4rem)]">
+        <MobileApiKeyList
+          apiKeys={apiKeys}
+          onCreateKey={() => setShowCreateModal(true)}
+          onRevokeKey={handleRevokeKey}
+          onRefresh={loadApiKeys}
+          isLoading={loading}
+        />
+      </div>
+
+      {/* Desktop View */}
+      <div className="hidden md:block">
+      <PageLayout>
       <PageHeader
         title="API Keys"
         description="Manage API keys for programmatic access to Termify"
@@ -414,5 +436,7 @@ export default function ApiKeysPage() {
       </Card>
       </PageContent>
     </PageLayout>
+      </div>
+    </>
   );
 }

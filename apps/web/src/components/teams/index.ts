@@ -2,6 +2,7 @@ export { TeamList } from './TeamList';
 export { TeamDetail } from './TeamDetail';
 export { TeamMembers } from './TeamMembers';
 export { CreateTeamModal } from './CreateTeamModal';
+export { EditTeamModal } from './EditTeamModal';
 export { InviteMemberModal } from './InviteMemberModal';
 export { TaskBoard } from './TaskBoard';
 export { TaskColumn } from './TaskColumn';

@@ -12,6 +12,9 @@ import {
   LayoutGrid,
   Menu,
   X,
+  Server,
+  Users,
+  Key,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { signOutAction } from '@/lib/actions/auth';
@@ -37,9 +40,22 @@ export function MobileNav({ userName, userEmail, userImage }: MobileNavProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
 
-  const navItems = [
-    { href: '/terminals', icon: LayoutDashboard, label: 'Dashboard' },
+  // Bottom navigation items (main 4-5 items for quick access)
+  const bottomNavItems = [
+    { href: '/terminals', icon: Terminal, label: 'Terminals' },
     { href: '/workspace', icon: LayoutGrid, label: 'Workspace' },
+    { href: '/tasks', icon: LayoutDashboard, label: 'Tasks' },
+    { href: '/settings', icon: Settings, label: 'Settings' },
+  ];
+
+  // Full menu items for slide-out menu
+  const menuItems = [
+    { href: '/terminals', icon: Terminal, label: 'Terminals' },
+    { href: '/servers', icon: Server, label: 'Servers' },
+    { href: '/workspace', icon: LayoutGrid, label: 'Workspaces' },
+    { href: '/tasks', icon: LayoutDashboard, label: 'Tasks' },
+    { href: '/teams', icon: Users, label: 'Teams' },
+    { href: '/api-keys', icon: Key, label: 'API Keys' },
     { href: '/settings', icon: Settings, label: 'Settings' },
   ];
 
@@ -109,15 +125,15 @@ export function MobileNav({ userName, userEmail, userImage }: MobileNavProps) {
 
             {/* Navigation */}
             <nav className="p-4">
-              <ul className="space-y-2">
-                {navItems.map((item) => (
+              <ul className="space-y-1">
+                {menuItems.map((item) => (
                   <li key={item.href}>
                     <Link
                       href={item.href}
                       onClick={() => setIsOpen(false)}
                       className={cn(
                         'flex items-center gap-3 px-4 py-3 rounded-lg transition-colors',
-                        pathname === item.href
+                        pathname === item.href || pathname?.startsWith(item.href + '/')
                           ? 'bg-primary text-primary-foreground'
                           : 'hover:bg-muted'
                       )}
@@ -148,20 +164,20 @@ export function MobileNav({ userName, userEmail, userImage }: MobileNavProps) {
 
       {/* Bottom Navigation for Mobile - Compact */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-card border-t border-border safe-area-inset-bottom">
-        <div className="flex justify-around py-1">
-          {navItems.map((item) => (
+        <div className="flex justify-around py-1.5">
+          {bottomNavItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                'flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors min-w-[56px]',
-                pathname === item.href
+                'flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors min-w-[60px] min-h-[44px]',
+                pathname === item.href || pathname?.startsWith(item.href + '/')
                   ? 'text-primary'
                   : 'text-muted-foreground'
               )}
             >
-              <item.icon className="h-4 w-4" />
-              <span className="text-[10px]">{item.label}</span>
+              <item.icon className="h-5 w-5" />
+              <span className="text-[10px] font-medium">{item.label}</span>
             </Link>
           ))}
         </div>

@@ -113,6 +113,7 @@ import { useWorkspaceChat } from '@/hooks/useWorkspaceChat';
 import { TerminalTasksProvider } from '@/contexts/TerminalTasksContext';
 import { WorkspaceChatPanel } from '@/components/chat';
 import { WorkspacePresenceAvatars } from '@/components/workspace/WorkspacePresenceAvatars';
+import { MobileWorkspaceList, MobileWorkspaceView } from '@/components/mobile';
 import { cn } from '@/lib/utils';
 
 interface TerminalData {
@@ -985,7 +986,58 @@ function WorkspaceContent() {
   // Workspace List View
   if (viewMode === 'list') {
     return (
-      <PageLayout className={cn(
+      <>
+        {/* Mobile View - Workspace List */}
+        <div className="md:hidden h-[calc(100vh-4rem)]">
+          <MobileWorkspaceList
+            workspaces={workspaces}
+            onOpenWorkspace={handleOpenWorkspace}
+            onCreateWorkspace={handleCreateWorkspace}
+            onEditWorkspace={handleEditWorkspace}
+            onDeleteWorkspace={handleDeleteWorkspace}
+            onShareWorkspace={(workspace) => {
+              setEditingWorkspace(workspace);
+              setShowShareWorkspaceModal(true);
+            }}
+            onSetDefault={handleSetDefault}
+            isLoading={loadingWorkspaces}
+          />
+          {/* Modals for mobile */}
+          <WorkspaceEditModal
+            isOpen={showWorkspaceEditModal}
+            onClose={() => {
+              setShowWorkspaceEditModal(false);
+              setEditingWorkspace(null);
+            }}
+            workspace={editingWorkspace}
+          />
+          <DeleteConfirmModal
+            isOpen={!!workspaceToDelete}
+            title="Delete Workspace"
+            itemName={workspaceToDelete?.name || ''}
+            itemType="workspace"
+            description="This will remove all terminal associations from this workspace."
+            onConfirm={confirmDeleteWorkspace}
+            onCancel={() => setWorkspaceToDelete(null)}
+          />
+          {editingWorkspace && (
+            <ShareWorkspaceModal
+              isOpen={showShareWorkspaceModal}
+              onClose={() => {
+                setShowShareWorkspaceModal(false);
+                setEditingWorkspace(null);
+              }}
+              workspaceId={editingWorkspace.id}
+              workspaceName={editingWorkspace.name}
+              isDark={isDark}
+              token={session?.accessToken}
+            />
+          )}
+        </div>
+
+        {/* Desktop View - Workspace List */}
+        <div className="hidden md:block h-full">
+        <PageLayout className={cn(
         "flex-1 flex flex-col min-h-0 transition-all duration-150",
         isTransitioning ? "opacity-0 scale-95" : "opacity-100 scale-100"
       )}>
@@ -1264,12 +1316,75 @@ function WorkspaceContent() {
           />
         )}
     </PageLayout>
+        </div>
+      </>
     );
   }
 
   // Workspace Terminal View
   return (
-    <div className={cn(
+    <>
+      {/* Mobile View - Workspace Terminal */}
+      <div className="md:hidden h-[calc(100vh-4rem)]">
+        {session?.accessToken && (
+          <MobileWorkspaceView
+            token={session.accessToken}
+            currentWorkspace={currentWorkspace}
+            onBackToList={handleBackToList}
+            onOpenQuickSwitcher={() => setShowQuickSwitcher(true)}
+            onCreateTerminal={handleCreateTerminal}
+            onToggleTasks={() => setTasksPanelOpen(!tasksPanelOpen)}
+            tasksOpen={tasksPanelOpen}
+            taskCount={workspaceTasks.length}
+          />
+        )}
+        {/* Quick switcher for mobile */}
+        <QuickSwitcher
+          terminals={terminals.map((t) => ({
+            id: t.id,
+            name: t.name,
+            status: t.status,
+            lastActiveAt: t.lastActiveAt,
+            createdAt: t.createdAt,
+            isFavorite: t.isFavorite,
+            categoryName: t.category?.name,
+            categoryColor: t.category?.color,
+          }))}
+          onSelect={pendingSplit ? executeSplit : handleOpenTerminal}
+          onClose={() => {
+            setShowQuickSwitcher(false);
+            setPendingSplit(null);
+          }}
+          isDark={isDark}
+          mode={pendingSplit ? { type: 'split', ...pendingSplit } : 'open'}
+          onCreateNew={pendingSplit ? handleCreateNewForSplit : undefined}
+        />
+        {/* Tasks Panel for mobile */}
+        <WorkspaceTasksPanel
+          tasks={workspaceTasks}
+          workspaces={workspaces}
+          currentWorkspaceId={currentWorkspaceId}
+          isOpen={tasksPanelOpen}
+          onToggle={() => setTasksPanelOpen(!tasksPanelOpen)}
+          onCreateTask={createTask}
+          onTaskClick={setSelectedTask}
+        />
+        {/* Task Detail Modal for mobile */}
+        {selectedTask && (
+          <PersonalTaskDetailModal
+            task={selectedTask}
+            onClose={() => setSelectedTask(null)}
+            onUpdate={updateTask}
+            onDelete={deleteTask}
+            workspaces={workspaces}
+            currentUserId={session?.user?.id}
+          />
+        )}
+      </div>
+
+      {/* Desktop View - Workspace Terminal */}
+      <div className="hidden md:flex h-full">
+      <div className={cn(
       "flex-1 flex flex-col min-h-0 transition-all duration-150",
       isTransitioning ? "opacity-0 scale-95" : "opacity-100 scale-100"
     )}>
@@ -1533,6 +1648,8 @@ function WorkspaceContent() {
         />
       )}
     </div>
+      </div>
+    </>
   );
 }
 

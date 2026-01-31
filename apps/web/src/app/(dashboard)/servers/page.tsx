@@ -26,6 +26,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { CreateServerModal } from '@/components/servers/CreateServerModal';
 import { ServerDetailsModal } from '@/components/servers/ServerDetailsModal';
+import { MobileServerList } from '@/components/mobile';
 
 const STATUS_COLORS: Record<ServerStatus | 'null', string> = {
   ONLINE: 'bg-green-500',
@@ -215,6 +216,17 @@ export default function ServersPage() {
       const response = await serversApi.list(session.accessToken);
       if (response.success && response.data) {
         setServers(response.data.servers);
+
+        // Pre-warm stats connections for online servers (non-blocking)
+        const onlineServerIds = response.data.servers
+          .filter((s: Server) => s.lastStatus === 'ONLINE' || s.authMethod === 'AGENT')
+          .map((s: Server) => s.id);
+
+        if (onlineServerIds.length > 0) {
+          serversApi.preWarmStats(onlineServerIds, session.accessToken).catch(() => {
+            // Ignore pre-warm errors
+          });
+        }
       }
     } catch (error) {
       console.error('Failed to load servers:', error);
@@ -303,136 +315,165 @@ export default function ServersPage() {
 
   if (loading) {
     return (
-      <PageLayout>
-        <PageHeader title="Servers" description="Manage your SSH server connections" />
-        <PageContent>
-          <div className="animate-pulse space-y-4">
-            <div className="h-10 w-64 bg-muted rounded" />
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-48 bg-muted rounded-xl" />
-              ))}
-            </div>
-          </div>
-        </PageContent>
-      </PageLayout>
+      <>
+        {/* Mobile loading */}
+        <div className="md:hidden h-[calc(100vh-4rem)]">
+          <MobileServerList
+            servers={[]}
+            isLoading={true}
+          />
+        </div>
+        {/* Desktop loading */}
+        <div className="hidden md:block">
+          <PageLayout>
+            <PageHeader title="Servers" description="Manage your SSH server connections" />
+            <PageContent>
+              <div className="animate-pulse space-y-4">
+                <div className="h-10 w-64 bg-muted rounded" />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-48 bg-muted rounded-xl" />
+                  ))}
+                </div>
+              </div>
+            </PageContent>
+          </PageLayout>
+        </div>
+      </>
     );
   }
 
   return (
-    <PageLayout>
-      <PageHeader
-        title="Servers"
-        description="Manage your SSH server connections"
-        actions={
-          <Button onClick={() => setShowCreateModal(true)} className="gap-2">
-            <Plus size={16} />
-            New Server
-          </Button>
-        }
-      />
-      <PageContent>
-        <div onContextMenu={handleContextMenu} className="min-h-[calc(100vh-220px)]">
-        {/* Search bar */}
-        <div className="mb-6">
-          <div className="relative max-w-md">
-            <Search
-              size={18}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search servers..."
-              className="w-full h-9 pl-10 pr-8 text-sm rounded-md border border-border bg-background focus:outline-none focus:border-primary focus:shadow-sm transition-all duration-200"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <X size={16} />
-              </button>
-            )}
-          </div>
-        </div>
+    <>
+      {/* Mobile View */}
+      <div className="md:hidden h-[calc(100vh-4rem)]">
+        <MobileServerList
+          servers={filteredServers}
+          onServerClick={setSelectedServer}
+          onServerConnect={handleConnectServer}
+          onCreateServer={() => setShowCreateModal(true)}
+          onRefresh={loadServers}
+          isLoading={loading}
+        />
+      </div>
 
-        {/* Server grid */}
-        {filteredServers.length === 0 ? (
-          <div className="text-center py-16 bg-card border border-border rounded-xl">
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-              <ServerIcon size={32} className="text-muted-foreground" />
-            </div>
-            <h3 className="text-lg font-semibold mb-1">
-              {searchQuery ? 'No servers found' : 'No servers yet'}
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              {searchQuery
-                ? 'Try a different search term'
-                : 'Add your first server to get started.'}
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredServers.map((server, index) => (
-              <div
-                key={server.id}
-                className="animate-in fade-in slide-in-from-bottom-2 duration-200"
-                style={{
-                  animationDelay: `${Math.min(index * 30, 300)}ms`,
-                  animationFillMode: 'both',
-                }}
-              >
-                <ServerCard
-                  server={server}
-                  onCheck={handleCheckServer}
-                  onConnect={handleConnectServer}
-                  onClick={setSelectedServer}
-                  onDelete={handleDeleteServer}
-                  isChecking={checkingServers.has(server.id)}
-                  isDark={isDark}
+      {/* Desktop View */}
+      <div className="hidden md:block">
+        <PageLayout>
+          <PageHeader
+            title="Servers"
+            description="Manage your SSH server connections"
+            actions={
+              <Button onClick={() => setShowCreateModal(true)} className="gap-2">
+                <Plus size={16} />
+                New Server
+              </Button>
+            }
+          />
+          <PageContent>
+            <div onContextMenu={handleContextMenu} className="min-h-[calc(100vh-220px)]">
+            {/* Search bar */}
+            <div className="mb-6">
+              <div className="relative max-w-md">
+                <Search
+                  size={18}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                 />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search servers..."
+                  className="w-full h-9 pl-10 pr-8 text-sm rounded-md border border-border bg-background focus:outline-none focus:border-primary focus:shadow-sm transition-all duration-200"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
               </div>
-            ))}
-          </div>
-        )}
+            </div>
 
-        {/* Create Server Modal */}
-        <CreateServerModal
-          isOpen={showCreateModal}
-          onClose={() => setShowCreateModal(false)}
-          onCreated={handleServerCreated}
+            {/* Server grid */}
+            {filteredServers.length === 0 ? (
+              <div className="text-center py-16 bg-card border border-border rounded-xl">
+                <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                  <ServerIcon size={32} className="text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold mb-1">
+                  {searchQuery ? 'No servers found' : 'No servers yet'}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {searchQuery
+                    ? 'Try a different search term'
+                    : 'Add your first server to get started.'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredServers.map((server, index) => (
+                  <div
+                    key={server.id}
+                    className="animate-in fade-in slide-in-from-bottom-2 duration-200"
+                    style={{
+                      animationDelay: `${Math.min(index * 30, 300)}ms`,
+                      animationFillMode: 'both',
+                    }}
+                  >
+                    <ServerCard
+                      server={server}
+                      onCheck={handleCheckServer}
+                      onConnect={handleConnectServer}
+                      onClick={setSelectedServer}
+                      onDelete={handleDeleteServer}
+                      isChecking={checkingServers.has(server.id)}
+                      isDark={isDark}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+            </div>
+
+            {/* Context Menu */}
+            {contextMenu && (
+              <BlankAreaContextMenu
+                x={contextMenu.x}
+                y={contextMenu.y}
+                onClose={() => setContextMenu(null)}
+                onAction={() => setShowCreateModal(true)}
+                actionLabel="New Server"
+              />
+            )}
+          </PageContent>
+        </PageLayout>
+      </div>
+
+      {/* Modals - Available on both mobile and desktop */}
+      <CreateServerModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={handleServerCreated}
+        isDark={isDark}
+        token={session?.accessToken}
+      />
+
+      {/* Server Details Modal */}
+      {selectedServer && (
+        <ServerDetailsModal
+          server={selectedServer}
+          isOpen={true}
+          onClose={() => setSelectedServer(null)}
+          onConnect={handleConnectServer}
+          onDelete={handleDeleteServer}
+          onUpdated={handleServerUpdated}
           isDark={isDark}
           token={session?.accessToken}
         />
-
-        {/* Server Details Modal */}
-        {selectedServer && (
-          <ServerDetailsModal
-            server={selectedServer}
-            isOpen={true}
-            onClose={() => setSelectedServer(null)}
-            onConnect={handleConnectServer}
-            onDelete={handleDeleteServer}
-            onUpdated={handleServerUpdated}
-            isDark={isDark}
-            token={session?.accessToken}
-          />
-        )}
-        </div>
-
-        {/* Context Menu */}
-        {contextMenu && (
-          <BlankAreaContextMenu
-            x={contextMenu.x}
-            y={contextMenu.y}
-            onClose={() => setContextMenu(null)}
-            onAction={() => setShowCreateModal(true)}
-            actionLabel="New Server"
-          />
-        )}
-      </PageContent>
-    </PageLayout>
+      )}
+    </>
   );
 }

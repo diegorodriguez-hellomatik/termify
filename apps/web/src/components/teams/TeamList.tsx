@@ -1,13 +1,15 @@
 'use client';
 
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Users,
   ListTodo,
   Crown,
   Shield,
   User,
-  MoreHorizontal,
   Terminal,
+  Edit2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/context/ThemeContext';
@@ -20,6 +22,7 @@ interface TeamListProps {
   loading: boolean;
   selectedTeamId: string | null;
   onSelectTeam: (teamId: string) => void;
+  onEditTeam?: (team: Team) => void;
   viewMode?: CardViewMode;
 }
 
@@ -45,208 +48,185 @@ function TeamCard({
   team,
   selected,
   onSelect,
+  onEdit,
   viewMode = 'grid',
   isDark,
 }: {
   team: Team;
   selected: boolean;
   onSelect: () => void;
+  onEdit?: () => void;
   viewMode?: CardViewMode;
   isDark: boolean;
 }) {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const RoleIcon = ROLE_ICONS[team.role];
   const teamColor = team.color || '#6366f1';
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const closeContextMenu = () => setContextMenu(null);
+
+  // Context menu component
+  const renderContextMenu = () => {
+    if (!contextMenu || typeof document === 'undefined') return null;
+
+    return createPortal(
+      <>
+        {/* Backdrop */}
+        <div
+          className="fixed inset-0 z-[9998]"
+          onClick={closeContextMenu}
+          onContextMenu={(e) => { e.preventDefault(); closeContextMenu(); }}
+        />
+        {/* Menu */}
+        <div
+          className="fixed z-[9999] min-w-[160px] py-1 bg-popover border border-border rounded-lg shadow-lg animate-in fade-in zoom-in-95 duration-100"
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 176),
+            top: Math.min(contextMenu.y, window.innerHeight - 60),
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              closeContextMenu();
+              onEdit?.();
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
+          >
+            <Edit2 className="h-4 w-4 text-muted-foreground" />
+            Edit team
+          </button>
+        </div>
+      </>,
+      document.body
+    );
+  };
 
   // List view - horizontal layout
   if (viewMode === 'list') {
     return (
-      <div
-        className={cn(
-          'group relative rounded-lg border cursor-pointer',
-          'hover:shadow-md transition-all duration-200',
-          isDark
-            ? 'bg-card border-border hover:border-muted-foreground/30'
-            : 'bg-white border-gray-200 hover:border-gray-300',
-          selected && 'border-primary ring-1 ring-primary'
-        )}
-        onClick={onSelect}
-      >
-        <div className="flex items-center gap-4 p-3">
-          {/* Color indicator */}
-          <div
-            className="w-1 h-10 rounded-full flex-shrink-0"
-            style={{ backgroundColor: teamColor }}
-          />
-          {/* Icon/Image */}
-          <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden"
-            style={{ backgroundColor: team.image ? undefined : teamColor }}
-          >
-            {team.image ? (
-              <img src={team.image} alt={team.name} className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-white text-lg font-semibold">
-                {team.icon || team.name.charAt(0).toUpperCase()}
-              </span>
-            )}
-          </div>
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-foreground truncate">{team.name}</h3>
-            {team.description ? (
-              <p className="text-sm text-muted-foreground truncate">{team.description}</p>
-            ) : (
-              <p className="text-sm text-muted-foreground/50 italic truncate">No description</p>
-            )}
-          </div>
-          {/* Stats */}
-          <div className="flex items-center gap-4 text-xs text-muted-foreground flex-shrink-0">
-            <div className="flex items-center gap-1.5">
-              <Users size={14} />
-              <span>{team.memberCount}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <ListTodo size={14} />
-              <span>{team.taskCount}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Terminal size={14} />
-              <span>{team.terminalCount ?? 0}</span>
-            </div>
-          </div>
-          {/* Role badge */}
-          <div
-            className="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium flex-shrink-0"
-            style={{
-              backgroundColor: ROLE_COLORS[team.role] + '20',
-              color: ROLE_COLORS[team.role],
-            }}
-          >
-            <RoleIcon size={12} />
-            <span>{ROLE_LABELS[team.role]}</span>
-          </div>
-          {/* Actions */}
-          <div className="flex items-center opacity-0 group-hover:opacity-100 transition-all flex-shrink-0">
-            <button
-              onClick={(e) => e.stopPropagation()}
-              className="p-1.5 rounded-md hover:bg-muted transition-all"
+      <>
+        <div
+          className={cn(
+            'group relative rounded-lg border cursor-pointer',
+            'hover:shadow-md transition-all duration-200',
+            isDark
+              ? 'bg-card border-border hover:border-muted-foreground/30'
+              : 'bg-white border-gray-200 hover:border-gray-300',
+            selected && 'border-primary ring-1 ring-primary'
+          )}
+          onClick={onSelect}
+          onContextMenu={handleContextMenu}
+        >
+          <div className="flex items-center gap-4 p-3">
+            {/* Color indicator */}
+            <div
+              className="w-1 h-10 rounded-full flex-shrink-0"
+              style={{ backgroundColor: teamColor }}
+            />
+            {/* Icon/Image */}
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden"
+              style={{ backgroundColor: team.image ? undefined : teamColor }}
             >
-              <MoreHorizontal size={16} className="text-muted-foreground" />
-            </button>
+              {team.image ? (
+                <img src={team.image} alt={team.name} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-white text-lg font-semibold">
+                  {team.icon || team.name.charAt(0).toUpperCase()}
+                </span>
+              )}
+            </div>
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-foreground truncate">{team.name}</h3>
+              {team.description ? (
+                <p className="text-sm text-muted-foreground truncate">{team.description}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground/50 italic truncate">No description</p>
+              )}
+            </div>
+            {/* Stats */}
+            <div className="flex items-center gap-4 text-xs text-muted-foreground flex-shrink-0">
+              <div className="flex items-center gap-1.5" title="Members">
+                <Users size={14} />
+                <span>{team.memberCount}</span>
+              </div>
+              <div className="flex items-center gap-1.5" title="Tasks">
+                <ListTodo size={14} />
+                <span>{team.taskCount}</span>
+              </div>
+              <div className="flex items-center gap-1.5" title="Terminals">
+                <Terminal size={14} />
+                <span>{team.terminalCount ?? 0}</span>
+              </div>
+            </div>
+            {/* Role badge */}
+            <div
+              className="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium flex-shrink-0"
+              style={{
+                backgroundColor: ROLE_COLORS[team.role] + '20',
+                color: ROLE_COLORS[team.role],
+              }}
+            >
+              <RoleIcon size={12} />
+              <span>{ROLE_LABELS[team.role]}</span>
+            </div>
           </div>
         </div>
-      </div>
+        {renderContextMenu()}
+      </>
     );
   }
 
   // Compact view - smaller cards
   if (viewMode === 'compact') {
     return (
-      <div
-        className={cn(
-          'group relative rounded-lg border cursor-pointer',
-          'hover:shadow-md transition-all duration-200',
-          isDark
-            ? 'bg-card border-border hover:border-muted-foreground/30'
-            : 'bg-white border-gray-200 hover:border-gray-300',
-          selected && 'border-primary ring-1 ring-primary'
-        )}
-        onClick={onSelect}
-      >
-        {/* Color bar */}
+      <>
         <div
-          className="h-1.5 rounded-t-lg"
-          style={{ backgroundColor: teamColor }}
-        />
-        <div className="p-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <div
-                className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0 overflow-hidden"
-                style={{ backgroundColor: team.image ? undefined : teamColor }}
-              >
-                {team.image ? (
-                  <img src={team.image} alt={team.name} className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-white text-sm font-semibold">
-                    {team.icon || team.name.charAt(0).toUpperCase()}
-                  </span>
-                )}
+          className={cn(
+            'group relative rounded-lg border cursor-pointer',
+            'hover:shadow-md transition-all duration-200',
+            isDark
+              ? 'bg-card border-border hover:border-muted-foreground/30'
+              : 'bg-white border-gray-200 hover:border-gray-300',
+            selected && 'border-primary ring-1 ring-primary'
+          )}
+          onClick={onSelect}
+          onContextMenu={handleContextMenu}
+        >
+          {/* Color bar */}
+          <div
+            className="h-1.5 rounded-t-lg"
+            style={{ backgroundColor: teamColor }}
+          />
+          <div className="p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0 overflow-hidden"
+                  style={{ backgroundColor: team.image ? undefined : teamColor }}
+                >
+                  {team.image ? (
+                    <img src={team.image} alt={team.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-white text-sm font-semibold">
+                      {team.icon || team.name.charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <h3 className="font-medium text-sm text-foreground truncate">{team.name}</h3>
               </div>
-              <h3 className="font-medium text-sm text-foreground truncate">{team.name}</h3>
-            </div>
-            {/* Role badge */}
-            <div
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
-              style={{
-                backgroundColor: ROLE_COLORS[team.role] + '20',
-                color: ROLE_COLORS[team.role],
-              }}
-            >
-              <RoleIcon size={10} />
-              <span>{ROLE_LABELS[team.role]}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <Users size={12} />
-              <span>{team.memberCount}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <ListTodo size={12} />
-              <span>{team.taskCount}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Terminal size={12} />
-              <span>{team.terminalCount ?? 0}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Default grid view - Modern card design matching workspaces
-  return (
-    <div
-      className={cn(
-        'group relative rounded-xl border cursor-pointer flex flex-col',
-        'hover:shadow-lg transition-all duration-200',
-        isDark
-          ? 'bg-card border-border hover:border-muted-foreground/30'
-          : 'bg-white border-gray-200 hover:border-gray-300',
-        selected && 'border-primary ring-1 ring-primary'
-      )}
-      onClick={onSelect}
-    >
-      {/* Color bar */}
-      <div
-        className="h-2 rounded-t-xl flex-shrink-0"
-        style={{ backgroundColor: teamColor }}
-      />
-
-      {/* Content */}
-      <div className="p-5 flex flex-col flex-1">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden"
-              style={{ backgroundColor: team.image ? undefined : teamColor }}
-            >
-              {team.image ? (
-                <img src={team.image} alt={team.name} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-white text-xl font-semibold">
-                  {team.icon || team.name.charAt(0).toUpperCase()}
-                </span>
-              )}
-            </div>
-            <div>
-              <h3 className="font-semibold text-foreground text-lg">{team.name}</h3>
               {/* Role badge */}
               <div
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium mt-0.5"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
                 style={{
                   backgroundColor: ROLE_COLORS[team.role] + '20',
                   color: ROLE_COLORS[team.role],
@@ -256,49 +236,114 @@ function TeamCard({
                 <span>{ROLE_LABELS[team.role]}</span>
               </div>
             </div>
-          </div>
-
-          {/* Action button */}
-          <div className="flex items-center opacity-0 group-hover:opacity-100 transition-all">
-            <button
-              onClick={(e) => e.stopPropagation()}
-              className="p-1.5 rounded-md hover:bg-muted transition-all"
-            >
-              <MoreHorizontal size={16} className="text-muted-foreground" />
-            </button>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1" title="Members">
+                <Users size={12} />
+                <span>{team.memberCount}</span>
+              </div>
+              <div className="flex items-center gap-1" title="Tasks">
+                <ListTodo size={12} />
+                <span>{team.taskCount}</span>
+              </div>
+              <div className="flex items-center gap-1" title="Terminals">
+                <Terminal size={12} />
+                <span>{team.terminalCount ?? 0}</span>
+              </div>
+            </div>
           </div>
         </div>
+        {renderContextMenu()}
+      </>
+    );
+  }
 
-        {/* Description - with min height to maintain card size */}
-        <div className="flex-1 min-h-[40px] mb-4">
-          {team.description ? (
-            <p className="text-sm text-muted-foreground line-clamp-2">
-              {team.description}
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground/50 italic">
-              No description
-            </p>
-          )}
-        </div>
+  // Default grid view - Modern card design matching workspaces
+  return (
+    <>
+      <div
+        className={cn(
+          'group relative rounded-xl border cursor-pointer flex flex-col',
+          'hover:shadow-lg transition-all duration-200',
+          isDark
+            ? 'bg-card border-border hover:border-muted-foreground/30'
+            : 'bg-white border-gray-200 hover:border-gray-300',
+          selected && 'border-primary ring-1 ring-primary'
+        )}
+        onClick={onSelect}
+        onContextMenu={handleContextMenu}
+      >
+        {/* Color bar */}
+        <div
+          className="h-2 rounded-t-xl flex-shrink-0"
+          style={{ backgroundColor: teamColor }}
+        />
 
-        {/* Stats */}
-        <div className="flex items-center gap-4 text-sm text-muted-foreground mt-auto pt-3 border-t border-border">
-          <div className="flex items-center gap-1.5">
-            <Users size={14} />
-            <span>{team.memberCount} members</span>
+        {/* Content */}
+        <div className="p-4 flex flex-col flex-1">
+          {/* Header */}
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden"
+                style={{ backgroundColor: team.image ? undefined : teamColor }}
+              >
+                {team.image ? (
+                  <img src={team.image} alt={team.name} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-white text-lg font-semibold">
+                    {team.icon || team.name.charAt(0).toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">{team.name}</h3>
+                {/* Role badge */}
+                <div
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium mt-0.5"
+                  style={{
+                    backgroundColor: ROLE_COLORS[team.role] + '20',
+                    color: ROLE_COLORS[team.role],
+                  }}
+                >
+                  <RoleIcon size={10} />
+                  <span>{ROLE_LABELS[team.role]}</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <ListTodo size={14} />
-            <span>{team.taskCount} tasks</span>
+
+          {/* Description */}
+          <div className="flex-1 min-h-[32px] mb-3">
+            {team.description ? (
+              <p className="text-sm text-muted-foreground line-clamp-2">
+                {team.description}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground/50 italic">
+                No description
+              </p>
+            )}
           </div>
-          <div className="flex items-center gap-1.5">
-            <Terminal size={14} />
-            <span>{team.terminalCount ?? 0} terminals</span>
+
+          {/* Stats - compact with just numbers */}
+          <div className="flex items-center gap-4 text-xs text-muted-foreground mt-auto pt-3 border-t border-border">
+            <div className="flex items-center gap-1.5" title="Members">
+              <Users size={14} />
+              <span>{team.memberCount}</span>
+            </div>
+            <div className="flex items-center gap-1.5" title="Tasks">
+              <ListTodo size={14} />
+              <span>{team.taskCount}</span>
+            </div>
+            <div className="flex items-center gap-1.5" title="Terminals">
+              <Terminal size={14} />
+              <span>{team.terminalCount ?? 0}</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+      {renderContextMenu()}
+    </>
   );
 }
 
@@ -307,6 +352,7 @@ export function TeamList({
   loading,
   selectedTeamId,
   onSelectTeam,
+  onEditTeam,
   viewMode = 'grid',
 }: TeamListProps) {
   const { isDark } = useTheme();
@@ -395,6 +441,7 @@ export function TeamList({
             team={team}
             selected={selectedTeamId === team.id}
             onSelect={() => onSelectTeam(team.id)}
+            onEdit={onEditTeam ? () => onEditTeam(team) : undefined}
             viewMode={viewMode}
             isDark={isDark}
           />

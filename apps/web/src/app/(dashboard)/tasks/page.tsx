@@ -10,8 +10,9 @@ import { WorkspaceTabs } from '@/components/tasks/WorkspaceTabs';
 import { usePersonalTasks } from '@/hooks/usePersonalTasks';
 import { useTaskStatuses } from '@/hooks/useTaskStatuses';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
-import { TaskPriority } from '@/lib/api';
+import { TaskPriority, PersonalTask } from '@/lib/api';
 import { BlankAreaContextMenu } from '@/components/ui/BlankAreaContextMenu';
+import { MobileTaskList } from '@/components/mobile';
 
 export default function TasksPage() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
@@ -81,99 +82,132 @@ export default function TasksPage() {
 
   if (loading) {
     return (
-      <PageLayout>
-        <PageHeader
-          title="My Tasks"
-          description="Manage your personal tasks"
-        />
-        <PageContent>
-          <div className="flex items-center justify-center py-16">
-            <div className="animate-pulse text-muted-foreground">Loading tasks...</div>
-          </div>
-        </PageContent>
-      </PageLayout>
+      <>
+        {/* Mobile loading */}
+        <div className="md:hidden h-[calc(100vh-4rem)]">
+          <MobileTaskList
+            tasksByStatus={tasksByStatus()}
+            statuses={statuses}
+            isLoading={true}
+          />
+        </div>
+        {/* Desktop loading */}
+        <div className="hidden md:block">
+          <PageLayout>
+            <PageHeader
+              title="My Tasks"
+              description="Manage your personal tasks"
+            />
+            <PageContent>
+              <div className="flex items-center justify-center py-16">
+                <div className="animate-pulse text-muted-foreground">Loading tasks...</div>
+              </div>
+            </PageContent>
+          </PageLayout>
+        </div>
+      </>
     );
   }
 
   return (
-    <PageLayout>
-      <PageHeader
-        title="My Tasks"
-        description="Manage your personal tasks"
-        actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSettingsOpen(true)}
-              className="gap-2"
-            >
-              <Settings size={16} />
-              Customize Columns
-            </Button>
-            <Button onClick={() => setCreateModalOpen(true)} className="gap-2">
-              <Plus size={16} />
-              New Task
-            </Button>
-          </div>
-        }
-      />
-      <PageContent>
-        <div onContextMenu={handleContextMenu} className="min-h-[calc(100vh-220px)]">
-          {/* Workspace Tabs */}
-          <WorkspaceTabs
-            workspaces={workspaces}
-            selectedWorkspaceId={selectedWorkspaceId}
-            onSelectWorkspace={setSelectedWorkspaceId}
-          />
+    <>
+      {/* Mobile View - Optimized for touch */}
+      <div className="md:hidden h-[calc(100vh-4rem)]">
+        <MobileTaskList
+          tasksByStatus={tasksByStatus()}
+          statuses={statuses}
+          onTaskClick={(task) => {
+            // TODO: Open task detail modal on mobile
+            console.log('Task clicked:', task);
+          }}
+          onCreateTask={() => setCreateModalOpen(true)}
+          onRefresh={fetchTasks}
+          isLoading={loading}
+        />
+      </div>
 
-          {totalTasks === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 px-4">
-              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                <CheckSquare className="h-8 w-8 text-muted-foreground" />
+      {/* Desktop View - Full Kanban board */}
+      <div className="hidden md:block">
+        <PageLayout>
+          <PageHeader
+            title="My Tasks"
+            description="Manage your personal tasks"
+            actions={
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSettingsOpen(true)}
+                  className="gap-2"
+                >
+                  <Settings size={16} />
+                  Customize Columns
+                </Button>
+                <Button onClick={() => setCreateModalOpen(true)} className="gap-2">
+                  <Plus size={16} />
+                  New Task
+                </Button>
               </div>
-              <h3 className="text-lg font-semibold mb-1">No tasks yet</h3>
-              <p className="text-sm text-muted-foreground text-center">
-                {selectedWorkspaceId === 'independent'
-                  ? 'Create an independent task to get started.'
-                  : selectedWorkspaceId
-                    ? 'Create a task in this workspace to get started.'
-                    : 'Create a task to get started organizing your work.'}
-              </p>
+            }
+          />
+          <PageContent>
+            <div onContextMenu={handleContextMenu} className="min-h-[calc(100vh-220px)]">
+              {/* Workspace Tabs */}
+              <WorkspaceTabs
+                workspaces={workspaces}
+                selectedWorkspaceId={selectedWorkspaceId}
+                onSelectWorkspace={setSelectedWorkspaceId}
+              />
+
+              {totalTasks === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 px-4">
+                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                    <CheckSquare className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-lg font-semibold mb-1">No tasks yet</h3>
+                  <p className="text-sm text-muted-foreground text-center">
+                    {selectedWorkspaceId === 'independent'
+                      ? 'Create an independent task to get started.'
+                      : selectedWorkspaceId
+                        ? 'Create a task in this workspace to get started.'
+                        : 'Create a task to get started organizing your work.'}
+                  </p>
+                </div>
+              ) : (
+                <TaskBoardComponent
+                  tasksByStatus={tasksByStatus()}
+                  statuses={statuses}
+                  workspaces={workspaces}
+                  onCreateTask={createTask}
+                  onUpdateTask={updateTask}
+                  onDeleteTask={deleteTask}
+                  onReorderTasks={reorderTasks}
+                  onReorderStatuses={reorderStatuses}
+                  onStatusesChange={() => {
+                    refetchStatuses();
+                    fetchTasks();
+                  }}
+                  settingsOpen={settingsOpen}
+                  onSettingsOpenChange={setSettingsOpen}
+                />
+              )}
             </div>
-          ) : (
-            <TaskBoardComponent
-              tasksByStatus={tasksByStatus()}
-              statuses={statuses}
-              workspaces={workspaces}
-              onCreateTask={createTask}
-              onUpdateTask={updateTask}
-              onDeleteTask={deleteTask}
-              onReorderTasks={reorderTasks}
-              onReorderStatuses={reorderStatuses}
-              onStatusesChange={() => {
-                refetchStatuses();
-                fetchTasks();
-              }}
-              settingsOpen={settingsOpen}
-              onSettingsOpenChange={setSettingsOpen}
+          </PageContent>
+
+          {/* Context Menu */}
+          {contextMenu && (
+            <BlankAreaContextMenu
+              x={contextMenu.x}
+              y={contextMenu.y}
+              onClose={() => setContextMenu(null)}
+              onAction={() => setCreateModalOpen(true)}
+              actionLabel="New Task"
             />
           )}
-        </div>
-      </PageContent>
+        </PageLayout>
+      </div>
 
-      {/* Context Menu */}
-      {contextMenu && (
-        <BlankAreaContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          onClose={() => setContextMenu(null)}
-          onAction={() => setCreateModalOpen(true)}
-          actionLabel="New Task"
-        />
-      )}
-
-      {/* Create Task Modal */}
+      {/* Create Task Modal - Available on both mobile and desktop */}
       <PersonalTaskCreateModal
         open={createModalOpen}
         onOpenChange={setCreateModalOpen}
@@ -181,6 +215,6 @@ export default function TasksPage() {
         workspaces={workspaces}
         defaultWorkspaceId={selectedWorkspaceId === 'independent' ? null : selectedWorkspaceId}
       />
-    </PageLayout>
+    </>
   );
 }

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3030';
+
 export interface ServerStats {
   cpu: number[];
   cpuAvg: number;
@@ -73,6 +75,32 @@ export function useServerStats(
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const subscribedRef = useRef<boolean>(false);
+  const cachedStatsFetchedRef = useRef<boolean>(false);
+
+  // Fetch cached stats immediately (instant load)
+  const fetchCachedStats = useCallback(async () => {
+    if (!serverId || !session?.accessToken || cachedStatsFetchedRef.current) return;
+
+    try {
+      const response = await fetch(`${API_URL}/api/servers/${serverId}/stats/cached`, {
+        headers: {
+          'Authorization': `Bearer ${session.accessToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.stats) {
+          console.log('[ServerStats] Loaded cached stats instantly');
+          setStats(data.stats);
+          setHistory([data.stats]);
+        }
+      }
+      cachedStatsFetchedRef.current = true;
+    } catch (e) {
+      console.log('[ServerStats] No cached stats available');
+    }
+  }, [serverId, session?.accessToken]);
 
   const connect = useCallback(() => {
     // In development, use 'dev' token if no session token available
@@ -215,13 +243,20 @@ export function useServerStats(
   // Connect when serverId changes or enabled becomes true
   useEffect(() => {
     if (serverId && enabled) {
+      // Reset cached stats flag when serverId changes
+      cachedStatsFetchedRef.current = false;
+
+      // Fetch cached stats first (instant)
+      fetchCachedStats();
+
+      // Then establish real-time connection
       connect();
     }
 
     return () => {
       disconnect();
     };
-  }, [serverId, enabled, connect, disconnect]);
+  }, [serverId, enabled, connect, disconnect, fetchCachedStats]);
 
   // Keep-alive ping
   useEffect(() => {

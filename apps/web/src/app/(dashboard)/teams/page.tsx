@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Search, X, LayoutGrid, Grid3x3, List } from 'lucide-react';
 import { PageLayout, PageHeader, PageContent } from '@/components/ui/page-layout';
@@ -8,7 +8,9 @@ import { Button } from '@/components/ui/button';
 import { BlankAreaContextMenu } from '@/components/ui/BlankAreaContextMenu';
 import { useTeams } from '@/hooks/useTeams';
 import { useTheme } from '@/context/ThemeContext';
-import { TeamList, CreateTeamModal } from '@/components/teams';
+import { TeamList, CreateTeamModal, EditTeamModal } from '@/components/teams';
+import { MobileTeamList } from '@/components/mobile';
+import { Team } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 type CardViewMode = 'grid' | 'compact' | 'list';
@@ -74,6 +76,8 @@ export default function TeamsPage() {
 
   const [cardViewMode, setCardViewMode] = useState<CardViewMode>('grid');
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [teamToEdit, setTeamToEdit] = useState<Team | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -100,7 +104,7 @@ export default function TeamsPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const { teams, loading: teamsLoading, createTeam } = useTeams();
+  const { teams, loading: teamsLoading, createTeam, updateTeam } = useTeams();
 
   const handleSelectTeam = (teamId: string) => {
     router.push(`/teams/${teamId}`);
@@ -119,6 +123,18 @@ export default function TeamsPage() {
     return team;
   };
 
+  const handleEditTeam = (team: Team) => {
+    setTeamToEdit(team);
+    setEditModalOpen(true);
+  };
+
+  const handleUpdateTeam = async (
+    teamId: string,
+    data: { name?: string; description?: string; color?: string; icon?: string }
+  ) => {
+    return await updateTeam(teamId, data);
+  };
+
   // Filter teams by search query
   const filteredTeams = useMemo(() => {
     if (!searchQuery) return teams;
@@ -131,72 +147,96 @@ export default function TeamsPage() {
   }, [teams, searchQuery]);
 
   return (
-    <PageLayout>
-      <PageHeader
-        title="Teams"
-        description="Collaborate with your team on tasks and terminals"
-        actions={
-          <div className="flex items-center gap-3">
-            <ViewModeToggle viewMode={cardViewMode} onChange={setCardViewMode} isDark={isDark} />
-            <Button onClick={() => setCreateModalOpen(true)} className="gap-2">
-              <Plus size={16} />
-              New Team
-            </Button>
-          </div>
-        }
-      />
-      <PageContent>
-        <div onContextMenu={handleContextMenu} className="min-h-[calc(100vh-220px)]">
-          {/* Search bar */}
-          {teams.length > 0 && (
-            <div className="relative max-w-md mb-4">
-              <Search
-                size={18}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-              />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search teams... (Ctrl+F)"
-                className="w-full h-9 pl-10 pr-8 text-sm rounded-md border border-border bg-background focus:outline-none focus:border-primary focus:shadow-sm transition-all duration-200"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <X size={16} />
-                </button>
-              )}
-            </div>
-          )}
-          <TeamList
-            teams={filteredTeams}
-            loading={teamsLoading}
-            selectedTeamId={null}
-            onSelectTeam={handleSelectTeam}
-            viewMode={cardViewMode}
-          />
-        </div>
+    <>
+      {/* Mobile View */}
+      <div className="md:hidden h-[calc(100vh-4rem)]">
+        <MobileTeamList
+          teams={filteredTeams}
+          onTeamClick={(team) => handleSelectTeam(team.id)}
+          onCreateTeam={() => setCreateModalOpen(true)}
+          isLoading={teamsLoading}
+        />
+      </div>
 
-        {/* Context Menu */}
-        {contextMenu && (
-          <BlankAreaContextMenu
-            x={contextMenu.x}
-            y={contextMenu.y}
-            onClose={() => setContextMenu(null)}
-            onAction={() => setCreateModalOpen(true)}
-            actionLabel="New Team"
+      {/* Desktop View */}
+      <div className="hidden md:block">
+        <PageLayout>
+          <PageHeader
+            title="Teams"
+            description="Collaborate with your team on tasks and terminals"
+            actions={
+              <div className="flex items-center gap-3">
+                <ViewModeToggle viewMode={cardViewMode} onChange={setCardViewMode} isDark={isDark} />
+                <Button onClick={() => setCreateModalOpen(true)} className="gap-2">
+                  <Plus size={16} />
+                  New Team
+                </Button>
+              </div>
+            }
           />
-        )}
-      </PageContent>
+          <PageContent>
+            <div onContextMenu={handleContextMenu} className="min-h-[calc(100vh-220px)]">
+              {/* Search bar */}
+              {teams.length > 0 && (
+                <div className="relative max-w-md mb-4">
+                  <Search
+                    size={18}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search teams... (Ctrl+F)"
+                    className="w-full h-9 pl-10 pr-8 text-sm rounded-md border border-border bg-background focus:outline-none focus:border-primary focus:shadow-sm transition-all duration-200"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+              )}
+              <TeamList
+                teams={filteredTeams}
+                loading={teamsLoading}
+                selectedTeamId={null}
+                onSelectTeam={handleSelectTeam}
+                onEditTeam={handleEditTeam}
+                viewMode={cardViewMode}
+              />
+            </div>
+
+            {/* Context Menu */}
+            {contextMenu && (
+              <BlankAreaContextMenu
+                x={contextMenu.x}
+                y={contextMenu.y}
+                onClose={() => setContextMenu(null)}
+                onAction={() => setCreateModalOpen(true)}
+                actionLabel="New Team"
+              />
+            )}
+          </PageContent>
+        </PageLayout>
+      </div>
+
+      {/* Modals - Available on both mobile and desktop */}
       <CreateTeamModal
         open={createModalOpen}
         onOpenChange={setCreateModalOpen}
         onCreateTeam={handleCreateTeam}
       />
-    </PageLayout>
+      <EditTeamModal
+        team={teamToEdit}
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        onUpdateTeam={handleUpdateTeam}
+      />
+    </>
   );
 }

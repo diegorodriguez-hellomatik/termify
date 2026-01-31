@@ -1440,8 +1440,8 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
     return (
       <>
         {/* Mobile loading skeleton */}
-        <div className="md:hidden h-[calc(100vh-8rem)]">
-          <MobileTerminalList terminals={[]} isLoading={true} />
+        <div className="md:hidden h-[calc(100vh-4rem)]">
+          <MobileTerminalList terminals={[]} categories={[]} isLoading={true} />
         </div>
         {/* Desktop loading skeleton */}
         <div className="hidden md:block p-8">
@@ -1466,10 +1466,12 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
   return (
     <>
       {/* Mobile View - Status monitoring interface */}
-      <div className="md:hidden h-[calc(100vh-8rem)]">
+      <div className="md:hidden h-[calc(100vh-4rem)]">
         <MobileTerminalList
           terminals={terminals}
+          categories={categories}
           onRefresh={loadData}
+          onCreateTerminal={() => setShowCreateModal(true)}
           isLoading={loading}
         />
       </div>

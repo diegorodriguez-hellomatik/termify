@@ -43,6 +43,7 @@ import { ChangePasswordForm } from '@/components/settings/ChangePasswordForm';
 import { ChangeEmailForm } from '@/components/settings/ChangeEmailForm';
 import { cn } from '@/lib/utils';
 import { usersApi } from '@/lib/api';
+import { MobileSettings } from '@/components/mobile';
 
 const KEYBOARD_SHORTCUTS = [
   { key: 'Ctrl+N', action: 'Create new terminal' },
@@ -215,7 +216,15 @@ export default function SettingsPage() {
   }, [updateSession]);
 
   return (
-    <PageLayout>
+    <>
+      {/* Mobile View */}
+      <div className="md:hidden h-[calc(100vh-4rem)]">
+        <MobileSettings />
+      </div>
+
+      {/* Desktop View */}
+      <div className="hidden md:block">
+      <PageLayout>
       <PageHeader
         title="Settings"
         description="Manage your account and preferences"
@@ -701,5 +710,7 @@ export default function SettingsPage() {
         </Card>
       </PageContent>
     </PageLayout>
+      </div>
+    </>
   );
 }

@@ -65,6 +65,10 @@ class ServerStatsService extends EventEmitter {
   private collectors: Map<string, StatsCollector> = new Map();
   private reconnectTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
+  // Cache for instant stats retrieval
+  private statsCache: Map<string, { stats: ServerStats; timestamp: number }> = new Map();
+  private static CACHE_TTL = 60000; // 60 seconds cache validity
+
   // Path to stats-agent binary on remote servers
   private agentPath = '~/.termify/stats-agent';
   private agentInterval = 2; // seconds (faster initial load)
@@ -74,6 +78,56 @@ class ServerStatsService extends EventEmitter {
    */
   private isLocalhost(host: string): boolean {
     return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  }
+
+  /**
+   * Get cached stats for a server (instant)
+   */
+  getCachedStats(serverId: string): ServerStats | null {
+    const cached = this.statsCache.get(serverId);
+    if (cached && Date.now() - cached.timestamp < ServerStatsService.CACHE_TTL) {
+      return cached.stats;
+    }
+    return null;
+  }
+
+  /**
+   * Cache stats for a server
+   */
+  private cacheStats(serverId: string, stats: ServerStats): void {
+    this.statsCache.set(serverId, { stats, timestamp: Date.now() });
+  }
+
+  /**
+   * Get all cached stats (for initial page load)
+   */
+  getAllCachedStats(): Map<string, ServerStats> {
+    const result = new Map<string, ServerStats>();
+    const now = Date.now();
+
+    for (const [serverId, cached] of this.statsCache) {
+      if (now - cached.timestamp < ServerStatsService.CACHE_TTL) {
+        result.set(serverId, cached.stats);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Pre-warm connections for multiple servers
+   */
+  async preWarmServers(serverIds: string[], userId: string): Promise<void> {
+    console.log(`[ServerStats] Pre-warming ${serverIds.length} servers`);
+
+    // Start collecting for all servers in parallel, but don't wait
+    for (const serverId of serverIds) {
+      if (!this.collectors.has(serverId)) {
+        this.startCollecting(serverId, userId).catch(err => {
+          console.log(`[ServerStats] Pre-warm failed for ${serverId}:`, err.message);
+        });
+      }
+    }
   }
 
   /**
@@ -149,6 +203,7 @@ class ServerStatsService extends EventEmitter {
           try {
             const stats = this.parseStats(line);
             console.log(`[ServerStats] Parsed stats, emitting for ${serverId}`);
+            this.cacheStats(serverId, stats);
             this.emit('stats', { serverId, userId, stats });
           } catch (e) {
             console.error(`[ServerStats] Failed to parse local stats:`, line.substring(0, 100));
@@ -278,11 +333,13 @@ class ServerStatsService extends EventEmitter {
             if (line.trim()) {
               try {
                 const stats = this.parseStats(line);
+                this.cacheStats(serverId, stats);
                 this.emit('stats', { serverId, userId, stats });
               } catch (e) {
                 // Could be OS info or other non-JSON output, try parsing legacy format
                 const legacyStats = this.parseLegacyFormat(line);
                 if (legacyStats) {
+                  this.cacheStats(serverId, legacyStats as ServerStats);
                   this.emit('stats', { serverId, userId, stats: legacyStats });
                 }
               }

@@ -10,6 +10,7 @@ import { SSHManager } from '../ssh/SSHManager.js';
 import { getPTYManager } from '../pty/PTYManager.js';
 import { DEFAULT_COLS, DEFAULT_ROWS } from '@termify/shared';
 import { ephemeralManager } from '../ephemeral/EphemeralTerminalManager.js';
+import { serverStatsService } from '../services/ServerStatsService.js';
 
 const router = Router();
 
@@ -1094,6 +1095,109 @@ router.post('/install-stats-agent', async (req: Request, res: Response) => {
     }
     console.error('[API] Install stats-agent error:', error);
     res.status(500).json({ success: false, error: 'Failed to install stats-agent' });
+  }
+});
+
+/**
+ * GET /api/servers/:id/stats/cached
+ * Get cached stats for a server (instant response)
+ */
+router.get('/:id/stats/cached', async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const userId = req.user!.userId;
+
+    // Verify user owns this server
+    const server = await prisma.server.findFirst({
+      where: { id, userId },
+    });
+
+    if (!server) {
+      res.status(404).json({ success: false, error: 'Server not found' });
+      return;
+    }
+
+    const cachedStats = serverStatsService.getCachedStats(id);
+
+    res.json({
+      success: true,
+      stats: cachedStats,
+      cached: true,
+    });
+  } catch (error) {
+    console.error('[API] Get cached stats error:', error);
+    res.status(500).json({ success: false, error: 'Failed to get cached stats' });
+  }
+});
+
+/**
+ * GET /api/servers/stats/all
+ * Get all cached stats for user's servers (for initial page load)
+ */
+router.get('/stats/all', async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+
+    // Get user's servers
+    const servers = await prisma.server.findMany({
+      where: { userId },
+      select: { id: true },
+    });
+
+    const serverIds = servers.map(s => s.id);
+    const allCachedStats = serverStatsService.getAllCachedStats();
+
+    // Filter to only user's servers
+    const userStats: Record<string, any> = {};
+    for (const serverId of serverIds) {
+      const stats = allCachedStats.get(serverId);
+      if (stats) {
+        userStats[serverId] = stats;
+      }
+    }
+
+    res.json({
+      success: true,
+      stats: userStats,
+    });
+  } catch (error) {
+    console.error('[API] Get all cached stats error:', error);
+    res.status(500).json({ success: false, error: 'Failed to get cached stats' });
+  }
+});
+
+/**
+ * POST /api/servers/stats/prewarm
+ * Pre-warm stats connections for multiple servers
+ */
+router.post('/stats/prewarm', async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const { serverIds } = req.body;
+
+    if (!Array.isArray(serverIds)) {
+      res.status(400).json({ success: false, error: 'serverIds must be an array' });
+      return;
+    }
+
+    // Verify user owns these servers
+    const servers = await prisma.server.findMany({
+      where: { id: { in: serverIds }, userId },
+      select: { id: true },
+    });
+
+    const validServerIds = servers.map(s => s.id);
+
+    // Start pre-warming (non-blocking)
+    serverStatsService.preWarmServers(validServerIds, userId);
+
+    res.json({
+      success: true,
+      message: `Pre-warming ${validServerIds.length} servers`,
+    });
+  } catch (error) {
+    console.error('[API] Pre-warm stats error:', error);
+    res.status(500).json({ success: false, error: 'Failed to pre-warm stats' });
   }
 });
 
