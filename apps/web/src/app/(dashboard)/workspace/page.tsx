@@ -109,10 +109,7 @@ import { WorkspaceModal } from '@/components/workspaces/WorkspaceModal';
 import { WorkspaceEditModal } from '@/components/workspaces/WorkspaceEditModal';
 import { ShareWorkspaceModal } from '@/components/workspaces/ShareWorkspaceModal';
 import { usePersonalTasks } from '@/hooks/usePersonalTasks';
-import { useWorkspaceChat } from '@/hooks/useWorkspaceChat';
 import { TerminalTasksProvider } from '@/contexts/TerminalTasksContext';
-import { WorkspaceChatPanel } from '@/components/chat';
-import { WorkspacePresenceAvatars } from '@/components/workspace/WorkspacePresenceAvatars';
 import { MobileWorkspaceList, MobileWorkspaceView } from '@/components/mobile';
 import { cn } from '@/lib/utils';
 
@@ -628,9 +625,6 @@ function WorkspaceContent() {
   const [tasksPanelOpen, setTasksPanelOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<PersonalTask | null>(null);
 
-  // Chat panel state
-  const [chatPanelOpen, setChatPanelOpen] = useState(false);
-
   // Fetch tasks for current workspace
   const {
     tasks: workspaceTasks,
@@ -638,19 +632,6 @@ function WorkspaceContent() {
     updateTask,
     deleteTask,
   } = usePersonalTasks({ workspaceId: currentWorkspaceId || undefined });
-
-  // Workspace chat and presence (enabled whenever in workspace view for presence tracking)
-  const {
-    messages: chatMessages,
-    onlineUsers: workspaceOnlineUsers,
-    isLoading: chatLoading,
-    isConnected: chatConnected,
-    sendMessage: sendChatMessage,
-  } = useWorkspaceChat({
-    token: session?.accessToken ?? null,
-    workspaceId: currentWorkspaceId,
-    enabled: viewMode === 'workspace',
-  });
 
   // Get fullscreen state and layout settings from context
   const { isFullscreen, toggleFullscreen, isLayoutLocked, toggleLayoutLock, layoutMode, setLayoutMode } = useWorkspace();
@@ -1436,23 +1417,12 @@ function WorkspaceContent() {
                 onToggleTasks={() => setTasksPanelOpen(!tasksPanelOpen)}
                 tasksOpen={tasksPanelOpen}
                 taskCount={workspaceTasks.length}
-                onToggleChat={() => setChatPanelOpen(!chatPanelOpen)}
-                chatOpen={chatPanelOpen}
                 isFullscreen={isFullscreen}
                 onToggleFullscreen={toggleFullscreen}
                 isLayoutLocked={isLayoutLocked}
                 onToggleLayoutLock={toggleLayoutLock}
                 layoutMode={layoutMode}
                 onLayoutModeChange={setLayoutMode}
-              />
-            )}
-
-            {/* Online users presence */}
-            {workspaceOnlineUsers.length > 0 && (
-              <WorkspacePresenceAvatars
-                users={workspaceOnlineUsers}
-                currentUserId={session?.user?.id || ''}
-                maxVisible={4}
               />
             )}
 
@@ -1631,20 +1601,6 @@ function WorkspaceContent() {
           onDelete={deleteTask}
           workspaces={workspaces}
           currentUserId={session?.user?.id}
-        />
-      )}
-
-      {/* Workspace Chat Panel */}
-      {viewMode === 'workspace' && (
-        <WorkspaceChatPanel
-          isOpen={chatPanelOpen}
-          messages={chatMessages}
-          onlineUsers={workspaceOnlineUsers}
-          currentUserId={session?.user?.id || ''}
-          isLoading={chatLoading}
-          isConnected={chatConnected}
-          onSendMessage={sendChatMessage}
-          onClose={() => setChatPanelOpen(false)}
         />
       )}
     </div>
