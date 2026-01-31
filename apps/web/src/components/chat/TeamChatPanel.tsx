@@ -61,7 +61,7 @@ export function TeamChatPanel({
   if (!isOpen || typeof document === 'undefined') return null;
 
   return createPortal(
-    <div className="fixed bottom-4 right-4 w-80 h-[28rem] bg-background border rounded-lg shadow-xl flex flex-col z-[50] animate-in slide-in-from-bottom-4 duration-200">
+    <div className="fixed inset-0 md:inset-auto md:bottom-4 md:right-4 w-full md:w-80 h-full md:h-[28rem] bg-background border-0 md:border md:rounded-lg shadow-xl flex flex-col z-[50] animate-in slide-in-from-bottom-4 duration-200">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <div className="flex items-center gap-2">
