@@ -64,6 +64,7 @@ export function TaskDetailModal({
   const [status, setStatus] = useState(task.status);
   const [priority, setPriority] = useState(task.priority);
   const [dueDate, setDueDate] = useState(task.dueDate ? task.dueDate.split('T')[0] : '');
+  const [assignees, setAssignees] = useState(task.assignees || []);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -76,8 +77,13 @@ export function TaskDetailModal({
     return () => setMounted(false);
   }, []);
 
+  // Sync assignees when task changes
+  useEffect(() => {
+    setAssignees(task.assignees || []);
+  }, [task.assignees]);
+
   const assignedMemberIds = new Set(
-    (task.assignees || []).map((a) => a.teamMemberId)
+    assignees.map((a) => a.teamMemberId)
   );
 
   const availableMembers = teamMembers.filter(
@@ -118,7 +124,11 @@ export function TaskDetailModal({
   const handleAssign = async (memberId: string) => {
     setAssigningMember(memberId);
     try {
-      await onAssign(task.id, memberId);
+      const result = await onAssign(task.id, memberId);
+      if (result) {
+        // Add the new assignee to local state
+        setAssignees((prev) => [...prev, result]);
+      }
     } finally {
       setAssigningMember(null);
       setShowAssigneeSelector(false);
@@ -128,7 +138,11 @@ export function TaskDetailModal({
   const handleUnassign = async (assigneeId: string) => {
     setAssigningMember(assigneeId);
     try {
-      await onUnassign(task.id, assigneeId);
+      const success = await onUnassign(task.id, assigneeId);
+      if (success) {
+        // Remove the assignee from local state
+        setAssignees((prev) => prev.filter((a) => a.id !== assigneeId));
+      }
     } finally {
       setAssigningMember(null);
     }
@@ -142,29 +156,26 @@ export function TaskDetailModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-background border rounded-lg shadow-xl w-full max-w-2xl p-6 z-[101] max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            {isOverdue && (
-              <div className="flex items-center gap-1 text-red-500 text-sm">
-                <AlertCircle className="h-4 w-4" />
-                Overdue
-              </div>
-            )}
-          </div>
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        {/* Close button - absolute positioned */}
+        <Button variant="ghost" size="icon" onClick={onClose} className="absolute top-3 right-3">
+          <X className="h-4 w-4" />
+        </Button>
 
         <div className="space-y-6">
-          {/* Title */}
-          <div>
+          {/* Title + Overdue indicator */}
+          <div className="pr-10">
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="text-lg font-semibold border-0 px-0 focus-visible:ring-0"
               placeholder="Task title"
             />
+            {isOverdue && (
+              <div className="flex items-center gap-1 text-red-500 text-sm mt-1">
+                <AlertCircle className="h-4 w-4" />
+                Overdue
+              </div>
+            )}
           </div>
 
           {/* Status & Priority */}
@@ -260,7 +271,7 @@ export function TaskDetailModal({
 
             {/* Current assignees */}
             <div className="flex flex-wrap gap-2 mb-2">
-              {(task.assignees || []).map((assignee) => (
+              {assignees.map((assignee) => (
                 <div
                   key={assignee.id}
                   className="flex items-center gap-2 px-2 py-1 rounded-full bg-muted"
@@ -298,7 +309,7 @@ export function TaskDetailModal({
                   </button>
                 </div>
               ))}
-              {(!task.assignees || task.assignees.length === 0) && (
+              {assignees.length === 0 && (
                 <span className="text-sm text-muted-foreground">
                   No assignees
                 </span>
