@@ -1515,6 +1515,7 @@ function WorkspaceContent() {
           onUpdate={updateTask}
           onDelete={deleteTask}
           workspaces={workspaces}
+          currentUserId={session?.user?.id}
         />
       )}
 

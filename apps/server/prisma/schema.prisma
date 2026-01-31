@@ -167,6 +167,9 @@ model User {
   // Terminal task queues
   terminalTaskQueues     TerminalTaskQueue[]
 
+  // Personal task assignments
+  personalTasksAssigned  PersonalTask[] @relation("PersonalTaskAssignee")
+
   // AI Projects
   servers                Server[]
   aiProjects             AIProject[]
@@ -267,6 +270,9 @@ model Terminal {
   fontSize      Int?           @map("font_size")
   fontFamily    String?        @map("font_family")
   theme         String?        // Terminal theme override (null = use global theme)
+
+  // Working state - true when terminal is actively executing something
+  isWorking     Boolean        @default(false) @map("is_working")
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   category      Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
@@ -967,7 +973,7 @@ model PersonalTask {
   id          String       @id @default(cuid())
   userId      String       @map("user_id")
   title       String
-  description String?      @db.Text
+  description String?      @db.Text  // Supports markdown
   status      String       @default("backlog")  // Custom status key from TaskStatusConfig
   priority    TaskPriority @default(MEDIUM)
   position    Int          @default(0)
@@ -984,6 +990,13 @@ model PersonalTask {
   terminalQueueId String?  @map("terminal_queue_id")
   executedAt      DateTime? @map("executed_at")
 
+  // Attachments (images, files)
+  attachments String?      @db.Text  // JSON array: [{"url": "https://...", "name": "image.png", "type": "image"}]
+
+  // Assignment (optional - for shared/collaborative tasks)
+  assigneeId  String?      @map("assignee_id")
+  assignee    User?        @relation("PersonalTaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt   DateTime     @default(now()) @map("created_at")
@@ -992,6 +1005,7 @@ model PersonalTask {
   @@index([userId])
   @@index([status])
   @@index([workspaceId])
+  @@index([assigneeId])
   @@map("personal_tasks")
 }
 

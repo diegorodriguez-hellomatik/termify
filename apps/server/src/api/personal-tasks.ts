@@ -30,26 +30,37 @@ async function validateStatusKey(userId: string, statusKey: string): Promise<boo
   return !!status;
 }
 
+// Attachment schema
+const attachmentSchema = z.object({
+  url: z.string().url(),
+  name: z.string().max(200),
+  type: z.enum(['image', 'file']),
+});
+
 // Validation schemas - status is now a string (custom status key)
 const createPersonalTaskSchema = z.object({
   title: z.string().min(1).max(200),
-  description: z.string().max(5000).optional(),
+  description: z.string().max(10000).optional(),  // Increased for markdown content
   status: z.string().min(1).max(50).optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional().default('MEDIUM'),
   dueDate: z.string().datetime().optional().nullable(),
   workspaceId: z.string().optional().nullable(),
   commands: z.array(z.string()).optional().nullable(),
+  attachments: z.array(attachmentSchema).optional().nullable(),
+  assigneeId: z.string().optional().nullable(),
 });
 
 const updatePersonalTaskSchema = z.object({
   title: z.string().min(1).max(200).optional(),
-  description: z.string().max(5000).optional().nullable(),
+  description: z.string().max(10000).optional().nullable(),  // Increased for markdown content
   status: z.string().min(1).max(50).optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
   position: z.number().int().min(0).optional(),
   dueDate: z.string().datetime().optional().nullable(),
   workspaceId: z.string().optional().nullable(),
   commands: z.array(z.string()).optional().nullable(),
+  attachments: z.array(attachmentSchema).optional().nullable(),
+  assigneeId: z.string().optional().nullable(),
 });
 
 const reorderTasksSchema = z.object({
@@ -79,6 +90,16 @@ router.get('/', async (req: Request, res: Response) => {
     const tasks = await prisma.personalTask.findMany({
       where,
       orderBy: [{ status: 'asc' }, { position: 'asc' }, { createdAt: 'desc' }],
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+          },
+        },
+      },
     });
 
     res.json({
@@ -128,6 +149,18 @@ router.post('/', async (req: Request, res: Response) => {
         dueDate: data.dueDate ? new Date(data.dueDate) : null,
         workspaceId: data.workspaceId,
         commands: data.commands ? JSON.stringify(data.commands) : null,
+        attachments: data.attachments ? JSON.stringify(data.attachments) : null,
+        assigneeId: data.assigneeId,
+      },
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+          },
+        },
       },
     });
 
@@ -172,6 +205,16 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     const task = await prisma.personalTask.findUnique({
       where: { id: taskId },
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+          },
+        },
+      },
     });
 
     if (!task) {
@@ -251,6 +294,18 @@ router.patch('/:id', async (req: Request, res: Response) => {
         dueDate: data.dueDate === null ? null : data.dueDate ? new Date(data.dueDate) : undefined,
         workspaceId: data.workspaceId === null ? null : data.workspaceId,
         commands: data.commands === null ? null : data.commands ? JSON.stringify(data.commands) : undefined,
+        attachments: data.attachments === null ? null : data.attachments ? JSON.stringify(data.attachments) : undefined,
+        assigneeId: data.assigneeId === null ? null : data.assigneeId,
+      },
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+          },
+        },
       },
     });
 
@@ -387,6 +442,16 @@ router.post('/reorder', async (req: Request, res: Response) => {
     const updatedTasks = await prisma.personalTask.findMany({
       where: { id: { in: data.taskIds } },
       orderBy: { position: 'asc' },
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+          },
+        },
+      },
     });
 
     // Broadcast tasks reordered event

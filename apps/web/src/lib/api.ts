@@ -2274,11 +2274,17 @@ export const taskCommandsApi = {
 // Personal Tasks
 // ========================
 
+export interface TaskAttachment {
+  url: string;
+  name: string;
+  type: 'image' | 'file';
+}
+
 export interface PersonalTask {
   id: string;
   userId: string;
   title: string;
-  description: string | null;
+  description: string | null;  // Supports markdown
   status: TaskStatus;
   priority: TaskPriority;
   position: number;
@@ -2287,6 +2293,16 @@ export interface PersonalTask {
   commands: string | null; // JSON array of commands
   terminalQueueId: string | null;
   executedAt: string | null;
+  // Attachments (images, files)
+  attachments: string | null; // JSON array of TaskAttachment
+  // Assignment
+  assigneeId: string | null;
+  assignee: {
+    id: string;
+    email: string;
+    name: string | null;
+    image: string | null;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2316,6 +2332,8 @@ export const personalTasksApi = {
       dueDate?: string | null;
       workspaceId?: string | null;
       commands?: string[] | null;
+      attachments?: TaskAttachment[] | null;
+      assigneeId?: string | null;
     },
     token: string
   ) =>
@@ -2332,6 +2350,8 @@ export const personalTasksApi = {
       dueDate?: string | null;
       workspaceId?: string | null;
       commands?: string[] | null;
+      attachments?: TaskAttachment[] | null;
+      assigneeId?: string | null;
     },
     token: string
   ) =>

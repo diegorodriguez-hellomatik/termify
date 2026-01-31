@@ -32,6 +32,7 @@ interface PersonalTaskBoardProps {
   tasksByStatus: Record<TaskStatus, PersonalTask[]>;
   statuses: TaskStatusConfig[];
   workspaces?: Workspace[];
+  currentUserId?: string;
   onCreateTask: (data: {
     title: string;
     description?: string;
@@ -60,6 +61,7 @@ export function PersonalTaskBoard({
   tasksByStatus,
   statuses,
   workspaces = [],
+  currentUserId,
   onCreateTask,
   onUpdateTask,
   onDeleteTask,
@@ -289,6 +291,7 @@ export function PersonalTaskBoard({
           onUpdate={onUpdateTask}
           onDelete={onDeleteTask}
           workspaces={workspaces}
+          currentUserId={currentUserId}
         />
       )}
 

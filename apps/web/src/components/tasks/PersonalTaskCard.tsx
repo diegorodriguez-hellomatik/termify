@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Calendar, AlertCircle, Terminal, Play, Edit2, Trash2, Copy } from 'lucide-react';
+import { Calendar, AlertCircle, Terminal, Play, Edit2, Trash2, Copy, Image as ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { PersonalTask, TaskPriority } from '@/lib/api';
+import { PersonalTask, TaskPriority, TaskAttachment } from '@/lib/api';
 import { formatDistanceToNow } from 'date-fns';
 
 interface PersonalTaskCardProps {
@@ -75,6 +75,17 @@ export function PersonalTaskCard({ task, onClick, isOverlay, onExecute, onDelete
 
   const hasCommands = commands.length > 0;
 
+  // Parse attachments if they exist
+  const attachments = task.attachments ? (() => {
+    try {
+      return JSON.parse(task.attachments) as TaskAttachment[];
+    } catch {
+      return [];
+    }
+  })() : [];
+
+  const imageAttachments = attachments.filter(a => a.type === 'image');
+
   const handleDragStart = (e: React.DragEvent) => {
     // Set data for dropping onto FloatingTerminal
     e.dataTransfer.setData('application/task-id', task.id);
@@ -125,6 +136,29 @@ export function PersonalTaskCard({ task, onClick, isOverlay, onExecute, onDelete
         <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
           {task.description}
         </p>
+      )}
+
+      {/* Image attachments preview */}
+      {imageAttachments.length > 0 && (
+        <div className="flex gap-1 mb-2 overflow-hidden">
+          {imageAttachments.slice(0, 3).map((img, i) => (
+            <div
+              key={i}
+              className="w-12 h-12 rounded overflow-hidden bg-muted flex-shrink-0"
+            >
+              <img
+                src={img.url}
+                alt={img.name}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          ))}
+          {imageAttachments.length > 3 && (
+            <div className="w-12 h-12 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground flex-shrink-0">
+              +{imageAttachments.length - 3}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Commands preview */}
@@ -180,6 +214,26 @@ export function PersonalTaskCard({ task, onClick, isOverlay, onExecute, onDelete
             <span className="text-xs text-muted-foreground">No due date</span>
           )}
         </div>
+
+        {/* Assignee avatar */}
+        {task.assignee && (
+          <div
+            className="flex items-center gap-1"
+            title={task.assignee.name || task.assignee.email}
+          >
+            {task.assignee.image ? (
+              <img
+                src={task.assignee.image}
+                alt={task.assignee.name || task.assignee.email}
+                className="w-6 h-6 rounded-full object-cover"
+              />
+            ) : (
+              <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium">
+                {(task.assignee.name || task.assignee.email).charAt(0).toUpperCase()}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
 
