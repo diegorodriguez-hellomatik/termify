@@ -1,7 +1,11 @@
 import * as pty from '@lydell/node-pty';
 import { EventEmitter } from 'events';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { TerminalStatus } from '@termify/shared';
 import { OutputBuffer } from './OutputBuffer.js';
+
+const execAsync = promisify(exec);
 
 export interface PTYInstance {
   id: string;
@@ -14,6 +18,9 @@ export interface PTYInstance {
   cwd: string;
   isWorking: boolean;
   lastInputTime: number;
+  lastOutputTime: number;
+  idleCheckTimer: NodeJS.Timeout | null;
+  processCheckInterval: NodeJS.Timeout | null;
 }
 
 export interface PTYManagerOptions {
@@ -93,12 +100,16 @@ export class PTYManager extends EventEmitter {
       cwd,
       isWorking: false,
       lastInputTime: 0,
+      lastOutputTime: 0,
+      idleCheckTimer: null,
+      processCheckInterval: null,
     };
 
     // Handle data output
     ptyProcess.onData((data: string) => {
       console.log(`[PTY ${terminalId}] Data:`, data.substring(0, 100));
       instance.outputBuffer.append(data);
+      instance.lastOutputTime = Date.now();
       this.emit('data', terminalId, data);
 
       // Detect CWD changes via OSC 7 sequences (sent by zsh/bash)
@@ -113,24 +124,8 @@ export class PTYManager extends EventEmitter {
         }
       }
 
-      // Detect shell prompt patterns to mark terminal as not working
-      // Only check if currently working and some time has passed since last input
-      if (instance.isWorking && Date.now() - instance.lastInputTime > 100) {
-        const promptPatterns = [
-          /\$\s*$/, // bash/zsh prompt
-          />\s*$/, // some shells
-          /❯\s*$/, // fancy prompts (starship, etc.)
-          /#\s*$/, // root prompt
-          /\]\s*$/, // custom prompts ending with ]
-          /%\s*$/, // zsh default prompt
-        ];
-
-        const hasPrompt = promptPatterns.some((p) => p.test(data));
-        if (hasPrompt) {
-          instance.isWorking = false;
-          this.emit('working', terminalId, false);
-        }
-      }
+      // Note: Working state is now determined by process-based detection (checking for child processes)
+      // This provides instant feedback when commands like 'sleep' finish
     });
 
     // Handle process exit
@@ -179,10 +174,76 @@ export class PTYManager extends EventEmitter {
         instance.isWorking = true;
         this.emit('working', terminalId, true);
       }
+
+      // Start process check interval - check if shell has child processes
+      this.startProcessCheck(terminalId);
     }
 
     // Emit input event for command tracking
     this.emit('input', terminalId, data);
+  }
+
+  /**
+   * Check if a process has child processes (commands running)
+   */
+  private async hasChildProcesses(pid: number): Promise<boolean> {
+    try {
+      // Use pgrep to find child processes
+      const { stdout } = await execAsync(`pgrep -P ${pid} 2>/dev/null`);
+      return stdout.trim().length > 0;
+    } catch {
+      // pgrep returns exit code 1 if no processes found
+      return false;
+    }
+  }
+
+  /**
+   * Start process check interval to detect when command finishes
+   */
+  private startProcessCheck(terminalId: string): void {
+    const instance = this.instances.get(terminalId);
+    if (!instance) return;
+
+    // Clear existing interval
+    if (instance.processCheckInterval) {
+      clearInterval(instance.processCheckInterval);
+    }
+
+    const shellPid = instance.process.pid;
+
+    // Start checking every 150ms for instant feedback
+    instance.processCheckInterval = setInterval(async () => {
+      if (!instance.isWorking) {
+        if (instance.processCheckInterval) {
+          clearInterval(instance.processCheckInterval);
+          instance.processCheckInterval = null;
+        }
+        return;
+      }
+
+      const hasChildren = await this.hasChildProcesses(shellPid);
+
+      if (!hasChildren) {
+        // No child processes - command finished
+        instance.isWorking = false;
+        if (instance.processCheckInterval) {
+          clearInterval(instance.processCheckInterval);
+          instance.processCheckInterval = null;
+        }
+        this.emit('working', terminalId, false);
+      }
+    }, 150);
+  }
+
+  /**
+   * Stop process check interval
+   */
+  private stopProcessCheck(terminalId: string): void {
+    const instance = this.instances.get(terminalId);
+    if (instance?.processCheckInterval) {
+      clearInterval(instance.processCheckInterval);
+      instance.processCheckInterval = null;
+    }
   }
 
   /**
@@ -205,6 +266,18 @@ export class PTYManager extends EventEmitter {
     const instance = this.instances.get(terminalId);
     if (!instance) {
       return; // Already gone
+    }
+
+    // Clear idle check timer
+    if (instance.idleCheckTimer) {
+      clearTimeout(instance.idleCheckTimer);
+      instance.idleCheckTimer = null;
+    }
+
+    // Clear process check interval
+    if (instance.processCheckInterval) {
+      clearInterval(instance.processCheckInterval);
+      instance.processCheckInterval = null;
     }
 
     try {
