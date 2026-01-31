@@ -18,6 +18,8 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useTeams } from '@/hooks/useTeams';
 import { useTeamSocket } from '@/hooks/useTeamSocket';
+import { useTeamChat } from '@/hooks/useTeamChat';
+import { TeamChatPanel, TeamChatToggleButton } from '@/components/chat';
 import { Team } from '@/lib/api';
 
 interface TeamLayoutProps {
@@ -36,8 +38,22 @@ export default function TeamLayout({ children }: TeamLayoutProps) {
 
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const { getTeam } = useTeams();
+
+  // Team chat
+  const {
+    messages: chatMessages,
+    onlineMembers: chatOnlineMembers,
+    isLoading: chatLoading,
+    isConnected: chatConnected,
+    sendMessage: sendChatMessage,
+  } = useTeamChat({
+    token: accessToken ?? null,
+    teamId,
+    enabled: chatOpen,
+  });
 
   // Determine active tab from pathname
   const getActiveTab = (): TabType => {
@@ -164,6 +180,10 @@ export default function TeamLayout({ children }: TeamLayoutProps) {
               <p className="text-sm text-muted-foreground truncate">{team.description}</p>
             )}
           </div>
+          <TeamChatToggleButton
+            isOpen={chatOpen}
+            onClick={() => setChatOpen(!chatOpen)}
+          />
           {canEdit && (
             <Button variant="outline" size="sm" onClick={() => router.push(`/teams/${teamId}/settings`)}>
               <Settings className="h-4 w-4 mr-2" />
@@ -218,6 +238,18 @@ export default function TeamLayout({ children }: TeamLayoutProps) {
       <div className="flex-1 overflow-auto">
         {children}
       </div>
+
+      {/* Team Chat Panel */}
+      <TeamChatPanel
+        messages={chatMessages}
+        onlineMembers={chatOnlineMembers}
+        currentUserId={session?.user?.id || ''}
+        isLoading={chatLoading}
+        isConnected={chatConnected}
+        onSendMessage={sendChatMessage}
+        onClose={() => setChatOpen(false)}
+        isOpen={chatOpen}
+      />
     </div>
   );
 }
