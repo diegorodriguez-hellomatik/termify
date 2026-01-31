@@ -200,18 +200,23 @@ class ServerStatsService extends EventEmitter {
       'stats-agent',
     ];
 
+    console.log(`[ServerStats] Looking for stats-agent, cwd: ${process.cwd()}, HOME: ${process.env.HOME}`);
+
     for (const p of possiblePaths) {
       try {
+        console.log(`[ServerStats] Checking path: ${p}`);
         if (fs.existsSync(p) && fs.statSync(p).isFile()) {
           // Check if executable
           fs.accessSync(p, fs.constants.X_OK);
+          console.log(`[ServerStats] Found stats-agent at: ${p}`);
           return p;
         }
-      } catch {
-        // Continue to next path
+      } catch (e) {
+        console.log(`[ServerStats] Path ${p} not available: ${e instanceof Error ? e.message : 'unknown error'}`);
       }
     }
 
+    console.log(`[ServerStats] stats-agent not found in any of the searched paths`);
     return null;
   }
 

@@ -1538,14 +1538,10 @@ export class TerminalWebSocketServer {
       return;
     }
 
-    // Track subscription in connection
+    // Track subscription in connection FIRST so error events are received
     this.connectionManager.subscribeToServer(ws, serverId);
 
-    // Start collecting if not already
-    if (!serverStatsService.isCollecting(serverId)) {
-      serverStatsService.startCollecting(serverId, userId);
-    }
-
+    // Send subscribed message
     const msg: ServerMessage = {
       type: 'server.stats.subscribed',
       serverId,
@@ -1553,6 +1549,16 @@ export class TerminalWebSocketServer {
     this.send(ws, msg);
 
     console.log(`[WS] User ${userId} subscribed to server stats: ${serverId}`);
+
+    // Start collecting if not already (do this AFTER subscription is tracked)
+    if (!serverStatsService.isCollecting(serverId)) {
+      try {
+        await serverStatsService.startCollecting(serverId, userId);
+      } catch (err) {
+        // Error will be emitted via the 'error' event, which is handled separately
+        console.error(`[WS] Failed to start collecting for ${serverId}:`, err);
+      }
+    }
   }
 
   /**
