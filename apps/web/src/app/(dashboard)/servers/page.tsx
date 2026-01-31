@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { PageLayout, PageHeader, PageContent } from '@/components/ui/page-layout';
 import { BlankAreaContextMenu } from '@/components/ui/BlankAreaContextMenu';
 import { useTheme } from '@/context/ThemeContext';
+import { useServerStatsManager } from '@/context/ServerStatsContext';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { CreateServerModal } from '@/components/servers/CreateServerModal';
 import { ServerDetailsModal } from '@/components/servers/ServerDetailsModal';
@@ -192,6 +193,7 @@ export default function ServersPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const { isDark } = useTheme();
+  const { subscribeMany } = useServerStatsManager();
   const [servers, setServers] = useState<Server[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -217,15 +219,13 @@ export default function ServersPage() {
       if (response.success && response.data) {
         setServers(response.data.servers);
 
-        // Pre-warm stats connections for online servers (non-blocking)
+        // Subscribe to stats for online servers (persistent WebSocket connection)
         const onlineServerIds = response.data.servers
           .filter((s: Server) => s.lastStatus === 'ONLINE' || s.authMethod === 'AGENT')
           .map((s: Server) => s.id);
 
         if (onlineServerIds.length > 0) {
-          serversApi.preWarmStats(onlineServerIds, session.accessToken).catch(() => {
-            // Ignore pre-warm errors
-          });
+          subscribeMany(onlineServerIds);
         }
       }
     } catch (error) {
@@ -233,7 +233,7 @@ export default function ServersPage() {
     } finally {
       setLoading(false);
     }
-  }, [session?.accessToken]);
+  }, [session?.accessToken, subscribeMany]);
 
   useEffect(() => {
     loadServers();

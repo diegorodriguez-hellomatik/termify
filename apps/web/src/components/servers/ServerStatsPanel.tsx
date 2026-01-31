@@ -11,7 +11,8 @@ import {
   Loader2,
   AlertCircle,
 } from 'lucide-react';
-import { useServerStats, formatBytes, formatPercent } from '@/hooks/useServerStats';
+import { useServerStatsFromManager } from '@/context/ServerStatsContext';
+import { formatBytes, formatPercent } from '@/hooks/useServerStats';
 import { cn } from '@/lib/utils';
 
 interface ServerStatsPanelProps {
@@ -20,7 +21,8 @@ interface ServerStatsPanelProps {
 }
 
 export function ServerStatsPanel({ serverId, className }: ServerStatsPanelProps) {
-  const { stats, isConnected, isConnecting, error, history } = useServerStats(serverId);
+  const { stats, isConnected, error, history } = useServerStatsFromManager(serverId);
+  const isConnecting = !isConnected && !stats && !error;
 
   // Don't show error immediately - give connection time to establish
   const [showError, setShowError] = useState(false);

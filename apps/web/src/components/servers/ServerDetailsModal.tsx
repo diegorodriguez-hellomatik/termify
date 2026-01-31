@@ -37,7 +37,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { ServerStatsPanel } from './ServerStatsPanel';
-import { useServerStats } from '@/hooks/useServerStats';
+import { useServerStatsManager } from '@/context/ServerStatsContext';
 
 interface ServerDetailsModalProps {
   server: ServerType;
@@ -72,8 +72,18 @@ export function ServerDetailsModal({
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'info' | 'stats' | 'active' | 'connect' | 'history'>('info');
 
-  // Real-time stats connection status
-  const { isConnected: statsConnected, stats: liveStats } = useServerStats(isOpen ? server.id : null);
+  // Real-time stats connection status from global manager
+  const { getServerStats, subscribe } = useServerStatsManager();
+  const serverStats = getServerStats(server.id);
+  const statsConnected = serverStats.isConnected;
+  const liveStats = serverStats.stats;
+
+  // Subscribe to stats when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      subscribe(server.id);
+    }
+  }, [isOpen, server.id, subscribe]);
 
   // Active terminals
   const [activeTerminals, setActiveTerminals] = useState<ActiveServerTerminal[]>([]);
