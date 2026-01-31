@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   DndContext,
-  closestCorners,
+  pointerWithin,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -12,10 +12,12 @@ import {
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
+  MeasuringStrategy,
 } from '@dnd-kit/core';
 import {
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
+import { snapCenterToCursor } from '@dnd-kit/modifiers';
 import { Plus, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Task, TaskStatus, TaskPriority, TeamMember, TaskStatusConfig } from '@/lib/api';
@@ -217,9 +219,14 @@ export function TaskBoard({
 
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={pointerWithin}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
+        measuring={{
+          droppable: {
+            strategy: MeasuringStrategy.Always,
+          },
+        }}
       >
         <div className="flex gap-4 overflow-x-auto pb-4 flex-1">
           {columns.map((column) => (
@@ -235,7 +242,7 @@ export function TaskBoard({
           ))}
         </div>
 
-        <DragOverlay>
+        <DragOverlay modifiers={[snapCenterToCursor]} dropAnimation={null}>
           {activeTask && <TaskCard task={activeTask} isOverlay />}
         </DragOverlay>
       </DndContext>
