@@ -25,20 +25,31 @@ export function useWorkspaceChat({ token, workspaceId, enabled = true }: UseWork
     try {
       const data = JSON.parse(event.data);
 
+      // Debug: log ALL messages
+      console.log('[WorkspaceChat] Raw message received:', data.type, data);
+
       // Debug: log all messages related to workspace chat
       if (data.type?.startsWith('chat.workspace') || data.type?.startsWith('workspace.')) {
-        console.log('[WorkspaceChat] Received:', data.type, data);
+        console.log('[WorkspaceChat] Workspace message:', data.type, data);
       }
 
       switch (data.type) {
         case 'workspace.subscribed':
           if (data.workspaceId === workspaceId) {
-            console.log('[WorkspaceChat] Subscribed to workspace');
+            console.log('[WorkspaceChat] Subscribed to workspace:', workspaceId);
+          } else {
+            console.log('[WorkspaceChat] Subscribed but different workspace:', data.workspaceId, '!==', workspaceId);
           }
           break;
 
         case 'chat.workspace.message':
+          console.log('[WorkspaceChat] chat.workspace.message check:', {
+            dataWorkspaceId: data.workspaceId,
+            expectedWorkspaceId: workspaceId,
+            match: data.workspaceId === workspaceId,
+          });
           if (data.workspaceId === workspaceId) {
+            console.log('[WorkspaceChat] Adding message to state:', data.message);
             setMessages((prev) => [...prev, data.message]);
           }
           break;
@@ -147,6 +158,7 @@ export function useWorkspaceChat({ token, workspaceId, enabled = true }: UseWork
 
     if (!content.trim()) return;
 
+    console.log('[WorkspaceChat] Sending message:', { workspaceId, content: content.trim().substring(0, 50) });
     wsRef.current.send(JSON.stringify({
       type: 'chat.workspace.send',
       workspaceId,

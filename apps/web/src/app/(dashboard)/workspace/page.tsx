@@ -112,6 +112,7 @@ import { usePersonalTasks } from '@/hooks/usePersonalTasks';
 import { useWorkspaceChat } from '@/hooks/useWorkspaceChat';
 import { TerminalTasksProvider } from '@/contexts/TerminalTasksContext';
 import { WorkspaceChatPanel } from '@/components/chat';
+import { WorkspacePresenceAvatars } from '@/components/workspace/WorkspacePresenceAvatars';
 import { cn } from '@/lib/utils';
 
 interface TerminalData {
@@ -637,17 +638,17 @@ function WorkspaceContent() {
     deleteTask,
   } = usePersonalTasks({ workspaceId: currentWorkspaceId || undefined });
 
-  // Workspace chat
+  // Workspace chat and presence (enabled whenever in workspace view for presence tracking)
   const {
     messages: chatMessages,
-    onlineUsers: chatOnlineUsers,
+    onlineUsers: workspaceOnlineUsers,
     isLoading: chatLoading,
     isConnected: chatConnected,
     sendMessage: sendChatMessage,
   } = useWorkspaceChat({
     token: session?.accessToken ?? null,
     workspaceId: currentWorkspaceId,
-    enabled: chatPanelOpen && viewMode === 'workspace',
+    enabled: viewMode === 'workspace',
   });
 
   // Get fullscreen state and layout settings from context
@@ -1331,6 +1332,15 @@ function WorkspaceContent() {
               />
             )}
 
+            {/* Online users presence */}
+            {workspaceOnlineUsers.length > 0 && (
+              <WorkspacePresenceAvatars
+                users={workspaceOnlineUsers}
+                currentUserId={session?.user?.id || ''}
+                maxVisible={4}
+              />
+            )}
+
             {/* Share button */}
             <button
               onClick={() => setShowShareWorkspaceModal(true)}
@@ -1513,7 +1523,7 @@ function WorkspaceContent() {
         <WorkspaceChatPanel
           isOpen={chatPanelOpen}
           messages={chatMessages}
-          onlineUsers={chatOnlineUsers}
+          onlineUsers={workspaceOnlineUsers}
           currentUserId={session?.user?.id || ''}
           isLoading={chatLoading}
           isConnected={chatConnected}

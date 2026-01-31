@@ -1822,6 +1822,8 @@ export class TerminalWebSocketServer {
     workspaceId: string,
     content: string
   ): Promise<void> {
+    console.log('[WS] handleWorkspaceChatSend:', { userId, workspaceId, content: content?.substring(0, 50) });
+
     if (!content?.trim()) {
       this.send(ws, { type: 'error', message: 'Message content is required' });
       return;
@@ -1840,6 +1842,7 @@ export class TerminalWebSocketServer {
     });
 
     if (!workspace) {
+      console.log('[WS] Workspace access denied for chat send:', workspaceId);
       this.send(ws, { type: 'error', message: 'Workspace not found or access denied' });
       return;
     }
@@ -1856,6 +1859,8 @@ export class TerminalWebSocketServer {
       },
     });
 
+    console.log('[WS] Message created:', message.id);
+
     // Broadcast to all workspace subscribers
     const serverMessage: ServerMessage = {
       type: 'chat.workspace.message',
@@ -1870,6 +1875,7 @@ export class TerminalWebSocketServer {
       } as WorkspaceMessage,
     };
 
+    console.log('[WS] Broadcasting chat.workspace.message to workspace:', workspaceId);
     this.connectionManager.broadcastToWorkspace(workspaceId, JSON.stringify(serverMessage));
   }
 

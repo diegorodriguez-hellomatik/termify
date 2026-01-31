@@ -359,7 +359,10 @@ export class ConnectionManager {
    */
   subscribeToWorkspace(ws: WebSocket, workspaceId: string): void {
     const connection = this.connections.get(ws);
-    if (!connection) return;
+    if (!connection) {
+      console.log('[CM] subscribeToWorkspace: connection not found');
+      return;
+    }
 
     connection.workspaceSubscriptions.add(workspaceId);
 
@@ -367,6 +370,12 @@ export class ConnectionManager {
       this.workspaceConnections.set(workspaceId, new Set());
     }
     this.workspaceConnections.get(workspaceId)!.add(ws);
+
+    console.log('[CM] subscribeToWorkspace:', {
+      workspaceId,
+      userId: connection.userId,
+      totalSubscribers: this.workspaceConnections.get(workspaceId)!.size,
+    });
   }
 
   /**
@@ -392,13 +401,22 @@ export class ConnectionManager {
    */
   broadcastToWorkspace(workspaceId: string, message: string): void {
     const sockets = this.workspaceConnections.get(workspaceId);
+    console.log('[CM] broadcastToWorkspace:', {
+      workspaceId,
+      subscriberCount: sockets?.size ?? 0,
+      hasSubscribers: !!sockets,
+    });
+
     if (!sockets) return;
 
+    let sentCount = 0;
     for (const ws of sockets) {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(message);
+        sentCount++;
       }
     }
+    console.log('[CM] broadcastToWorkspace sent to', sentCount, 'sockets');
   }
 
   /**
