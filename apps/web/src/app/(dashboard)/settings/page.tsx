@@ -218,7 +218,7 @@ export default function SettingsPage() {
   return (
     <>
       {/* Mobile View */}
-      <div className="md:hidden h-[calc(100vh-4rem)]">
+      <div className="md:hidden h-full">
         <MobileSettings />
       </div>
 

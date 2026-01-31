@@ -4,6 +4,8 @@ import { signOut } from 'next-auth/react';
 import { Sidebar } from './Sidebar';
 import { MobileNav } from './MobileNav';
 import { WorkspaceProvider, useWorkspace } from '@/contexts/WorkspaceContext';
+import { GlobalChatBubble } from '@/components/chat/GlobalChatBubble';
+import { GlobalChatPanel } from '@/components/chat/GlobalChatPanel';
 import { cn } from '@/lib/utils';
 
 interface DashboardShellProps {
@@ -44,6 +46,10 @@ function DashboardContent({ children, userName, userEmail, userImage }: Dashboar
       )}>
         {children}
       </main>
+
+      {/* Global Chat - visible across all dashboard pages */}
+      <GlobalChatBubble />
+      <GlobalChatPanel />
     </div>
   );
 }

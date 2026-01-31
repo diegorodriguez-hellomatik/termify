@@ -1440,7 +1440,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
     return (
       <>
         {/* Mobile loading skeleton */}
-        <div className="md:hidden h-[calc(100vh-4rem)]">
+        <div className="md:hidden h-full">
           <MobileTerminalList terminals={[]} categories={[]} isLoading={true} />
         </div>
         {/* Desktop loading skeleton */}
@@ -1466,7 +1466,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
   return (
     <>
       {/* Mobile View - Status monitoring interface */}
-      <div className="md:hidden h-[calc(100vh-4rem)]">
+      <div className="md:hidden h-full">
         <MobileTerminalList
           terminals={terminals}
           categories={categories}

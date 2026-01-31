@@ -11,16 +11,11 @@ import {
   Activity,
   FolderOpen,
   History,
-  Camera,
-  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useTeams } from '@/hooks/useTeams';
 import { useTeamSocket } from '@/hooks/useTeamSocket';
-import { useTeamChat } from '@/hooks/useTeamChat';
-import { TeamChatPanel } from '@/components/chat';
-import { TeamChatBubble } from '@/components/chat/TeamChatBubble';
 import { Team } from '@/lib/api';
 
 interface TeamLayoutProps {
@@ -39,22 +34,8 @@ export default function TeamLayout({ children }: TeamLayoutProps) {
 
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
-  const [chatOpen, setChatOpen] = useState(false);
 
   const { getTeam } = useTeams();
-
-  // Team chat - always enabled so messages keep loading while navigating
-  const {
-    messages: chatMessages,
-    onlineMembers: chatOnlineMembers,
-    isLoading: chatLoading,
-    isConnected: chatConnected,
-    sendMessage: sendChatMessage,
-  } = useTeamChat({
-    token: accessToken ?? null,
-    teamId,
-    enabled: true,
-  });
 
   // Determine active tab from pathname
   const getActiveTab = (): TabType => {
@@ -235,26 +216,6 @@ export default function TeamLayout({ children }: TeamLayoutProps) {
       <div className="flex-1 overflow-auto">
         {children}
       </div>
-
-      {/* Floating Chat Bubble */}
-      <TeamChatBubble
-        isOpen={chatOpen}
-        onClick={() => setChatOpen(!chatOpen)}
-        unreadCount={0}
-        onlineCount={chatOnlineMembers.length}
-      />
-
-      {/* Team Chat Panel */}
-      <TeamChatPanel
-        messages={chatMessages}
-        onlineMembers={chatOnlineMembers}
-        currentUserId={session?.user?.id || ''}
-        isLoading={chatLoading}
-        isConnected={chatConnected}
-        onSendMessage={sendChatMessage}
-        onClose={() => setChatOpen(false)}
-        isOpen={chatOpen}
-      />
     </div>
   );
 }

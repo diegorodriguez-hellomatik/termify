@@ -18,6 +18,7 @@ import { MobileTaskList } from '@/components/mobile';
 export default function TasksPage() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createInStatus, setCreateInStatus] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [selectedTask, setSelectedTask] = useState<PersonalTask | null>(null);
@@ -63,11 +64,15 @@ export default function TasksPage() {
         ? null
         : selectedWorkspaceId;
 
-    return createTask({
+    const result = await createTask({
       ...data,
-      status: 'todo',
+      status: createInStatus || 'todo',
       workspaceId: finalWorkspaceId,
     });
+
+    // Reset the status after creating
+    setCreateInStatus(null);
+    return result;
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -86,7 +91,7 @@ export default function TasksPage() {
     return (
       <>
         {/* Mobile loading */}
-        <div className="md:hidden h-[calc(100vh-4rem)]">
+        <div className="md:hidden h-full">
           <MobileTaskList
             tasksByStatus={tasksByStatus()}
             statuses={statuses}
@@ -114,13 +119,20 @@ export default function TasksPage() {
   return (
     <>
       {/* Mobile View - Optimized for touch */}
-      <div className="md:hidden h-[calc(100vh-4rem)]">
+      <div className="md:hidden h-full">
         <MobileTaskList
           tasksByStatus={tasksByStatus()}
           statuses={statuses}
           onTaskClick={(task) => setSelectedTask(task)}
           onCreateTask={() => setCreateModalOpen(true)}
+          onCreateTaskInStatus={(statusId) => {
+            setCreateInStatus(statusId);
+            setCreateModalOpen(true);
+          }}
           onRefresh={fetchTasks}
+          onUpdateTaskStatus={async (taskId, newStatus) => {
+            await updateTask(taskId, { status: newStatus });
+          }}
           isLoading={loading}
         />
       </div>

@@ -969,7 +969,7 @@ function WorkspaceContent() {
     return (
       <>
         {/* Mobile View - Workspace List */}
-        <div className="md:hidden h-[calc(100vh-4rem)]">
+        <div className="md:hidden h-full">
           <MobileWorkspaceList
             workspaces={workspaces}
             onOpenWorkspace={handleOpenWorkspace}
@@ -1306,7 +1306,7 @@ function WorkspaceContent() {
   return (
     <>
       {/* Mobile View - Workspace Terminal */}
-      <div className="md:hidden h-[calc(100vh-4rem)]">
+      <div className="md:hidden h-full">
         {session?.accessToken && (
           <MobileWorkspaceView
             token={session.accessToken}

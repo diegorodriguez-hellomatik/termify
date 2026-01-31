@@ -424,7 +424,7 @@ export default function ServersPage() {
     return (
       <>
         {/* Mobile loading */}
-        <div className="md:hidden h-[calc(100vh-4rem)]">
+        <div className="md:hidden h-full">
           <MobileServerList
             servers={[]}
             isLoading={true}
@@ -453,7 +453,7 @@ export default function ServersPage() {
   return (
     <>
       {/* Mobile View */}
-      <div className="md:hidden h-[calc(100vh-4rem)]">
+      <div className="md:hidden h-full">
         <MobileServerList
           servers={filteredServers}
           onServerClick={setSelectedServer}

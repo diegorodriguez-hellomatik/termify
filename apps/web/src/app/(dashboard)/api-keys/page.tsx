@@ -123,7 +123,7 @@ export default function ApiKeysPage() {
     return (
       <>
         {/* Mobile loading */}
-        <div className="md:hidden h-[calc(100vh-4rem)]">
+        <div className="md:hidden h-full">
           <MobileApiKeyList apiKeys={[]} isLoading={true} />
         </div>
         {/* Desktop loading */}
@@ -141,7 +141,7 @@ export default function ApiKeysPage() {
   return (
     <>
       {/* Mobile View */}
-      <div className="md:hidden h-[calc(100vh-4rem)]">
+      <div className="md:hidden h-full">
         <MobileApiKeyList
           apiKeys={apiKeys}
           onCreateKey={() => setShowCreateModal(true)}

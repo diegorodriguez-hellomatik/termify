@@ -10,7 +10,8 @@ import { useTeams } from '@/hooks/useTeams';
 import { useTheme } from '@/context/ThemeContext';
 import { TeamList, CreateTeamModal, EditTeamModal } from '@/components/teams';
 import { MobileTeamList } from '@/components/mobile';
-import { Team } from '@/lib/api';
+import { Team, teamsApi } from '@/lib/api';
+import { useSession } from 'next-auth/react';
 import { cn } from '@/lib/utils';
 
 type CardViewMode = 'grid' | 'compact' | 'list';
@@ -73,6 +74,7 @@ function ViewModeToggle({
 export default function TeamsPage() {
   const router = useRouter();
   const { isDark } = useTheme();
+  const { data: session } = useSession();
 
   const [cardViewMode, setCardViewMode] = useState<CardViewMode>('grid');
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -110,14 +112,25 @@ export default function TeamsPage() {
     router.push(`/teams/${teamId}`);
   };
 
-  const handleCreateTeam = async (data: {
-    name: string;
-    description?: string;
-    color?: string;
-    icon?: string;
-  }) => {
+  const handleCreateTeam = async (
+    data: {
+      name: string;
+      description?: string;
+      color?: string;
+      icon?: string;
+    },
+    avatarFile?: File | null
+  ) => {
     const team = await createTeam(data);
     if (team) {
+      // Upload avatar if provided
+      if (avatarFile && session?.accessToken) {
+        try {
+          await teamsApi.uploadImage(team.id, avatarFile, session.accessToken);
+        } catch (err) {
+          console.error('Failed to upload team avatar:', err);
+        }
+      }
       router.push(`/teams/${team.id}`);
     }
     return team;
@@ -130,9 +143,18 @@ export default function TeamsPage() {
 
   const handleUpdateTeam = async (
     teamId: string,
-    data: { name?: string; description?: string; color?: string; icon?: string }
+    data: { name?: string; description?: string; color?: string; icon?: string },
+    avatarFile?: File | null
   ) => {
-    return await updateTeam(teamId, data);
+    const team = await updateTeam(teamId, data);
+    if (team && avatarFile && session?.accessToken) {
+      try {
+        await teamsApi.uploadImage(teamId, avatarFile, session.accessToken);
+      } catch (err) {
+        console.error('Failed to upload team avatar:', err);
+      }
+    }
+    return team;
   };
 
   // Filter teams by search query
@@ -149,7 +171,7 @@ export default function TeamsPage() {
   return (
     <>
       {/* Mobile View */}
-      <div className="md:hidden h-[calc(100vh-4rem)]">
+      <div className="md:hidden h-full">
         <MobileTeamList
           teams={filteredTeams}
           onTeamClick={(team) => handleSelectTeam(team.id)}
