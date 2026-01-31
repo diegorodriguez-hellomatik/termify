@@ -1,11 +1,27 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { RefreshCw, ChevronDown, ChevronRight, MoreVertical, Plus, Folder } from 'lucide-react';
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  DragOverEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { RefreshCw, ChevronDown, ChevronRight, MoreVertical, Plus, Folder, GripVertical } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/utils';
 import { TaskPriority, PersonalTask, TaskStatusConfig, Workspace } from '@/lib/api';
-import { MobileContentHeader } from './MobileContentHeader';
 
 interface MobileTaskListProps {
   tasksByStatus: Record<string, PersonalTask[]>;
@@ -28,37 +44,106 @@ const PRIORITY_CONFIG: Record<TaskPriority, { color: string; bgColor: string; la
   LOW: { color: 'text-green-500', bgColor: 'bg-green-500/10', label: 'Low' },
 };
 
-function TaskCard({
+// Draggable Task Card
+function DraggableTaskCard({
   task,
   statuses,
-  currentStatusId,
+  currentStatusKey,
   onClick,
   onMoveToStatus,
+  isDragOverlay = false,
 }: {
   task: PersonalTask;
   statuses: TaskStatusConfig[];
-  currentStatusId: string;
+  currentStatusKey: string;
   onClick?: () => void;
-  onMoveToStatus?: (statusId: string) => void;
+  onMoveToStatus?: (statusKey: string) => void;
+  isDragOverlay?: boolean;
 }) {
   const [showMoveMenu, setShowMoveMenu] = useState(false);
   const priorityConfig = PRIORITY_CONFIG[task.priority as TaskPriority];
 
-  return (
-    <div className="relative">
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: task.id,
+    data: {
+      type: 'task',
+      task,
+      statusKey: currentStatusKey,
+    },
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  if (isDragOverlay) {
+    return (
       <div
-        onClick={onClick}
         className={cn(
-          'bg-card border border-border rounded-lg p-3',
-          'active:scale-[0.98] transition-all',
-          'touch-manipulation cursor-pointer'
+          'bg-card border-2 border-primary rounded-lg p-3 shadow-xl',
+          'touch-manipulation'
         )}
       >
         <div className="flex items-start gap-2">
+          <GripVertical size={14} className="text-primary mt-0.5 flex-shrink-0" />
           <p className={cn(
             'font-medium text-sm text-foreground line-clamp-2 flex-1',
             task.status === 'done' && 'line-through text-muted-foreground'
           )}>
+            {task.title}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 mt-2 ml-5">
+          <span className={cn(
+            'text-[10px] font-medium px-1.5 py-0.5 rounded',
+            priorityConfig.bgColor,
+            priorityConfig.color
+          )}>
+            {priorityConfig.label}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="relative touch-manipulation"
+    >
+      <div
+        className={cn(
+          'bg-card border border-border rounded-lg p-3',
+          'active:scale-[0.98] transition-all',
+          isDragging && 'opacity-50'
+        )}
+      >
+        <div className="flex items-start gap-2">
+          {/* Drag handle */}
+          <div
+            {...attributes}
+            {...listeners}
+            className="touch-manipulation p-1 -ml-1 cursor-grab active:cursor-grabbing"
+          >
+            <GripVertical size={14} className="text-muted-foreground" />
+          </div>
+          <p
+            onClick={onClick}
+            className={cn(
+              'font-medium text-sm text-foreground line-clamp-2 flex-1 cursor-pointer',
+              task.status === 'done' && 'line-through text-muted-foreground'
+            )}
+          >
             {task.title}
           </p>
           {onMoveToStatus && (
@@ -73,7 +158,7 @@ function TaskCard({
             </button>
           )}
         </div>
-        <div className="flex items-center gap-2 mt-2">
+        <div className="flex items-center gap-2 mt-2 ml-5">
           <span className={cn(
             'text-[10px] font-medium px-1.5 py-0.5 rounded',
             priorityConfig.bgColor,
@@ -106,15 +191,15 @@ function TaskCard({
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowMoveMenu(false);
-                  if (status.id !== currentStatusId) {
-                    onMoveToStatus?.(status.id);
+                  if (status.key !== currentStatusKey) {
+                    onMoveToStatus?.(status.key);
                   }
                 }}
-                disabled={status.id === currentStatusId}
+                disabled={status.key === currentStatusKey}
                 className={cn(
                   'w-full flex items-center gap-2 px-3 py-2 text-sm text-left',
                   'hover:bg-muted transition-colors',
-                  status.id === currentStatusId && 'opacity-50 cursor-not-allowed bg-muted/50'
+                  status.key === currentStatusKey && 'opacity-50 cursor-not-allowed bg-muted/50'
                 )}
               >
                 <span
@@ -131,7 +216,8 @@ function TaskCard({
   );
 }
 
-function StatusSection({
+// Droppable Status Section
+function DroppableStatusSection({
   status,
   tasks,
   statuses,
@@ -140,6 +226,7 @@ function StatusSection({
   onTaskClick,
   onMoveTask,
   onAddTask,
+  isDropTarget,
 }: {
   status: TaskStatusConfig;
   tasks: PersonalTask[];
@@ -147,11 +234,20 @@ function StatusSection({
   isExpanded: boolean;
   onToggle: () => void;
   onTaskClick?: (task: PersonalTask) => void;
-  onMoveTask?: (taskId: string, newStatusId: string) => void;
+  onMoveTask?: (taskId: string, newStatusKey: string) => void;
   onAddTask?: () => void;
+  isDropTarget?: boolean;
 }) {
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
+    <div
+      className={cn(
+        'border rounded-lg overflow-hidden transition-all',
+        isDropTarget
+          ? 'border-primary border-2 bg-primary/5'
+          : 'border-border'
+      )}
+      data-status-key={status.key}
+    >
       {/* Section Header */}
       <button
         onClick={onToggle}
@@ -177,30 +273,34 @@ function StatusSection({
 
       {/* Tasks */}
       {isExpanded && (
-        <div className="p-2 space-y-2 bg-background">
+        <div className="p-2 space-y-2 bg-background min-h-[60px]">
           {tasks.length === 0 ? (
             <button
               onClick={onAddTask}
               className={cn(
                 'w-full flex flex-col items-center justify-center gap-2 py-6',
-                'border-2 border-dashed border-border/50 rounded-lg',
-                'hover:border-primary/50 hover:bg-primary/5 transition-colors',
-                'text-muted-foreground hover:text-primary'
+                'border-2 border-dashed rounded-lg transition-colors',
+                isDropTarget
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border/50 hover:border-primary/50 hover:bg-primary/5 text-muted-foreground hover:text-primary'
               )}
             >
               <Plus size={20} />
-              <span className="text-xs">Add task</span>
+              <span className="text-xs">{isDropTarget ? 'Drop here' : 'Add task'}</span>
             </button>
           ) : (
-            <>
+            <SortableContext
+              items={tasks.map(t => t.id)}
+              strategy={verticalListSortingStrategy}
+            >
               {tasks.map((task) => (
-                <TaskCard
+                <DraggableTaskCard
                   key={task.id}
                   task={task}
                   statuses={statuses}
-                  currentStatusId={status.id}
+                  currentStatusKey={status.key}
                   onClick={() => onTaskClick?.(task)}
-                  onMoveToStatus={onMoveTask ? (newStatusId) => onMoveTask(task.id, newStatusId) : undefined}
+                  onMoveToStatus={onMoveTask ? (newStatusKey) => onMoveTask(task.id, newStatusKey) : undefined}
                 />
               ))}
               {/* Add task button at bottom */}
@@ -216,7 +316,7 @@ function StatusSection({
                 <Plus size={14} />
                 <span>Add task</span>
               </button>
-            </>
+            </SortableContext>
           )}
         </div>
       )}
@@ -238,9 +338,22 @@ export function MobileTaskList({
   isLoading = false,
 }: MobileTaskListProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeTask, setActiveTask] = useState<PersonalTask | null>(null);
+  const [overStatusKey, setOverStatusKey] = useState<string | null>(null);
+
   // Track which sections are expanded - all expanded by default
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(statuses.map(s => s.id))
+  );
+
+  // Touch sensor with delay for better UX
+  const sensors = useSensors(
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 200,
+        tolerance: 5,
+      },
+    })
   );
 
   const handleRefresh = useCallback(async () => {
@@ -265,6 +378,69 @@ export function MobileTaskList({
       return next;
     });
   }, []);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event;
+    const task = Object.values(tasksByStatus)
+      .flat()
+      .find((t) => t.id === active.id);
+    setActiveTask(task || null);
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { over } = event;
+    if (!over) {
+      setOverStatusKey(null);
+      return;
+    }
+
+    // Check if over a task - get its status
+    const overTask = Object.values(tasksByStatus)
+      .flat()
+      .find((t) => t.id === over.id);
+
+    if (overTask) {
+      setOverStatusKey(overTask.status);
+      return;
+    }
+
+    // Check if over a status section by looking at data
+    const overData = over.data?.current;
+    if (overData?.type === 'task') {
+      setOverStatusKey(overData.statusKey);
+    } else {
+      setOverStatusKey(null);
+    }
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    setActiveTask(null);
+    setOverStatusKey(null);
+
+    if (!over || !onUpdateTaskStatus) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    // Find the task being dragged
+    const task = Object.values(tasksByStatus)
+      .flat()
+      .find((t) => t.id === activeId);
+
+    if (!task) return;
+
+    // Find target task or status
+    const targetTask = Object.values(tasksByStatus)
+      .flat()
+      .find((t) => t.id === overId);
+
+    if (targetTask && targetTask.status !== task.status) {
+      // Moving to a different status
+      await onUpdateTaskStatus(task.id, targetTask.status);
+    }
+  };
 
   // Get all tasks count
   const allTasks = Object.values(tasksByStatus).flat();
@@ -361,20 +537,27 @@ export function MobileTaskList({
         </div>
       )}
 
-      {/* Board sections - vertical */}
+      {/* Board sections - vertical with drag and drop */}
       {isLoading ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="animate-pulse text-muted-foreground">Loading...</div>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {statuses.map((status) => {
-            // Use status.key to match tasksByStatus keys (e.g., "backlog", "todo")
-            const tasks = tasksByStatus[status.key] || [];
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {statuses.map((status) => {
+              // Use status.key to match tasksByStatus keys (e.g., "backlog", "todo")
+              const tasks = tasksByStatus[status.key] || [];
 
-            return (
-              <div key={status.id} id={`section-${status.id}`}>
-                <StatusSection
+              return (
+                <DroppableStatusSection
+                  key={status.id}
                   status={status}
                   tasks={tasks}
                   statuses={statuses}
@@ -384,17 +567,29 @@ export function MobileTaskList({
                   onMoveTask={onUpdateTaskStatus}
                   onAddTask={() => {
                     if (onCreateTaskInStatus) {
-                      // Pass the status key for task creation
                       onCreateTaskInStatus(status.key);
                     } else if (onCreateTask) {
                       onCreateTask();
                     }
                   }}
+                  isDropTarget={overStatusKey === status.key}
                 />
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+
+          {/* Drag Overlay */}
+          <DragOverlay>
+            {activeTask ? (
+              <DraggableTaskCard
+                task={activeTask}
+                statuses={statuses}
+                currentStatusKey={activeTask.status}
+                isDragOverlay
+              />
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       )}
     </div>
   );
