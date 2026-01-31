@@ -6,11 +6,12 @@ import {
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
+  PointerSensor,
   TouchSensor,
   useSensor,
   useSensors,
-  closestCenter,
-  DragOverEvent,
+  pointerWithin,
+  useDroppable,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -18,7 +19,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { RefreshCw, ChevronDown, ChevronRight, MoreVertical, Plus, Folder, GripVertical } from 'lucide-react';
+import { RefreshCw, ChevronDown, ChevronRight, MoreVertical, Plus, Folder } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/utils';
 import { TaskPriority, PersonalTask, TaskStatusConfig, Workspace } from '@/lib/api';
@@ -90,19 +91,16 @@ function DraggableTaskCard({
       <div
         className={cn(
           'bg-card border-2 border-primary rounded-lg p-3 shadow-xl',
-          'touch-manipulation'
+          'touch-manipulation rotate-2 scale-105'
         )}
       >
-        <div className="flex items-start gap-2">
-          <GripVertical size={14} className="text-primary mt-0.5 flex-shrink-0" />
-          <p className={cn(
-            'font-medium text-sm text-foreground line-clamp-2 flex-1',
-            task.status === 'done' && 'line-through text-muted-foreground'
-          )}>
-            {task.title}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 mt-2 ml-5">
+        <p className={cn(
+          'font-medium text-sm text-foreground line-clamp-2',
+          task.status === 'done' && 'line-through text-muted-foreground'
+        )}>
+          {task.title}
+        </p>
+        <div className="flex items-center gap-2 mt-2">
           <span className={cn(
             'text-[10px] font-medium px-1.5 py-0.5 rounded',
             priorityConfig.bgColor,
@@ -115,32 +113,36 @@ function DraggableTaskCard({
     );
   }
 
+  const handleClick = (e: React.MouseEvent) => {
+    // Only trigger click if not dragging
+    if (!isDragging && onClick) {
+      onClick();
+    }
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="relative touch-manipulation"
+      {...attributes}
+      {...listeners}
+      onClick={handleClick}
+      className={cn(
+        'relative touch-manipulation cursor-grab active:cursor-grabbing',
+        isDragging && 'opacity-50 z-50'
+      )}
     >
       <div
         className={cn(
           'bg-card border border-border rounded-lg p-3',
-          'active:scale-[0.98] transition-all',
-          isDragging && 'opacity-50'
+          'transition-all',
+          isDragging && 'border-primary shadow-lg'
         )}
       >
         <div className="flex items-start gap-2">
-          {/* Drag handle */}
-          <div
-            {...attributes}
-            {...listeners}
-            className="touch-manipulation p-1 -ml-1 cursor-grab active:cursor-grabbing"
-          >
-            <GripVertical size={14} className="text-muted-foreground" />
-          </div>
           <p
-            onClick={onClick}
             className={cn(
-              'font-medium text-sm text-foreground line-clamp-2 flex-1 cursor-pointer',
+              'font-medium text-sm text-foreground line-clamp-2 flex-1',
               task.status === 'done' && 'line-through text-muted-foreground'
             )}
           >
@@ -150,15 +152,17 @@ function DraggableTaskCard({
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 setShowMoveMenu(!showMoveMenu);
               }}
+              onPointerDown={(e) => e.stopPropagation()}
               className="p-1 -mr-1 -mt-1 rounded hover:bg-muted text-muted-foreground"
             >
               <MoreVertical size={14} />
             </button>
           )}
         </div>
-        <div className="flex items-center gap-2 mt-2 ml-5">
+        <div className="flex items-center gap-2 mt-2">
           <span className={cn(
             'text-[10px] font-medium px-1.5 py-0.5 rounded',
             priorityConfig.bgColor,
@@ -226,7 +230,6 @@ function DroppableStatusSection({
   onTaskClick,
   onMoveTask,
   onAddTask,
-  isDropTarget,
 }: {
   status: TaskStatusConfig;
   tasks: PersonalTask[];
@@ -236,13 +239,21 @@ function DroppableStatusSection({
   onTaskClick?: (task: PersonalTask) => void;
   onMoveTask?: (taskId: string, newStatusKey: string) => void;
   onAddTask?: () => void;
-  isDropTarget?: boolean;
 }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `status-${status.key}`,
+    data: {
+      type: 'status',
+      statusKey: status.key,
+    },
+  });
+
   return (
     <div
+      ref={setNodeRef}
       className={cn(
         'border rounded-lg overflow-hidden transition-all',
-        isDropTarget
+        isOver
           ? 'border-primary border-2 bg-primary/5'
           : 'border-border'
       )}
@@ -280,13 +291,13 @@ function DroppableStatusSection({
               className={cn(
                 'w-full flex flex-col items-center justify-center gap-2 py-6',
                 'border-2 border-dashed rounded-lg transition-colors',
-                isDropTarget
+                isOver
                   ? 'border-primary bg-primary/10 text-primary'
                   : 'border-border/50 hover:border-primary/50 hover:bg-primary/5 text-muted-foreground hover:text-primary'
               )}
             >
               <Plus size={20} />
-              <span className="text-xs">{isDropTarget ? 'Drop here' : 'Add task'}</span>
+              <span className="text-xs">{isOver ? 'Drop here' : 'Add task'}</span>
             </button>
           ) : (
             <SortableContext
@@ -339,19 +350,23 @@ export function MobileTaskList({
 }: MobileTaskListProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTask, setActiveTask] = useState<PersonalTask | null>(null);
-  const [overStatusKey, setOverStatusKey] = useState<string | null>(null);
 
   // Track which sections are expanded - all expanded by default
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(statuses.map(s => s.id))
   );
 
-  // Touch sensor with delay for better UX
+  // Sensors for drag and drop - PointerSensor works on both touch and mouse
   const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // 8px of movement required to start drag
+      },
+    }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 200,
-        tolerance: 5,
+        delay: 150,
+        tolerance: 8,
       },
     })
   );
@@ -387,37 +402,10 @@ export function MobileTaskList({
     setActiveTask(task || null);
   };
 
-  const handleDragOver = (event: DragOverEvent) => {
-    const { over } = event;
-    if (!over) {
-      setOverStatusKey(null);
-      return;
-    }
-
-    // Check if over a task - get its status
-    const overTask = Object.values(tasksByStatus)
-      .flat()
-      .find((t) => t.id === over.id);
-
-    if (overTask) {
-      setOverStatusKey(overTask.status);
-      return;
-    }
-
-    // Check if over a status section by looking at data
-    const overData = over.data?.current;
-    if (overData?.type === 'task') {
-      setOverStatusKey(overData.statusKey);
-    } else {
-      setOverStatusKey(null);
-    }
-  };
-
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
 
     setActiveTask(null);
-    setOverStatusKey(null);
 
     if (!over || !onUpdateTaskStatus) return;
 
@@ -431,13 +419,21 @@ export function MobileTaskList({
 
     if (!task) return;
 
-    // Find target task or status
+    // Check if dropped on a status section
+    if (overId.startsWith('status-')) {
+      const newStatusKey = overId.replace('status-', '');
+      if (newStatusKey !== task.status) {
+        await onUpdateTaskStatus(task.id, newStatusKey);
+      }
+      return;
+    }
+
+    // Check if dropped on another task
     const targetTask = Object.values(tasksByStatus)
       .flat()
       .find((t) => t.id === overId);
 
     if (targetTask && targetTask.status !== task.status) {
-      // Moving to a different status
       await onUpdateTaskStatus(task.id, targetTask.status);
     }
   };
@@ -545,9 +541,8 @@ export function MobileTaskList({
       ) : (
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCenter}
+          collisionDetection={pointerWithin}
           onDragStart={handleDragStart}
-          onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -572,7 +567,6 @@ export function MobileTaskList({
                       onCreateTask();
                     }
                   }}
-                  isDropTarget={overStatusKey === status.key}
                 />
               );
             })}
