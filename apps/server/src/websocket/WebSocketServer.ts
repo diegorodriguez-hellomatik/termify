@@ -1151,6 +1151,43 @@ export class TerminalWebSocketServer {
       );
     });
 
+    // Handle working state changes
+    ptyManager.on('working', async (terminalId: string, isWorking: boolean) => {
+      console.log(`[WS] Terminal ${terminalId} working state: ${isWorking}`);
+
+      // Get the PTY instance to find the userId
+      const ptyInstance = ptyManager.get(terminalId);
+      const userId = ptyInstance?.userId;
+
+      // Update database (skip for ephemeral terminals)
+      if (!ephemeralManager.isEphemeral(terminalId)) {
+        try {
+          await prisma.terminal.update({
+            where: { id: terminalId },
+            data: { isWorking },
+          });
+        } catch (error) {
+          // Terminal might have been deleted, ignore
+        }
+      }
+
+      // Broadcast to all clients subscribed to this terminal
+      const message: ServerMessage = {
+        type: 'terminal.working',
+        terminalId,
+        isWorking,
+      };
+      this.connectionManager.broadcastToTerminal(
+        terminalId,
+        JSON.stringify(message)
+      );
+
+      // Also broadcast to the owner's other connections (for terminals list page)
+      if (userId) {
+        this.connectionManager.sendToUser(userId, message);
+      }
+    });
+
     // Handle PTY exit
     ptyManager.on('exit', async (terminalId: string, exitCode: number) => {
       const status =

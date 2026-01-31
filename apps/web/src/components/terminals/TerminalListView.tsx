@@ -17,6 +17,7 @@ interface TerminalData {
   categoryId: string | null;
   position: number;
   isFavorite?: boolean;
+  isWorking?: boolean;
   category?: { id: string; name: string; color: string; icon?: string } | null;
 }
 

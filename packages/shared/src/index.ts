@@ -258,6 +258,7 @@ export interface Terminal {
   cols: number;
   rows: number;
   cwd: string | null;
+  isWorking?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -600,6 +601,10 @@ export type ServerMessage =
   | { type: 'terminal.status'; terminalId: string; status: TerminalStatus }
   | { type: 'terminal.error'; terminalId: string; error: string }
   | { type: 'terminal.cwd'; terminalId: string; cwd: string }
+  | { type: 'terminal.working'; terminalId: string; isWorking: boolean }
+  | { type: 'terminal.created'; terminal: Terminal }
+  | { type: 'terminal.updated'; terminal: Terminal }
+  | { type: 'terminal.deleted'; terminalId: string }
   | { type: 'terminal.viewers'; terminalId: string; viewers: TerminalViewer[] }
   | { type: 'terminal.viewer.joined'; terminalId: string; viewer: TerminalViewer }
   | { type: 'terminal.viewer.left'; terminalId: string; odId: string }

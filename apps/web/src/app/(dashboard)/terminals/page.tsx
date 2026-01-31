@@ -46,10 +46,12 @@ import {
   Eye,
   Edit3,
   User,
+  Activity,
 } from 'lucide-react';
 import { TerminalStatus } from '@termify/shared';
 import { terminalsApi, categoriesApi, shareApi, SharedTerminal } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { useTerminalsListSocket } from '@/hooks/useTerminalsListSocket';
 import { formatRelativeTime } from '@/lib/utils';
 import { useTheme } from '@/context/ThemeContext';
 import { TerminalListView } from '@/components/terminals/TerminalListView';
@@ -208,6 +210,7 @@ interface TerminalData {
   categoryId: string | null;
   position: number;
   isFavorite?: boolean;
+  isWorking?: boolean;
   category?: { id: string; name: string; color: string; icon?: string } | null;
 }
 
@@ -340,6 +343,11 @@ function DraggableTerminalCard({
               </div>
 
               <span className="font-medium text-sm truncate max-w-[120px]">{terminal.name}</span>
+              {terminal.isWorking && (
+                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-500 animate-pulse">
+                  <Activity size={10} />
+                </span>
+              )}
               <div className={cn('w-2 h-2 rounded-full', STATUS_COLORS[terminal.status])} />
             </div>
 
@@ -473,6 +481,12 @@ function DraggableTerminalCard({
           </div>
           {/* Status and action buttons */}
           <div className="flex items-center gap-2">
+            {terminal.isWorking && (
+              <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-blue-500/10 text-blue-500 animate-pulse">
+                <Activity size={12} />
+                Working
+              </span>
+            )}
             <div className={`w-2 h-2 rounded-full ${STATUS_COLORS[terminal.status]}`} />
             <button
               onClick={(e) => {
@@ -1004,6 +1018,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
   const [showCategoryInput, setShowCategoryInput] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [showWorkingOnly, setShowWorkingOnly] = useState(false);
   const [showSharedOnly, setShowSharedOnly] = useState(false);
   const [sharedTerminals, setSharedTerminals] = useState<SharedTerminal[]>([]);
   const [terminalToDelete, setTerminalToDelete] = useState<TerminalData | null>(null);
@@ -1019,6 +1034,34 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
   const [terminalToRename, setTerminalToRename] = useState<string | null>(null);
 
   const { setShowHelp } = useKeyboardShortcuts();
+
+  // WebSocket for real-time updates
+  useTerminalsListSocket({
+    token: session?.accessToken || null,
+    callbacks: {
+      onTerminalWorking: (terminalId, isWorking) => {
+        setTerminals((prev) =>
+          prev.map((t) => (t.id === terminalId ? { ...t, isWorking } : t))
+        );
+      },
+      onTerminalCreated: (terminal) => {
+        setTerminals((prev) => [...prev, terminal as TerminalData]);
+      },
+      onTerminalUpdated: (terminal) => {
+        setTerminals((prev) =>
+          prev.map((t) => (t.id === terminal.id ? { ...t, ...terminal } : t))
+        );
+      },
+      onTerminalDeleted: (terminalId) => {
+        setTerminals((prev) => prev.filter((t) => t.id !== terminalId));
+      },
+      onTerminalStatusChanged: (terminalId, status) => {
+        setTerminals((prev) =>
+          prev.map((t) => (t.id === terminalId ? { ...t, status } : t))
+        );
+      },
+    },
+  });
 
   // DnD sensors - minimal distance for responsive drag (same as workspaces)
   const sensors = useSensors(
@@ -1372,6 +1415,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
     : terminals
         .filter((t) => {
           if (showFavoritesOnly && !t.isFavorite) return false;
+          if (showWorkingOnly && !t.isWorking) return false;
           if (selectedCategory && t.categoryId !== selectedCategory) return false;
           if (searchQuery) {
             const query = searchQuery.toLowerCase();
@@ -1390,6 +1434,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
         });
 
   const favoritesCount = terminals.filter((t) => t.isFavorite).length;
+  const workingCount = terminals.filter((t) => t.isWorking).length;
 
   if (loading) {
     return (
@@ -1514,11 +1559,12 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
               onClick={() => {
                 setSelectedCategory(null);
                 setShowFavoritesOnly(false);
+                setShowWorkingOnly(false);
                 setShowSharedOnly(false);
               }}
               className={cn(
                 'px-4 py-2 rounded-full text-sm font-medium transition-all',
-                !selectedCategory && !showFavoritesOnly && !showSharedOnly
+                !selectedCategory && !showFavoritesOnly && !showWorkingOnly && !showSharedOnly
                   ? 'bg-foreground text-background'
                   : 'bg-muted text-muted-foreground hover:text-foreground',
                 overId === 'category-all' && 'ring-2 ring-primary'
@@ -1533,6 +1579,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
             onClick={() => {
               setShowFavoritesOnly(!showFavoritesOnly);
               setSelectedCategory(null);
+              setShowWorkingOnly(false);
               setShowSharedOnly(false);
             }}
             className={cn(
@@ -1546,12 +1593,32 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
             Favorites ({favoritesCount})
           </button>
 
+          {/* Working filter */}
+          <button
+            onClick={() => {
+              setShowWorkingOnly(!showWorkingOnly);
+              setSelectedCategory(null);
+              setShowFavoritesOnly(false);
+              setShowSharedOnly(false);
+            }}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all',
+              showWorkingOnly
+                ? 'bg-blue-500 text-white'
+                : 'bg-muted text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Activity size={14} />
+            Working ({workingCount})
+          </button>
+
           {/* Shared with me filter */}
           <button
             onClick={() => {
               setShowSharedOnly(!showSharedOnly);
               setSelectedCategory(null);
               setShowFavoritesOnly(false);
+              setShowWorkingOnly(false);
             }}
             className={cn(
               'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all',
@@ -1575,6 +1642,7 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
                   onClick={() => {
                     setSelectedCategory(category.id);
                     setShowFavoritesOnly(false);
+                    setShowWorkingOnly(false);
                     setShowSharedOnly(false);
                   }}
                   className={cn(
@@ -1663,6 +1731,8 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
                 ? 'No terminals found'
                 : showSharedOnly
                 ? 'No shared terminals'
+                : showWorkingOnly
+                ? 'No working terminals'
                 : showFavoritesOnly
                 ? 'No favorite terminals'
                 : selectedCategory
@@ -1674,13 +1744,15 @@ function TerminalsPageContent({ triggerCreate }: { triggerCreate?: boolean }) {
                 ? 'Try a different search term'
                 : showSharedOnly
                 ? 'When someone shares a terminal with you, it will appear here'
+                : showWorkingOnly
+                ? 'Terminals actively executing commands will appear here'
                 : showFavoritesOnly
                 ? 'Star a terminal to add it to favorites'
                 : selectedCategory
                 ? 'Create a terminal and assign it to this category'
                 : 'Create your first terminal to get started'}
             </p>
-            {!searchQuery && !showFavoritesOnly && !showSharedOnly && (
+            {!searchQuery && !showFavoritesOnly && !showWorkingOnly && !showSharedOnly && (
               <Button
                 onClick={handleOpenCreateModal}
                 disabled={creating}

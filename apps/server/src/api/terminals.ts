@@ -8,7 +8,8 @@ import { authMiddleware } from '../auth/middleware.js';
 import { getPTYManager } from '../pty/PTYManager.js';
 import { SSHManager } from '../ssh/SSHManager.js';
 import { ephemeralManager } from '../ephemeral/EphemeralTerminalManager.js';
-import { DEFAULT_COLS, DEFAULT_ROWS, TerminalStatus } from '@termify/shared';
+import { DEFAULT_COLS, DEFAULT_ROWS, TerminalStatus, ServerMessage } from '@termify/shared';
+import { getWebSocketServer } from '../websocket/WebSocketServer.js';
 
 const router = Router();
 
@@ -113,6 +114,7 @@ router.get('/', async (req: Request, res: Response) => {
       return {
         ...terminal,
         status: instance?.status || terminal.status,
+        isWorking: instance?.isWorking ?? terminal.isWorking ?? false,
         outputBuffer: undefined, // Don't send buffer in list
       };
     });
@@ -223,6 +225,26 @@ router.post('/', async (req: Request, res: Response) => {
         userAgent: req.headers['user-agent'],
       },
     });
+
+    // Broadcast to user for real-time updates on terminals list
+    const wsServer = getWebSocketServer();
+    if (wsServer) {
+      const message: ServerMessage = {
+        type: 'terminal.created',
+        terminal: {
+          id: terminal.id,
+          userId: terminal.userId,
+          name: terminal.name,
+          status: terminal.status as TerminalStatus,
+          cols: terminal.cols,
+          rows: terminal.rows,
+          cwd: terminal.cwd,
+          createdAt: terminal.createdAt,
+          updatedAt: terminal.updatedAt,
+        },
+      };
+      wsServer.broadcastToUser(userId, message);
+    }
 
     res.status(201).json({
       success: true,
@@ -405,6 +427,26 @@ router.patch('/:id', async (req: Request, res: Response) => {
       }
     }
 
+    // Broadcast to user for real-time updates on terminals list
+    const wsServer = getWebSocketServer();
+    if (wsServer) {
+      const message: ServerMessage = {
+        type: 'terminal.updated',
+        terminal: {
+          id: terminal.id,
+          userId: terminal.userId,
+          name: terminal.name,
+          status: terminal.status as TerminalStatus,
+          cols: terminal.cols,
+          rows: terminal.rows,
+          cwd: terminal.cwd,
+          createdAt: terminal.createdAt,
+          updatedAt: terminal.updatedAt,
+        },
+      };
+      wsServer.broadcastToUser(userId, message);
+    }
+
     res.json({
       success: true,
       data: terminal,
@@ -481,6 +523,16 @@ router.delete('/:id', async (req: Request, res: Response) => {
         userAgent: req.headers['user-agent'],
       },
     });
+
+    // Broadcast to user for real-time updates on terminals list
+    const wsServer = getWebSocketServer();
+    if (wsServer) {
+      const message: ServerMessage = {
+        type: 'terminal.deleted',
+        terminalId: id,
+      };
+      wsServer.broadcastToUser(userId, message);
+    }
 
     res.json({ success: true });
   } catch (error) {

@@ -12,6 +12,8 @@ export interface PTYInstance {
   cols: number;
   rows: number;
   cwd: string;
+  isWorking: boolean;
+  lastInputTime: number;
 }
 
 export interface PTYManagerOptions {
@@ -89,6 +91,8 @@ export class PTYManager extends EventEmitter {
       cols,
       rows,
       cwd,
+      isWorking: false,
+      lastInputTime: 0,
     };
 
     // Handle data output
@@ -106,6 +110,25 @@ export class PTYManager extends EventEmitter {
           console.log(`[PTY ${terminalId}] CWD changed: ${instance.cwd} -> ${newCwd}`);
           instance.cwd = newCwd;
           this.emit('cwd', terminalId, newCwd);
+        }
+      }
+
+      // Detect shell prompt patterns to mark terminal as not working
+      // Only check if currently working and some time has passed since last input
+      if (instance.isWorking && Date.now() - instance.lastInputTime > 100) {
+        const promptPatterns = [
+          /\$\s*$/, // bash/zsh prompt
+          />\s*$/, // some shells
+          /❯\s*$/, // fancy prompts (starship, etc.)
+          /#\s*$/, // root prompt
+          /\]\s*$/, // custom prompts ending with ]
+          /%\s*$/, // zsh default prompt
+        ];
+
+        const hasPrompt = promptPatterns.some((p) => p.test(data));
+        if (hasPrompt) {
+          instance.isWorking = false;
+          this.emit('working', terminalId, false);
         }
       }
     });
@@ -148,6 +171,16 @@ export class PTYManager extends EventEmitter {
       throw new Error(`Terminal ${terminalId} not found`);
     }
     instance.process.write(data);
+
+    // If input contains newline/carriage return, a command was executed
+    if (data.includes('\r') || data.includes('\n')) {
+      instance.lastInputTime = Date.now();
+      if (!instance.isWorking) {
+        instance.isWorking = true;
+        this.emit('working', terminalId, true);
+      }
+    }
+
     // Emit input event for command tracking
     this.emit('input', terminalId, data);
   }
@@ -216,6 +249,25 @@ export class PTYManager extends EventEmitter {
    */
   get count(): number {
     return this.instances.size;
+  }
+
+  /**
+   * Check if a terminal is currently working (executing a command)
+   */
+  isWorking(terminalId: string): boolean {
+    const instance = this.instances.get(terminalId);
+    return instance?.isWorking ?? false;
+  }
+
+  /**
+   * Manually set the working state of a terminal
+   */
+  setWorking(terminalId: string, working: boolean): void {
+    const instance = this.instances.get(terminalId);
+    if (instance && instance.isWorking !== working) {
+      instance.isWorking = working;
+      this.emit('working', terminalId, working);
+    }
   }
 
   /**
