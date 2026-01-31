@@ -369,7 +369,8 @@ export function MobileTaskList({
       ) : (
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {statuses.map((status) => {
-            const tasks = tasksByStatus[status.id] || [];
+            // Use status.key to match tasksByStatus keys (e.g., "backlog", "todo")
+            const tasks = tasksByStatus[status.key] || [];
 
             return (
               <div key={status.id} id={`section-${status.id}`}>
@@ -383,7 +384,8 @@ export function MobileTaskList({
                   onMoveTask={onUpdateTaskStatus}
                   onAddTask={() => {
                     if (onCreateTaskInStatus) {
-                      onCreateTaskInStatus(status.id);
+                      // Pass the status key for task creation
+                      onCreateTaskInStatus(status.key);
                     } else if (onCreateTask) {
                       onCreateTask();
                     }
