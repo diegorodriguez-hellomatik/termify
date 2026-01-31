@@ -17,6 +17,8 @@ interface TaskColumnProps {
   tasks: Task[];
   onAddTask: () => void;
   onTaskClick: (task: Task) => void;
+  onDeleteTask?: (taskId: string) => void;
+  onDuplicateTask?: (task: Task) => void;
 }
 
 // Helper to check if color is a hex color
@@ -31,6 +33,8 @@ export function TaskColumn({
   tasks,
   onAddTask,
   onTaskClick,
+  onDeleteTask,
+  onDuplicateTask,
 }: TaskColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: status,
@@ -78,6 +82,8 @@ export function TaskColumn({
               key={task.id}
               task={task}
               onClick={() => onTaskClick(task)}
+              onDelete={onDeleteTask}
+              onDuplicate={onDuplicateTask}
             />
           ))}
         </SortableContext>

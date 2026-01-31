@@ -194,6 +194,17 @@ export function TaskBoard({
   // Get default status for new tasks
   const defaultStatus = statuses.find((s) => s.isDefault)?.key || statuses[0]?.key || 'todo';
 
+  // Handle duplicate task
+  const handleDuplicateTask = async (task: Task) => {
+    await onCreateTask({
+      title: `${task.title} (copy)`,
+      description: task.description || undefined,
+      status: task.status,
+      priority: task.priority,
+      dueDate: task.dueDate || undefined,
+    });
+  };
+
   return (
     <div className="flex flex-col h-full min-h-[300px]" onContextMenu={handleContextMenu}>
       <div className="flex items-center justify-between mb-4">
@@ -238,6 +249,8 @@ export function TaskBoard({
               tasks={tasksByStatus[column.status] || []}
               onAddTask={() => handleOpenCreateModal(column.status)}
               onTaskClick={setSelectedTask}
+              onDeleteTask={onDeleteTask}
+              onDuplicateTask={handleDuplicateTask}
             />
           ))}
         </div>
