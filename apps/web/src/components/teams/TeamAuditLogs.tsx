@@ -11,12 +11,17 @@ interface TeamAuditLogsProps {
 
 const ACTION_LABELS: Record<string, string> = {
   'member.invited': 'Invited member',
+  'member.joined': 'Joined team',
   'member.removed': 'Removed member',
+  'member.left': 'Left team',
   'member.role_changed': 'Changed member role',
   'terminal.shared': 'Shared terminal',
   'terminal.unshared': 'Unshared terminal',
+  'terminal.created': 'Created terminal',
+  'workspace.created': 'Created workspace',
   'workspace.shared': 'Shared workspace',
   'workspace.unshared': 'Unshared workspace',
+  'workspace.deleted': 'Deleted workspace',
   'snippet.created': 'Created snippet',
   'snippet.deleted': 'Deleted snippet',
   'server.created': 'Added server',
@@ -24,8 +29,84 @@ const ACTION_LABELS: Record<string, string> = {
   'task.created': 'Created task',
   'task.updated': 'Updated task',
   'task.deleted': 'Deleted task',
+  'task.assigned': 'Assigned task',
+  'task.status_changed': 'Changed task status',
+  'team.created': 'Created team',
   'team.updated': 'Updated team settings',
 };
+
+// Format details into human-readable text
+function formatDetails(action: string, details: Record<string, unknown> | null): string | null {
+  if (!details || Object.keys(details).length === 0) return null;
+
+  const d = details as Record<string, string | boolean | number>;
+
+  switch (action) {
+    case 'workspace.created':
+      return d.workspaceName ? `Workspace: "${d.workspaceName}"` : null;
+    case 'workspace.deleted':
+      return d.workspaceName ? `Workspace: "${d.workspaceName}"` : null;
+    case 'workspace.shared':
+    case 'workspace.unshared':
+      return d.workspaceName ? `"${d.workspaceName}"` : null;
+
+    case 'terminal.created':
+      return d.terminalName ? `Terminal: "${d.terminalName}"` : null;
+    case 'terminal.shared':
+    case 'terminal.unshared':
+      return d.terminalName ? `"${d.terminalName}"` : null;
+
+    case 'member.invited':
+      return d.email ? `Email: ${d.email}` : null;
+    case 'member.removed':
+    case 'member.left':
+      return d.memberName || d.email ? `${d.memberName || d.email}` : null;
+    case 'member.role_changed':
+      if (d.memberName && d.newRole) {
+        return `${d.memberName} → ${d.newRole}`;
+      }
+      return d.newRole ? `New role: ${d.newRole}` : null;
+
+    case 'task.created':
+    case 'task.updated':
+    case 'task.deleted':
+      return d.taskTitle ? `"${d.taskTitle}"` : null;
+    case 'task.assigned':
+      if (d.taskTitle && d.assigneeName) {
+        return `"${d.taskTitle}" to ${d.assigneeName}`;
+      }
+      return d.taskTitle ? `"${d.taskTitle}"` : null;
+    case 'task.status_changed':
+      if (d.taskTitle && d.newStatus) {
+        return `"${d.taskTitle}" → ${d.newStatus}`;
+      }
+      return null;
+
+    case 'snippet.created':
+    case 'snippet.deleted':
+      return d.snippetName ? `"${d.snippetName}"` : null;
+
+    case 'server.created':
+    case 'server.deleted':
+      return d.serverName ? `"${d.serverName}"` : null;
+
+    case 'team.updated':
+      if (d.changes && typeof d.changes === 'string') {
+        return d.changes;
+      }
+      return null;
+
+    default:
+      // For unknown actions, try to show a summary
+      const keys = Object.keys(d).filter(k =>
+        typeof d[k] === 'string' && d[k] && !k.includes('id') && !k.includes('Id')
+      );
+      if (keys.length > 0) {
+        return keys.map(k => `${d[k]}`).join(', ');
+      }
+      return null;
+  }
+}
 
 const ACTION_COLORS: Record<string, string> = {
   created: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
@@ -121,11 +202,9 @@ export function TeamAuditLogs({ teamId }: TeamAuditLogsProps) {
                     {ACTION_LABELS[log.action] || log.action}
                   </span>
                 </div>
-                {log.details && (
+                {log.details && formatDetails(log.action, log.details as Record<string, unknown>) && (
                   <p className="text-sm text-muted-foreground">
-                    {typeof log.details === 'object'
-                      ? JSON.stringify(log.details)
-                      : String(log.details)}
+                    {formatDetails(log.action, log.details as Record<string, unknown>)}
                   </p>
                 )}
                 <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
