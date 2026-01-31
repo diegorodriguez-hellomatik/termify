@@ -1,16 +1,52 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useTheme } from '@/context/ThemeContext';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, EyeOff } from 'lucide-react';
 
 export function ThemeWrapper({ children }: { children: React.ReactNode }) {
   const { isDark, toggleTheme } = useTheme();
+  const [isHidden, setIsHidden] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  // Load hidden state from localStorage
+  useEffect(() => {
+    setMounted(true);
+    const hidden = localStorage.getItem('themeToggleHidden') === 'true';
+    setIsHidden(hidden);
+  }, []);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleHide = () => {
+    setIsHidden(true);
+    localStorage.setItem('themeToggleHidden', 'true');
+    setContextMenu(null);
+  };
+
+  const closeContextMenu = () => setContextMenu(null);
+
+  // Don't render button if hidden or not mounted
+  if (!mounted || isHidden) {
+    return (
+      <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
+        {children}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
       {/* Floating Theme Toggle Button */}
       <button
         onClick={toggleTheme}
+        onContextMenu={handleContextMenu}
         className="fixed bottom-6 right-6 z-[9999] flex items-center justify-center w-12 h-12 rounded-full border-0 cursor-pointer shadow-lg transition-all duration-200 hover:scale-110 active:scale-100"
         style={{
           backgroundColor: isDark ? '#333' : '#fff',
@@ -23,6 +59,33 @@ export function ThemeWrapper({ children }: { children: React.ReactNode }) {
       >
         {isDark ? <Sun size={24} /> : <Moon size={24} />}
       </button>
+
+      {/* Context Menu */}
+      {contextMenu && createPortal(
+        <>
+          <div
+            className="fixed inset-0 z-[99998]"
+            onClick={closeContextMenu}
+            onContextMenu={(e) => { e.preventDefault(); closeContextMenu(); }}
+          />
+          <div
+            className="fixed z-[99999] min-w-[120px] py-1 bg-popover border border-border rounded-lg shadow-lg animate-in fade-in zoom-in-95 duration-100"
+            style={{
+              left: Math.min(contextMenu.x, window.innerWidth - 140),
+              top: Math.min(contextMenu.y, window.innerHeight - 50),
+            }}
+          >
+            <button
+              onClick={handleHide}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
+            >
+              <EyeOff className="h-4 w-4 text-muted-foreground" />
+              Hide
+            </button>
+          </div>
+        </>,
+        document.body
+      )}
 
       {children}
     </div>
