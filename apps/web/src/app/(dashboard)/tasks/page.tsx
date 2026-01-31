@@ -6,6 +6,7 @@ import { PageLayout, PageHeader, PageContent } from '@/components/ui/page-layout
 import { Button } from '@/components/ui/button';
 import { PersonalTaskBoard as TaskBoardComponent } from '@/components/tasks/PersonalTaskBoard';
 import { PersonalTaskCreateModal } from '@/components/tasks/PersonalTaskCreateModal';
+import { PersonalTaskDetailModal } from '@/components/tasks/PersonalTaskDetailModal';
 import { WorkspaceTabs } from '@/components/tasks/WorkspaceTabs';
 import { usePersonalTasks } from '@/hooks/usePersonalTasks';
 import { useTaskStatuses } from '@/hooks/useTaskStatuses';
@@ -19,6 +20,7 @@ export default function TasksPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [selectedTask, setSelectedTask] = useState<PersonalTask | null>(null);
 
   const { workspaces, loadingWorkspaces } = useWorkspace();
 
@@ -116,10 +118,7 @@ export default function TasksPage() {
         <MobileTaskList
           tasksByStatus={tasksByStatus()}
           statuses={statuses}
-          onTaskClick={(task) => {
-            // TODO: Open task detail modal on mobile
-            console.log('Task clicked:', task);
-          }}
+          onTaskClick={(task) => setSelectedTask(task)}
           onCreateTask={() => setCreateModalOpen(true)}
           onRefresh={fetchTasks}
           isLoading={loading}
@@ -215,6 +214,29 @@ export default function TasksPage() {
         workspaces={workspaces}
         defaultWorkspaceId={selectedWorkspaceId === 'independent' ? null : selectedWorkspaceId}
       />
+
+      {/* Task Detail Modal - For viewing/editing tasks */}
+      {selectedTask && (
+        <PersonalTaskDetailModal
+          task={selectedTask}
+          onClose={() => setSelectedTask(null)}
+          onUpdate={async (id, data) => {
+            const result = await updateTask(id, data);
+            if (result) {
+              setSelectedTask(null);
+            }
+            return result;
+          }}
+          onDelete={async (id) => {
+            const result = await deleteTask(id);
+            if (result) {
+              setSelectedTask(null);
+            }
+            return result;
+          }}
+          workspaces={workspaces}
+        />
+      )}
     </>
   );
 }

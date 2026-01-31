@@ -211,7 +211,8 @@ export function MobileTaskList({
                     backgroundColor: selectedStatus === status.id ? 'white' : status.color,
                   }}
                 />
-                {count}
+                {status.name}
+                <span className="opacity-70">{count}</span>
               </button>
             );
           })}

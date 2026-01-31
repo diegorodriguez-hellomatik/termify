@@ -420,13 +420,122 @@ export default function TerminalPage() {
     );
   }
 
+  // Mobile View - Simplified full-screen terminal
+  const MobileTerminalView = () => (
+    <div className="flex flex-col h-[100dvh] md:hidden">
+      {/* Mobile Header - Minimal */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-card border-b border-border safe-area-inset-top">
+        <Link href="/terminals">
+          <Button variant="ghost" size="icon" className="h-9 w-9">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        </Link>
+        <div className="flex-1 min-w-0">
+          <h1 className="font-semibold text-base truncate">{terminal.name}</h1>
+          <div className="flex items-center gap-2">
+            <div className={cn(
+              'w-2 h-2 rounded-full',
+              terminal.status === 'RUNNING' ? 'bg-green-500 animate-pulse' :
+              terminal.status === 'STOPPED' ? 'bg-zinc-400' :
+              terminal.status === 'STARTING' ? 'bg-yellow-500' : 'bg-red-500'
+            )} />
+            <span className="text-xs text-muted-foreground capitalize">
+              {terminal.status.toLowerCase()}
+            </span>
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9"
+          onClick={() => setShowShareModal(true)}
+        >
+          <Share2 className="h-5 w-5" />
+        </Button>
+      </div>
+
+      {/* Terminal - Full screen */}
+      {session?.accessToken && (
+        <div className="flex-1 relative overflow-hidden">
+          {!readyTerminals.has(terminal.id) && (
+            <div
+              className="absolute inset-0 z-50 flex flex-col items-center justify-center"
+              style={{ backgroundColor: isDark ? '#0a0a0a' : '#f5f5f5' }}
+            >
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative">
+                  <div
+                    className="w-16 h-16 rounded-xl flex items-center justify-center"
+                    style={{
+                      backgroundColor: isDark ? '#1a1a1a' : '#ffffff',
+                      border: `1px solid ${isDark ? '#333' : '#e0e0e0'}`,
+                    }}
+                  >
+                    <TerminalIcon
+                      size={32}
+                      className="text-primary"
+                      style={{ color: isDark ? '#60a5fa' : '#2563eb' }}
+                    />
+                  </div>
+                  <div className="absolute -inset-2">
+                    <svg className="w-full h-full animate-spin" viewBox="0 0 100 100">
+                      <circle
+                        cx="50" cy="50" r="45"
+                        fill="none"
+                        stroke={isDark ? '#333' : '#e0e0e0'}
+                        strokeWidth="4"
+                      />
+                      <circle
+                        cx="50" cy="50" r="45"
+                        fill="none"
+                        stroke={isDark ? '#60a5fa' : '#2563eb'}
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                        strokeDasharray="70 200"
+                      />
+                    </svg>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Connecting...
+                </p>
+              </div>
+            </div>
+          )}
+          <Terminal
+            terminalId={terminal.id}
+            token={session.accessToken}
+            className="absolute inset-0"
+            isActive={true}
+            onReady={() => handleTerminalReady(terminal.id)}
+          />
+        </div>
+      )}
+
+      {/* Share Modal */}
+      <ShareTerminalModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        terminalId={terminal.id}
+        terminalName={terminal.name}
+        isDark={isDark}
+        token={session?.accessToken}
+      />
+    </div>
+  );
+
   // Get terminals not yet open
   const availableTerminals = allTerminals.filter(
     t => !tabs.some(tab => tab.type === 'terminal' && tab.terminalId === t.id)
   );
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <>
+      {/* Mobile View */}
+      <MobileTerminalView />
+
+      {/* Desktop View */}
+      <div className="hidden md:flex flex-1 flex-col min-h-0">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-card border-b border-border">
         <div className="flex items-center gap-4">
@@ -791,15 +900,16 @@ export default function TerminalPage() {
         </div>
       )}
 
-      {/* Share Modal */}
-      <ShareTerminalModal
-        isOpen={showShareModal}
-        onClose={() => setShowShareModal(false)}
-        terminalId={terminal.id}
-        terminalName={terminal.name}
-        isDark={isDark}
-        token={session?.accessToken}
-      />
-    </div>
+        {/* Share Modal */}
+        <ShareTerminalModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          terminalId={terminal.id}
+          terminalName={terminal.name}
+          isDark={isDark}
+          token={session?.accessToken}
+        />
+      </div>
+    </>
   );
 }
