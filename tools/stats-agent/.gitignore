@@ -1,0 +1,18 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Cargo lock (optional for binaries, but we don't need it in git)
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Debug
+*.pdb
+
+# OS files
+.DS_Store

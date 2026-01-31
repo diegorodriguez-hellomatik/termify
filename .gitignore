@@ -46,3 +46,8 @@ prisma/*.db-journal
 
 # Claude Code
 *.pre-compact
+
+# Rust/Cargo (stats-agent)
+**/target/
+**/*.rs.bk
+tools/stats-agent/Cargo.lock
